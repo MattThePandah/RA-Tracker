@@ -1,0 +1,44 @@
+[
+  {
+    "id": "mock-ps1-1",
+    "title": "Final Fantasy VII",
+    "console": "PlayStation",
+    "status": "Not Started",
+    "image_url": null,
+    "date_started": null,
+    "date_finished": null,
+    "completion_time": null,
+    "rating": null,
+    "notes": "",
+    "release_year": "1997",
+    "is_bonus": false
+  },
+  {
+    "id": "mock-ps2-1",
+    "title": "Metal Gear Solid 2: Sons of Liberty",
+    "console": "PlayStation 2",
+    "status": "In Progress",
+    "image_url": null,
+    "date_started": "2025-08-01T00:00:00.000Z",
+    "date_finished": null,
+    "completion_time": null,
+    "rating": 9,
+    "notes": "Playing blind for stream",
+    "release_year": "2001",
+    "is_bonus": false
+  },
+  {
+    "id": "mock-psp-1",
+    "title": "~Demo~ Wipeout Pure",
+    "console": "PlayStation Portable",
+    "status": "Not Started",
+    "image_url": null,
+    "date_started": null,
+    "date_finished": null,
+    "completion_time": null,
+    "rating": null,
+    "notes": "",
+    "release_year": "2005",
+    "is_bonus": true
+  }
+]

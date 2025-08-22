@@ -5,7 +5,11 @@
       "WebSearch",
       "WebFetch(domain:api-docs.igdb.com)",
       "Bash(start-server.bat)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npm run dev:*)",
+      "Bash(start:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []
