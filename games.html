@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Library - PSFest Challenge</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>📚 Game Library</h1>
+            <a href="index.html" class="back-link">← Back to Dashboard</a>
+        </header>
+
+        <div class="controls">
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="Search games..." onkeyup="searchGames()">
+            </div>
+            
+            <div class="filters">
+                <select id="consoleFilter" onchange="filterGames()">
+                    <option value="">All Consoles</option>
+                    <option value="PlayStation">PlayStation</option>
+                    <option value="PlayStation 2">PlayStation 2</option>
+                    <option value="PlayStation Portable">PlayStation Portable</option>
+                </select>
+                
+                <select id="statusFilter" onchange="filterGames()">
+                    <option value="">All Status</option>
+                    <option value="Not Started">Not Started</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Completed">Completed</option>
+                </select>
+                
+                <select id="sortBy" onchange="sortGames()">
+                    <option value="title">Sort by Title</option>
+                    <option value="console">Sort by Console</option>
+                    <option value="status">Sort by Status</option>
+                    <option value="date_started">Sort by Start Date</option>
+                    <option value="date_finished">Sort by Completion Date</option>
+                    <option value="rating">Sort by Rating</option>
+                </select>
+
+                <button class="btn btn-view-toggle" onclick="toggleView()" id="viewToggle">
+                    Grid View
+                </button>
+            </div>
+        </div>
+
+        <div class="games-stats">
+            <span id="gameCount">0 games</span>
+            <span class="divider">|</span>
+            <span id="statusBreakdown"></span>
+        </div>
+
+        <div id="gamesContainer" class="games-grid">
+        </div>
+
+        <div id="loadingGames" class="loading-message" style="display: none;">
+            <p>Loading games...</p>
+        </div>
+
+        <div id="noGames" class="empty-state" style="display: none;">
+            <h3>No games found</h3>
+            <p>Try adjusting your filters or <a href="index.html">sync games from RetroAchievements</a></p>
+        </div>
+    </div>
+
+    <!-- Game Details Modal -->
+    <div id="gameModal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h2 id="modalGameTitle">Game Details</h2>
+                <span class="close" onclick="closeGameModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="game-details-grid">
+                    <div class="game-image-section">
+                        <img id="modalGameImage" src="" alt="Game cover">
+                    </div>
+                    <div class="game-info-section">
+                        <div class="form-group">
+                            <label for="modalGameConsole">Console:</label>
+                            <input type="text" id="modalGameConsole" readonly>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="modalGameStatus">Status:</label>
+                            <select id="modalGameStatus" onchange="updateGameField('status', this.value)">
+                                <option value="Not Started">Not Started</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Completed">Completed</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="modalGameRating">Rating (1-10):</label>
+                            <input type="number" id="modalGameRating" min="1" max="10" 
+                                   onchange="updateGameField('rating', this.value)">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="modalCompletionTime">Completion Time (hours):</label>
+                            <input type="number" id="modalCompletionTime" step="0.5" min="0" 
+                                   onchange="updateGameField('completion_time', this.value)">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="modalDateStarted">Date Started:</label>
+                            <input type="date" id="modalDateStarted" 
+                                   onchange="updateGameField('date_started', this.value)">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="modalDateFinished">Date Finished:</label>
+                            <input type="date" id="modalDateFinished" 
+                                   onchange="updateGameField('date_finished', this.value)">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="modalGameNotes">Notes:</label>
+                            <textarea id="modalGameNotes" rows="4" 
+                                      onchange="updateGameField('notes', this.value)"></textarea>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button class="btn btn-primary" onclick="markAsCompleted()" id="completeBtn">
+                        Mark as Completed
+                    </button>
+                    <button class="btn btn-secondary" onclick="setAsCurrentGame()" id="currentBtn">
+                        Set as Current Game
+                    </button>
+                    <button class="btn btn-danger" onclick="resetGame()">
+                        Reset Progress
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/retroAchievements.js"></script>
+    <script src="js/gameManager.js"></script>
+    <script src="js/coverCache.js"></script>
+    <script>
+        let gameManager;
+        let currentView = 'grid';
+        let filteredGames = [];
+        let currentGameId = null;
+        let coverCache;
+
+        async function init() {
+            document.getElementById('loadingGames').style.display = 'block';
+            gameManager = new GameManager();
+            await gameManager.init();
+            
+            // Initialize cover cache
+            coverCache = new CoverCache();
+            
+            displayGames();
+            document.getElementById('loadingGames').style.display = 'none';
+        }
+
+        function displayGames() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const consoleFilter = document.getElementById('consoleFilter').value;
+            const statusFilter = document.getElementById('statusFilter').value;
+            const sortBy = document.getElementById('sortBy').value;
+            
+            filteredGames = gameManager.games.filter(game => {
+                const matchesSearch = game.title.toLowerCase().includes(searchTerm);
+                const matchesConsole = !consoleFilter || game.console === consoleFilter;
+                const matchesStatus = !statusFilter || game.status === statusFilter;
+                return matchesSearch && matchesConsole && matchesStatus;
+            });
+
+            // Sort games
+            filteredGames.sort((a, b) => {
+                switch (sortBy) {
+                    case 'title':
+                        return a.title.localeCompare(b.title);
+                    case 'console':
+                        return a.console.localeCompare(b.console) || a.title.localeCompare(b.title);
+                    case 'status':
+                        return a.status.localeCompare(b.status) || a.title.localeCompare(b.title);
+                    case 'date_started':
+                        return new Date(b.date_started || 0) - new Date(a.date_started || 0);
+                    case 'date_finished':
+                        return new Date(b.date_finished || 0) - new Date(a.date_finished || 0);
+                    case 'rating':
+                        return (b.rating || 0) - (a.rating || 0);
+                    default:
+                        return a.title.localeCompare(b.title);
+                }
+            });
+
+            updateStats();
+            renderGames();
+        }
+
+        function updateStats() {
+            document.getElementById('gameCount').textContent = `${filteredGames.length} games`;
+            
+            const breakdown = filteredGames.reduce((acc, game) => {
+                acc[game.status] = (acc[game.status] || 0) + 1;
+                return acc;
+            }, {});
+            
+            const breakdownText = Object.entries(breakdown)
+                .map(([status, count]) => `${count} ${status}`)
+                .join(', ');
+            
+            document.getElementById('statusBreakdown').textContent = breakdownText;
+        }
+
+        async function renderGames() {
+            const container = document.getElementById('gamesContainer');
+            
+            if (filteredGames.length === 0) {
+                container.innerHTML = '';
+                document.getElementById('noGames').style.display = 'block';
+                return;
+            }
+            
+            document.getElementById('noGames').style.display = 'none';
+            
+            if (currentView === 'grid') {
+                container.className = 'games-grid';
+                // Create initial HTML with placeholders
+                container.innerHTML = filteredGames.map(game => `
+                    <div class="game-card ${game.status.toLowerCase().replace(' ', '-')}" 
+                         onclick="openGameModal('${game.id}')">
+                        <div class="game-image">
+                            <img id="img-${game.id}" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%23ddd'/><text x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999' font-family='Arial' font-size='10'>Loading...</text></svg>" 
+                                 alt="${game.title}">
+                            <div class="status-badge ${game.status.toLowerCase().replace(' ', '-')}">
+                                ${game.status}
+                            </div>
+                        </div>
+                        <div class="game-info">
+                            <h3 class="game-title">${game.title}</h3>
+                            <p class="game-console">${game.console}</p>
+                            ${game.rating ? `<div class="game-rating">★ ${game.rating}/10</div>` : ''}
+                            ${game.completion_time ? `<div class="completion-time">${game.completion_time}h</div>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+                
+                // Load cached covers asynchronously
+                loadCachedCovers();
+            } else {
+                container.className = 'games-list';
+                container.innerHTML = filteredGames.map(game => `
+                    <div class="game-row ${game.status.toLowerCase().replace(' ', '-')}" 
+                         onclick="openGameModal('${game.id}')">
+                        <div class="game-image-small">
+                            <img id="img-${game.id}" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23ddd'/><text x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999' font-family='Arial' font-size='8'>Loading...</text></svg>" 
+                                 alt="${game.title}">
+                        </div>
+                        <div class="game-details">
+                            <h3>${game.title}</h3>
+                            <p>${game.console}</p>
+                        </div>
+                        <div class="game-status">
+                            <span class="status-badge ${game.status.toLowerCase().replace(' ', '-')}">
+                                ${game.status}
+                            </span>
+                        </div>
+                        <div class="game-meta">
+                            ${game.rating ? `★ ${game.rating}/10` : ''}
+                            ${game.completion_time ? `${game.completion_time}h` : ''}
+                        </div>
+                        <div class="game-dates">
+                            ${game.date_started ? `Started: ${new Date(game.date_started).toLocaleDateString()}` : ''}
+                            ${game.date_finished ? `Finished: ${new Date(game.date_finished).toLocaleDateString()}` : ''}
+                        </div>
+                    </div>
+                `).join('');
+                
+                // Load cached covers asynchronously for list view too
+                loadCachedCovers();
+            }
+        }
+
+        // Function to load cached covers asynchronously
+        async function loadCachedCovers() {
+            if (!coverCache) {
+                console.warn('CoverCache not available');
+                return;
+            }
+
+            // Load covers in batches to avoid overwhelming the system
+            const batchSize = 20;
+            for (let i = 0; i < filteredGames.length; i += batchSize) {
+                const batch = filteredGames.slice(i, i + batchSize);
+                
+                // Process batch in parallel
+                await Promise.all(batch.map(async (game) => {
+                    try {
+                        const imgElement = document.getElementById(`img-${game.id}`);
+                        if (!imgElement) return; // Element might not exist anymore
+                        
+                        const cachedUrl = await coverCache.getCoverUrlWithFallback(game);
+                        if (cachedUrl && imgElement) {
+                            imgElement.src = cachedUrl;
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to load cover for ${game.title}:`, error);
+                    }
+                }));
+                
+                // Small delay between batches to keep UI responsive
+                if (i + batchSize < filteredGames.length) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            }
+        }
+
+        function searchGames() {
+            displayGames();
+        }
+
+        function filterGames() {
+            displayGames();
+        }
+
+        function sortGames() {
+            displayGames();
+        }
+
+        function toggleView() {
+            currentView = currentView === 'grid' ? 'list' : 'grid';
+            document.getElementById('viewToggle').textContent = 
+                currentView === 'grid' ? 'List View' : 'Grid View';
+            renderGames();
+        }
+
+        function openGameModal(gameId) {
+            currentGameId = gameId;
+            const game = gameManager.getGame(gameId);
+            if (!game) return;
+
+            document.getElementById('modalGameTitle').textContent = game.title;
+            
+            // Load cached cover for modal
+            const modalImg = document.getElementById('modalGameImage');
+            modalImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="%23ddd"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999" font-family="Arial" font-size="14">Loading...</text></svg>';
+            
+            if (coverCache) {
+                coverCache.getCoverUrlWithFallback(game).then(cachedUrl => {
+                    if (cachedUrl && modalImg) {
+                        modalImg.src = cachedUrl;
+                    }
+                }).catch(error => {
+                    console.warn('Failed to load modal cover:', error);
+                    modalImg.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="%23ddd"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999" font-family="Arial" font-size="12">No Cover</text></svg>';
+                });
+            }
+            document.getElementById('modalGameConsole').value = game.console;
+            document.getElementById('modalGameStatus').value = game.status;
+            document.getElementById('modalGameRating').value = game.rating || '';
+            document.getElementById('modalCompletionTime').value = game.completion_time || '';
+            document.getElementById('modalDateStarted').value = game.date_started ? game.date_started.split('T')[0] : '';
+            document.getElementById('modalDateFinished').value = game.date_finished ? game.date_finished.split('T')[0] : '';
+            document.getElementById('modalGameNotes').value = game.notes || '';
+
+            // Update button states
+            document.getElementById('completeBtn').style.display = 
+                game.status === 'Completed' ? 'none' : 'inline-block';
+            
+            document.getElementById('gameModal').style.display = 'block';
+        }
+
+        function closeGameModal() {
+            document.getElementById('gameModal').style.display = 'none';
+            currentGameId = null;
+        }
+
+        function updateGameField(field, value) {
+            if (!currentGameId) return;
+            
+            const updates = {};
+            if (field === 'rating' || field === 'completion_time') {
+                updates[field] = value ? parseFloat(value) : null;
+            } else if (field === 'date_started' || field === 'date_finished') {
+                updates[field] = value ? new Date(value).toISOString() : null;
+            } else {
+                updates[field] = value;
+            }
+            
+            gameManager.updateGame(currentGameId, updates);
+            displayGames();
+        }
+
+        function markAsCompleted() {
+            if (!currentGameId) return;
+            
+            const updates = {
+                status: 'Completed',
+                date_finished: new Date().toISOString()
+            };
+            
+            gameManager.updateGame(currentGameId, updates);
+            document.getElementById('modalGameStatus').value = 'Completed';
+            document.getElementById('modalDateFinished').value = new Date().toISOString().split('T')[0];
+            document.getElementById('completeBtn').style.display = 'none';
+            displayGames();
+        }
+
+        function setAsCurrentGame() {
+            if (!currentGameId) return;
+            
+            gameManager.setCurrentGame(currentGameId);
+            
+            // Update status to In Progress if not already
+            const game = gameManager.getGame(currentGameId);
+            if (game.status === 'Not Started') {
+                updateGameField('status', 'In Progress');
+                document.getElementById('modalGameStatus').value = 'In Progress';
+            }
+            
+            alert('Game set as current!');
+        }
+
+        function resetGame() {
+            if (!currentGameId) return;
+            
+            if (confirm('Are you sure you want to reset all progress for this game?')) {
+                const updates = {
+                    status: 'Not Started',
+                    completion_time: null,
+                    date_started: null,
+                    date_finished: null,
+                    rating: null,
+                    notes: ''
+                };
+                
+                gameManager.updateGame(currentGameId, updates);
+                openGameModal(currentGameId); // Refresh modal
+                displayGames();
+            }
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('gameModal');
+            if (event.target === modal) {
+                closeGameModal();
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

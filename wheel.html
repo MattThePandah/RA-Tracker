@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Wheel - PSFest Challenge</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🎲 Game Selection Wheel</h1>
+            <a href="index.html" class="back-link">← Back to Dashboard</a>
+        </header>
+
+        <!-- Game Filter Controls -->
+        <div class="filter-section">
+            <h3>🎮 Game Filters</h3>
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label>Console:</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterPS1" checked> PlayStation (PS1)
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterPS2" checked> PlayStation 2 (PS2)
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterPSP" checked> PlayStation Portable (PSP)
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="filter-group">
+                    <label>Game Types:</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterBonusGames"> Bonus Games (Demo/Hack/Unlicensed/Subset)
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="filterCompleted"> Include Completed Games
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="filter-actions">
+                <button id="applyFiltersBtn" class="filter-btn primary">Apply Filters</button>
+                <button id="resetFiltersBtn" class="filter-btn secondary">Reset to Default</button>
+                <span id="gameCountDisplay" class="game-count">Loading games...</span>
+            </div>
+        </div>
+
+        <div class="wheel-container">
+            <div class="wheel-section">
+                <!-- Traditional Wheel for Small Collections -->
+                <div class="wheel-wrapper" id="wheelWrapper">
+                    <canvas id="gameWheel"></canvas>
+                </div>
+                
+                <!-- CS:GO Style Picker for Large Collections -->
+                <div id="gamePickerContainer" style="display: none;">
+                </div>
+                
+                <div class="selection-mode-info" id="selectionModeInfo" style="display: none;">
+                    <p>🎰 Using CS:GO-style picker for large game collections (50+ games)</p>
+                </div>
+                
+                <style>
+                    /* Filter Section Styles */
+                    .filter-section {
+                        background: rgba(255, 255, 255, 0.05);
+                        border: 1px solid rgba(0, 212, 255, 0.2);
+                        border-radius: 8px;
+                        padding: 20px;
+                        margin-bottom: 25px;
+                    }
+                    
+                    .filter-section h3 {
+                        margin: 0 0 15px 0;
+                        color: #00d4ff;
+                        font-size: 18px;
+                        text-align: center;
+                    }
+                    
+                    .filter-row {
+                        display: flex;
+                        gap: 30px;
+                        margin-bottom: 20px;
+                        flex-wrap: wrap;
+                    }
+                    
+                    .filter-group {
+                        flex: 1;
+                        min-width: 250px;
+                    }
+                    
+                    .filter-group > label {
+                        display: block;
+                        color: #fff;
+                        font-weight: bold;
+                        margin-bottom: 8px;
+                        font-size: 14px;
+                    }
+                    
+                    .checkbox-group {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 6px;
+                    }
+                    
+                    .checkbox-label {
+                        display: flex;
+                        align-items: center;
+                        color: #ccc;
+                        font-size: 13px;
+                        cursor: pointer;
+                        padding: 4px 0;
+                        transition: color 0.2s ease;
+                    }
+                    
+                    .checkbox-label:hover {
+                        color: #00d4ff;
+                    }
+                    
+                    .checkbox-label input[type="checkbox"] {
+                        margin-right: 8px;
+                        width: 16px;
+                        height: 16px;
+                        accent-color: #00d4ff;
+                    }
+                    
+                    .filter-actions {
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
+                        flex-wrap: wrap;
+                        justify-content: center;
+                    }
+                    
+                    .filter-btn {
+                        padding: 8px 16px;
+                        border: none;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 14px;
+                        font-weight: 500;
+                        transition: all 0.2s ease;
+                        min-width: 120px;
+                    }
+                    
+                    .filter-btn.primary {
+                        background: #00d4ff;
+                        color: #000;
+                    }
+                    
+                    .filter-btn.primary:hover {
+                        background: #00b8e6;
+                        transform: translateY(-1px);
+                    }
+                    
+                    .filter-btn.secondary {
+                        background: rgba(255, 255, 255, 0.1);
+                        color: #fff;
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                    }
+                    
+                    .filter-btn.secondary:hover {
+                        background: rgba(255, 255, 255, 0.2);
+                        transform: translateY(-1px);
+                    }
+                    
+                    .game-count {
+                        color: #00d4ff;
+                        font-weight: bold;
+                        font-size: 14px;
+                        padding: 8px 12px;
+                        background: rgba(0, 212, 255, 0.1);
+                        border-radius: 6px;
+                        border: 1px solid rgba(0, 212, 255, 0.3);
+                    }
+                    
+                    @media (max-width: 768px) {
+                        .filter-row {
+                            flex-direction: column;
+                            gap: 15px;
+                        }
+                        
+                        .filter-group {
+                            min-width: auto;
+                        }
+                        
+                        .filter-actions {
+                            flex-direction: column;
+                            align-items: stretch;
+                        }
+                        
+                        .filter-btn {
+                            min-width: auto;
+                        }
+                    }
+
+                    .selection-mode-info {
+                        text-align: center;
+                        margin-bottom: 15px;
+                        padding: 10px;
+                        background: rgba(255, 255, 255, 0.1);
+                        border-radius: 8px;
+                        border: 1px solid rgba(0, 212, 255, 0.3);
+                    }
+                    
+                    .selection-mode-info p {
+                        margin: 0;
+                        color: #00d4ff;
+                        font-size: 14px;
+                        font-weight: 500;
+                    }
+                    
+                    #gamePickerContainer {
+                        width: 100%;
+                        margin: 20px 0;
+                    }
+                </style>
+                
+                <div class="wheel-controls">
+                    <button class="btn btn-primary btn-large" id="spinBtn" onclick="spinWheel()">
+                        🎲 SPIN THE WHEEL
+                    </button>
+                    
+                    <button class="btn btn-secondary" id="resetBtn" onclick="resetWheel()" style="display: none;">
+                        Reset Wheel
+                    </button>
+                    
+                    <button class="btn btn-info" onclick="forceReloadGames()">
+                        Force Reload Games
+                    </button>
+                </div>
+
+                <div class="wheel-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Available Games:</span>
+                        <span class="stat-value" id="availableCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Games:</span>
+                        <span class="stat-value" id="totalCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Completion:</span>
+                        <span class="stat-value" id="completionPercentage">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="result-section" id="resultSection" style="display: none;">
+                <div class="selected-game">
+                    <h2>🎉 Selected Game</h2>
+                    
+                    <div class="game-result">
+                        <div class="game-image-large">
+                            <img id="selectedGameImage" src="" alt="Selected game">
+                        </div>
+                        
+                        <div class="game-details-large">
+                            <h3 id="selectedGameTitle">Game Title</h3>
+                            <p class="game-console-large" id="selectedGameConsole">Console</p>
+                            <p class="game-status-large" id="selectedGameStatus">Status</p>
+                            
+                            <div class="game-actions">
+                                <button class="btn btn-primary" onclick="acceptSelection()">
+                                    ✅ Accept & Start Playing
+                                </button>
+                                
+                                <button class="btn btn-secondary" onclick="spinAgain()">
+                                    🎲 Spin Again
+                                </button>
+                                
+                                <button class="btn btn-info" onclick="viewGameDetails()">
+                                    📝 View Details
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="game-description" id="gameDescription">
+                        <p>Ready to start your next PlayStation adventure?</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="recent-spins" id="recentSpins" style="display: none;">
+            <h3>Recent Spins</h3>
+            <div class="recent-spins-list" id="recentSpinsList">
+            </div>
+        </div>
+
+        <div id="noGamesMessage" class="empty-state" style="display: none;">
+            <h3>🎉 Congratulations!</h3>
+            <p>You've completed all available games!</p>
+            <a href="games.html" class="btn btn-primary">View Completed Games</a>
+        </div>
+    </div>
+
+    <!-- Game Details Modal -->
+    <div id="quickGameModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="quickModalTitle">Quick Game Actions</h2>
+                <span class="close" onclick="closeQuickModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="quick-actions-grid">
+                    <button class="btn btn-primary btn-block" onclick="markAsInProgress()">
+                        🎮 Mark as In Progress
+                    </button>
+                    
+                    <button class="btn btn-success btn-block" onclick="markAsCompleted()">
+                        ✅ Mark as Completed
+                    </button>
+                    
+                    <button class="btn btn-info btn-block" onclick="setAsCurrentGame()">
+                        🎯 Set as Current Game
+                    </button>
+                    
+                    <a href="games.html" class="btn btn-secondary btn-block">
+                        📚 Open in Game Library
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/coverCache.js"></script>
+    <script src="js/igdbApi.js"></script>
+    <script src="js/retroAchievements.js"></script>
+    <script src="js/gameManager.js"></script>
+    <script src="js/wheelLogic.js"></script>
+    <script src="js/gamePicker.js"></script>
+    <script>
+        let gameManager;
+        let gameWheel;
+        let gamePicker;
+        let recentSpins = [];
+        let selectedGame = null;
+        let usePickerMode = false;
+        const PICKER_THRESHOLD = 50; // Use picker for 50+ games
+        let currentFilters = {
+            consoles: ['PlayStation', 'PlayStation 2', 'PlayStation Portable'],
+            includeBonusGames: false,
+            includeCompleted: false
+        };
+
+        // Filter management functions
+        function getActiveFilters() {
+            const consoles = [];
+            if (document.getElementById('filterPS1').checked) consoles.push('PlayStation');
+            if (document.getElementById('filterPS2').checked) consoles.push('PlayStation 2');
+            if (document.getElementById('filterPSP').checked) consoles.push('PlayStation Portable');
+            
+            return {
+                consoles: consoles,
+                includeBonusGames: document.getElementById('filterBonusGames').checked,
+                includeCompleted: document.getElementById('filterCompleted').checked
+            };
+        }
+
+        function updateGameCount() {
+            if (!gameManager) return;
+            
+            const filters = getActiveFilters();
+            const filteredGames = gameManager.getAvailableGames(filters);
+            const totalGames = gameManager.games.length;
+            const bonusGames = gameManager.getBonusGames(filters.includeCompleted).length;
+            
+            let countText = `${filteredGames.length} games available`;
+            if (filters.includeBonusGames) {
+                countText += ` (${bonusGames} bonus games)`;
+            }
+            countText += ` | ${totalGames} total`;
+            
+            document.getElementById('gameCountDisplay').textContent = countText;
+        }
+
+        function applyFilters() {
+            currentFilters = getActiveFilters();
+            console.log('Applying filters:', currentFilters);
+            
+            updateGameCount();
+            initializeGameSelection(); // Reinitialize the wheel/picker with new filters
+        }
+
+        function resetFilters() {
+            document.getElementById('filterPS1').checked = true;
+            document.getElementById('filterPS2').checked = true;
+            document.getElementById('filterPSP').checked = true;
+            document.getElementById('filterBonusGames').checked = false;
+            document.getElementById('filterCompleted').checked = false;
+            
+            applyFilters();
+        }
+
+        function initializeFilterControls() {
+            // Add event listeners
+            document.getElementById('applyFiltersBtn').addEventListener('click', applyFilters);
+            document.getElementById('resetFiltersBtn').addEventListener('click', resetFilters);
+            
+            // Update count when checkboxes change
+            const checkboxes = ['filterPS1', 'filterPS2', 'filterPSP', 'filterBonusGames', 'filterCompleted'];
+            checkboxes.forEach(id => {
+                document.getElementById(id).addEventListener('change', updateGameCount);
+            });
+            
+            // Initial count update
+            updateGameCount();
+        }
+
+        function initializeGameSelection() {
+            const availableGames = gameManager.getAvailableGames(currentFilters);
+            
+            console.log('Available games for wheel:', availableGames.length);
+            console.log('Using filters:', currentFilters);
+            
+            // Clear existing wheel/picker
+            if (gameWheel) {
+                // GameWheel doesn't have a destroy method, just clear the canvas
+                if (gameWheel.canvas && gameWheel.ctx) {
+                    gameWheel.ctx.clearRect(0, 0, gameWheel.canvas.width, gameWheel.canvas.height);
+                }
+                gameWheel = null;
+            }
+            if (gamePicker && typeof gamePicker.destroy === 'function') {
+                gamePicker.destroy();
+                gamePicker = null;
+            }
+            
+            // Hide all containers initially
+            document.getElementById('wheelWrapper').style.display = 'none';
+            document.getElementById('gamePickerContainer').style.display = 'none';
+            document.getElementById('selectionModeInfo').style.display = 'none';
+            
+            if (availableGames.length === 0) {
+                document.getElementById('noGamesMessage').style.display = 'block';
+                return;
+            } else {
+                document.getElementById('noGamesMessage').style.display = 'none';
+            }
+            
+            // Choose wheel or picker based on game count
+            if (availableGames.length >= PICKER_THRESHOLD) {
+                usePickerMode = true;
+                document.getElementById('gamePickerContainer').style.display = 'block';
+                document.getElementById('selectionModeInfo').style.display = 'block';
+                
+                gamePicker = new GamePicker('gamePickerContainer', gameManager, currentFilters);
+                gamePicker.onGameSelected = handleGameSelection;
+                
+                // Update button text
+                document.getElementById('spinBtn').innerHTML = '🎰 SPIN THE PICKER';
+            } else {
+                usePickerMode = false;
+                document.getElementById('wheelWrapper').style.display = 'block';
+                
+                // Initialize traditional wheel
+                gameWheel = new GameWheel('gameWheel', gameManager, currentFilters);
+                gameWheel.onGameSelected = handleGameSelection;
+                gameWheel.loadGames();
+                
+                // Update button text
+                document.getElementById('spinBtn').innerHTML = '🎲 SPIN THE WHEEL';
+            }
+            
+            updateStats();
+            checkAvailableGames();
+        }
+
+        async function init() {
+            console.log('Wheel page: Initializing...');
+            
+            // Check if required classes are available
+            if (typeof GameManager === 'undefined') {
+                console.error('GameManager class not loaded!');
+                alert('Error: GameManager not loaded. Please refresh the page.');
+                return;
+            }
+            if (typeof GameWheel === 'undefined') {
+                console.error('GameWheel class not loaded!');
+                alert('Error: GameWheel not loaded. Please refresh the page.');
+                return;
+            }
+            if (typeof GamePicker === 'undefined') {
+                console.error('GamePicker class not loaded!');
+                alert('Error: GamePicker not loaded. Please refresh the page.');
+                return;
+            }
+            
+            // Initialize IGDB API
+            let igdbApi = null;
+            try {
+                if (typeof IGDBApi !== 'undefined') {
+                    igdbApi = new IGDBApi();
+                    await igdbApi.initialize();
+                    console.log('IGDB API initialized');
+                } else {
+                    console.warn('IGDBApi class not available');
+                }
+            } catch (error) {
+                console.warn('IGDB setup failed:', error);
+            }
+            
+            // Debug localStorage directly
+            console.log('=== DIRECT LOCALSTORAGE CHECK ===');
+            const directGamesData = localStorage.getItem('psfest_games');
+            console.log('Direct localStorage check - games data exists?', !!directGamesData);
+            if (directGamesData) {
+                try {
+                    const parsed = JSON.parse(directGamesData);
+                    console.log('Direct localStorage check - games count:', parsed.length);
+                } catch (e) {
+                    console.log('Direct localStorage check - parse error:', e);
+                }
+            }
+            
+            // Also check all localStorage keys
+            console.log('All localStorage keys:', Object.keys(localStorage));
+            
+            // Search for games data under any key
+            console.log('=== SEARCHING ALL LOCALSTORAGE ===');
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const value = localStorage.getItem(key);
+                console.log(`Key: ${key}, Value length: ${value?.length || 0}`);
+                
+                // Try to parse and see if it looks like games data
+                try {
+                    const parsed = JSON.parse(value);
+                    if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].title) {
+                        console.log(`FOUND GAMES DATA under key "${key}": ${parsed.length} games`);
+                    }
+                } catch (e) {
+                    // Not JSON or not games data
+                }
+            }
+            console.log('=== END SEARCH ===');
+            console.log('=== END DIRECT CHECK ===');
+            
+            try {
+                gameManager = new GameManager();
+                await gameManager.init();
+                
+                console.log('Wheel page: GameManager initialized, games loaded:', gameManager.games.length);
+            } catch (error) {
+                console.error('Failed to initialize GameManager:', error);
+                alert('Error initializing game manager. Please check the console and refresh.');
+                return;
+            }
+            
+            // If GameManager didn't load games, try manual localStorage recovery
+            if (gameManager.games.length === 0) {
+                console.log('Wheel page: GameManager has 0 games, attempting manual localStorage recovery...');
+                const manualGamesData = localStorage.getItem('psfest_games');
+                console.log('Manual recovery - localStorage has data?', !!manualGamesData);
+                
+                if (manualGamesData) {
+                    try {
+                        const manualGames = JSON.parse(manualGamesData);
+                        console.log('Manual recovery - parsed games:', manualGames.length);
+                        gameManager.games = manualGames;
+                        gameManager.updateStats();
+                        console.log('Manual recovery - SUCCESS! Games now loaded:', gameManager.games.length);
+                    } catch (e) {
+                        console.error('Manual recovery - parse error:', e);
+                    }
+                }
+            }
+            
+            // Initialize filter controls
+            initializeFilterControls();
+            
+            // Initialize game selection with default filters
+            initializeGameSelection();
+            
+            console.log('Wheel page: Initialization complete');
+        }
+
+        function updateStats() {
+            const stats = gameManager.getChallengeStats();
+            const filteredGames = gameManager.getAvailableGames(currentFilters);
+            
+            document.getElementById('availableCount').textContent = filteredGames.length;
+            document.getElementById('totalCount').textContent = stats.totalGames;
+            document.getElementById('completionPercentage').textContent = stats.completionPercentage + '%';
+        }
+
+        function checkAvailableGames() {
+            const availableGames = gameManager.getAvailableGames(currentFilters);
+            
+            if (availableGames.length === 0) {
+                document.querySelector('.wheel-section').style.display = 'none';
+                document.getElementById('resultSection').style.display = 'none';
+                document.getElementById('noGamesMessage').style.display = 'block';
+            } else {
+                document.getElementById('noGamesMessage').style.display = 'none';
+            }
+        }
+
+        function spinWheel() {
+            const availableGames = gameManager.getAvailableGames(currentFilters);
+            if (availableGames.length === 0) {
+                alert('No available games to spin!');
+                return;
+            }
+
+            // Check if already spinning
+            if ((usePickerMode && gamePicker?.isSpinning) || (!usePickerMode && gameWheel?.isSpinning)) {
+                return;
+            }
+
+            document.getElementById('spinBtn').disabled = true;
+            document.getElementById('resultSection').style.display = 'none';
+            
+            if (usePickerMode) {
+                document.getElementById('spinBtn').textContent = '🎰 SPINNING...';
+                gamePicker.spin();
+            } else {
+                document.getElementById('spinBtn').textContent = '🎲 SPINNING...';
+                gameWheel.spin();
+            }
+        }
+
+        async function handleGameSelection(game) {
+            selectedGame = game;
+            
+            // Update result display
+            document.getElementById('selectedGameTitle').textContent = game.title;
+            document.getElementById('selectedGameConsole').textContent = game.console;
+            document.getElementById('selectedGameStatus').textContent = game.status;
+            
+            // Load cover image from cache
+            try {
+                const filename = `${game.console} - ${game.title}.jpg`;
+                const coverUrl = `cache/covers/${filename}`;
+                const imgElement = document.getElementById('selectedGameImage');
+                imgElement.onerror = function() {
+                    this.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="%23ddd"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999" font-family="Arial" font-size="16">No Cover</text></svg>';
+                };
+                imgElement.src = coverUrl;
+            } catch (error) {
+                console.warn('Failed to load cover image:', error);
+                document.getElementById('selectedGameImage').src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="%23ddd"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23999" font-family="Arial" font-size="16">No Cover</text></svg>';
+            }
+            
+            // Show result section
+            document.getElementById('resultSection').style.display = 'block';
+            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+            
+            // Reset spin button
+            document.getElementById('spinBtn').disabled = false;
+            document.getElementById('spinBtn').innerHTML = usePickerMode ? '🎰 SPIN THE PICKER' : '🎲 SPIN THE WHEEL';
+            document.getElementById('resetBtn').style.display = 'inline-block';
+            
+            // Add to recent spins
+            addToRecentSpins(game);
+            
+            // Play selection sound effect (if audio is enabled)
+            playSelectionSound();
+        }
+
+        function addToRecentSpins(game) {
+            recentSpins.unshift({
+                game: game,
+                timestamp: new Date().toLocaleTimeString()
+            });
+            
+            // Keep only last 5 spins
+            if (recentSpins.length > 5) {
+                recentSpins = recentSpins.slice(0, 5);
+            }
+            
+            updateRecentSpins();
+        }
+
+        function updateRecentSpins() {
+            if (recentSpins.length === 0) return;
+            
+            document.getElementById('recentSpins').style.display = 'block';
+            
+            const listHTML = recentSpins.map(spin => `
+                <div class="recent-spin-item">
+                    <img src="${spin.game.image_url || 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23ddd"/></svg>'}" 
+                         alt="${spin.game.title}" class="recent-spin-image">
+                    <div class="recent-spin-info">
+                        <span class="recent-spin-title">${spin.game.title}</span>
+                        <span class="recent-spin-time">${spin.timestamp}</span>
+                    </div>
+                </div>
+            `).join('');
+            
+            document.getElementById('recentSpinsList').innerHTML = listHTML;
+        }
+
+        function acceptSelection() {
+            if (!selectedGame) return;
+            
+            // Set as current game
+            gameManager.setCurrentGame(selectedGame.id);
+            
+            // If not started, mark as in progress
+            if (selectedGame.status === 'Not Started') {
+                gameManager.updateGame(selectedGame.id, { 
+                    status: 'In Progress',
+                    date_started: new Date().toISOString()
+                });
+            }
+            
+            alert(`${selectedGame.title} is now your current game! Good luck! 🎮`);
+            
+            // Refresh wheel and stats
+            if (usePickerMode && gamePicker) {
+                gamePicker.reset();
+            } else if (!usePickerMode && gameWheel) {
+                gameWheel.reset();
+            }
+            updateStats();
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('resetBtn').style.display = 'none';
+        }
+
+        function spinAgain() {
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('resetBtn').style.display = 'none';
+            selectedGame = null;
+            setTimeout(() => spinWheel(), 500);
+        }
+
+        function resetWheel() {
+            if (usePickerMode && gamePicker) {
+                gamePicker.reset();
+            } else if (!usePickerMode && gameWheel) {
+                gameWheel.reset();
+            }
+            
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('resetBtn').style.display = 'none';
+            selectedGame = null;
+        }
+
+        function viewGameDetails() {
+            if (!selectedGame) return;
+            
+            document.getElementById('quickModalTitle').textContent = selectedGame.title;
+            document.getElementById('quickGameModal').style.display = 'block';
+        }
+
+        function closeQuickModal() {
+            document.getElementById('quickGameModal').style.display = 'none';
+        }
+
+        function markAsInProgress() {
+            if (!selectedGame) return;
+            
+            const updates = {
+                status: 'In Progress',
+                date_started: selectedGame.date_started || new Date().toISOString()
+            };
+            
+            gameManager.updateGame(selectedGame.id, updates);
+            selectedGame.status = 'In Progress';
+            document.getElementById('selectedGameStatus').textContent = 'In Progress';
+            
+            closeQuickModal();
+            alert('Game marked as In Progress!');
+        }
+
+        function markAsCompleted() {
+            if (!selectedGame) return;
+            
+            const updates = {
+                status: 'Completed',
+                date_finished: new Date().toISOString()
+            };
+            
+            gameManager.updateGame(selectedGame.id, updates);
+            
+            closeQuickModal();
+            alert('Congratulations on completing the game! 🎉');
+            
+            // Refresh everything
+            gameWheel.reset();
+            updateStats();
+            checkAvailableGames();
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('resetBtn').style.display = 'none';
+        }
+
+        function setAsCurrentGame() {
+            if (!selectedGame) return;
+            
+            gameManager.setCurrentGame(selectedGame.id);
+            
+            if (selectedGame.status === 'Not Started') {
+                markAsInProgress();
+            }
+            
+            closeQuickModal();
+            alert('Game set as current!');
+        }
+
+        function playSelectionSound() {
+            // Simple audio feedback using Web Audio API
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.3);
+                
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.3);
+            } catch (error) {
+                // Audio not supported or blocked
+                console.log('Audio feedback not available');
+            }
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (gameWheel) {
+                gameWheel.setupCanvas();
+                gameWheel.draw();
+            }
+        });
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('quickGameModal');
+            if (event.target === modal) {
+                closeQuickModal();
+            }
+        }
+
+        function forceReloadGames() {
+            console.log('=== FORCE RELOAD GAMES ===');
+            
+            // Check localStorage again
+            const gamesData = localStorage.getItem('psfest_games');
+            console.log('Force reload - localStorage has games?', !!gamesData);
+            
+            if (gamesData) {
+                try {
+                    const games = JSON.parse(gamesData);
+                    console.log('Force reload - parsed games count:', games.length);
+                    
+                    // Manually set the games
+                    gameManager.games = games;
+                    gameManager.updateStats();
+                    
+                    // Reload appropriate system
+                    if (usePickerMode && gamePicker) {
+                        gamePicker.loadGames();
+                    } else if (!usePickerMode && gameWheel) {
+                        gameWheel.loadGames();
+                    }
+                    updateStats();
+                    
+                    alert(`Successfully loaded ${games.length} games!`);
+                } catch (e) {
+                    alert('Error parsing localStorage data: ' + e.message);
+                }
+            } else {
+                alert('No games data found in localStorage. Try syncing from the dashboard first.');
+            }
+            
+            console.log('=== END FORCE RELOAD ===');
+        }
+
+        // Initialize when page loads
+        init();
+    </script>
+</body>
+</html>

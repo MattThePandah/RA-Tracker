@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PSFest OBS Overlay</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        /* OBS-specific styles */
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+        
+        .obs-overlay {
+            background: rgba(0,0,0,0.8);
+            border: 2px solid #ff4444;
+            border-radius: 8px;
+            padding: 15px;
+            width: fit-content;
+            max-width: 400px;
+            box-sizing: border-box;
+            position: relative;
+        }
+        
+        .current-game-section {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .game-image-obs {
+            width: 80px;
+            height: 80px;
+            border-radius: 6px;
+            object-fit: cover;
+            border: 2px solid #00d4ff;
+            box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+        }
+        
+        .game-info-obs {
+            flex: 1;
+        }
+        
+        .game-title-obs {
+            font-size: 18px;
+            font-weight: bold;
+            color: #fff;
+            margin: 0 0 5px 0;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+        }
+        
+        .game-console-obs {
+            font-size: 14px;
+            color: #00d4ff;
+            margin: 0 0 3px 0;
+            font-weight: 500;
+        }
+        
+        .game-year-obs {
+            font-size: 12px;
+            color: #ccc;
+            margin: 0;
+        }
+        
+        .no-game-message {
+            text-align: center;
+            color: #ccc;
+            font-style: italic;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="obs-overlay">
+        <div id="currentGameDisplay" style="display: none;">
+            <div class="current-game-section">
+                <img id="currentGameImage" class="game-image-obs" src="" alt="Current game">
+                <div class="game-info-obs">
+                    <h2 class="game-title-obs" id="currentGameTitle">No game selected</h2>
+                    <p class="game-console-obs" id="currentGameConsole">-</p>
+                    <p class="game-year-obs" id="currentGameYear">-</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="noGameDisplay" class="no-game-message">
+            <p>🎲 Spin the wheel to select your next game!</p>
+        </div>
+    </div>
+
+    <script src="js/retroAchievements.js"></script>
+    <script src="js/gameManager.js"></script>
+    <script src="js/igdbApi.js"></script>
+    <script src="js/coverCache.js"></script>
+    <script>
+        let gameManager;
+        let timerInterval;
+        let igdbApi;
+        let coverCache;
+
+        async function init() {
+            gameManager = new GameManager();
+            await gameManager.init();
+            
+            // Initialize cover cache
+            coverCache = new CoverCache();
+            
+            // Initialize IGDB API for year fetching
+            try {
+                if (typeof IGDBApi !== 'undefined') {
+                    igdbApi = new IGDBApi();
+                    await igdbApi.initialize();
+                    console.log('IGDB API initialized for year fetching');
+                } else {
+                    console.warn('IGDBApi class not available');
+                }
+            } catch (error) {
+                console.warn('IGDB setup failed:', error);
+            }
+            
+            updateDisplay();
+            
+            // Update every 5 seconds
+            setInterval(updateDisplay, 5000);
+        }
+
+        async function getBoxArtUrl(game) {
+            if (!coverCache) {
+                coverCache = new CoverCache();
+            }
+            
+            // Try to get cached cover first, fallback to placeholder
+            return await coverCache.getCoverUrlWithFallback(game);
+        }
+
+        async function fetchGameYear(game) {
+            // If year already exists, return it
+            if (game.year && game.year !== 'Unknown') {
+                return game.year;
+            }
+            
+            // Try to fetch from IGDB API
+            try {
+                if (igdbApi) {
+                    const gameData = await igdbApi.searchGame(game.title);
+                    if (gameData && gameData.first_release_date) {
+                        const year = new Date(gameData.first_release_date * 1000).getFullYear();
+                        
+                        // Update the game object and save to storage
+                        game.year = year;
+                        gameManager.updateGame(game.id, { year: year });
+                        
+                        return year;
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to fetch year from API:', error);
+            }
+            
+            return 'Unknown';
+        }
+
+        async function updateDisplay() {
+            const currentGame = gameManager.getCurrentGame();
+
+            // Update current game display
+            if (currentGame) {
+                document.getElementById('currentGameDisplay').style.display = 'block';
+                document.getElementById('noGameDisplay').style.display = 'none';
+                
+                document.getElementById('currentGameTitle').textContent = currentGame.title;
+                document.getElementById('currentGameConsole').textContent = currentGame.console;
+                
+                // Handle year - fetch from API if missing
+                const year = await fetchGameYear(currentGame);
+                document.getElementById('currentGameYear').textContent = year;
+                
+                // Load cover asynchronously
+                try {
+                    const coverUrl = await getBoxArtUrl(currentGame);
+                    const imageElement = document.getElementById('currentGameImage');
+                    if (imageElement && coverUrl) {
+                        imageElement.src = coverUrl;
+                    }
+                } catch (error) {
+                    console.warn('Failed to load cover:', error);
+                    // Fallback to placeholder
+                    document.getElementById('currentGameImage').src = 
+                        'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="%23333"/><text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="%23ccc" font-family="Arial" font-size="10">No Cover</text></svg>';
+                }
+            } else {
+                document.getElementById('currentGameDisplay').style.display = 'none';
+                document.getElementById('noGameDisplay').style.display = 'block';
+            }
+        }
+
+
+        // Initialize when page loads
+        init();
+
+        // Handle visibility changes (when OBS source is hidden/shown)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                updateDisplay();
+            }
+        });
+    </script>
+</body>
+</html>

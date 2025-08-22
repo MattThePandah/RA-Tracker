@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PSFest Stats Widget</title>
+    <style>
+        /* OBS Stats Widget - Clean and compact */
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+        
+        .stats-widget {
+            background: rgba(0,0,0,0.85);
+            border: 2px solid #00d4ff;
+            border-radius: 8px;
+            padding: 15px;
+            width: fit-content;
+            min-width: 200px;
+            box-sizing: border-box;
+            position: relative;
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
+        }
+        
+        .widget-header {
+            text-align: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #00d4ff;
+        }
+        
+        .widget-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #00d4ff;
+            margin: 0;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+        }
+        
+        .stats-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 8px 12px;
+            border-radius: 6px;
+            border-left: 3px solid #00d4ff;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: #fff;
+            font-weight: 500;
+        }
+        
+        .stat-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: #00d4ff;
+            text-shadow: 0 0 5px rgba(0, 212, 255, 0.5);
+        }
+        
+        .progress-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px 12px;
+            border-radius: 6px;
+            border-left: 3px solid #ff4444;
+        }
+        
+        .progress-label {
+            font-size: 12px;
+            color: #ccc;
+            margin-bottom: 5px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 5px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #ff6666);
+            border-radius: 6px;
+            transition: width 0.5s ease;
+            box-shadow: 0 0 8px rgba(255, 68, 68, 0.5);
+        }
+        
+        .progress-text {
+            font-size: 14px;
+            font-weight: bold;
+            color: #fff;
+            text-align: center;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 250px) {
+            .stats-widget {
+                padding: 10px;
+                min-width: 180px;
+            }
+            
+            .widget-title {
+                font-size: 18px;
+            }
+            
+            .stat-label, .stat-value {
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="stats-widget">
+        <div class="widget-header">
+            <h1 class="widget-title">PSFest</h1>
+        </div>
+        
+        <div class="stats-container">
+            <div class="stat-item">
+                <span class="stat-label">Games</span>
+                <span class="stat-value" id="gameCount">0/0</span>
+            </div>
+            
+            <div class="progress-item">
+                <div class="progress-label">Completion Progress</div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/retroAchievements.js"></script>
+    <script src="js/igdbApi.js"></script>
+    <script src="js/coverCache.js"></script>
+    <script src="js/gameManager.js"></script>
+    <script>
+        let gameManager;
+
+        async function init() {
+            try {
+                console.log('Stats widget: Starting initialization...');
+                
+                // Check if required classes are available
+                if (typeof GameManager === 'undefined') {
+                    throw new Error('GameManager class not loaded');
+                }
+                
+                gameManager = new GameManager();
+                console.log('Stats widget: GameManager created');
+                
+                await gameManager.init();
+                console.log('Stats widget: GameManager initialized');
+                console.log('Stats widget: Games loaded:', gameManager.games?.length || 0);
+                
+                // If GameManager didn't load games, try manual localStorage recovery
+                if (gameManager.games.length === 0) {
+                    console.log('Stats widget: No games loaded, attempting manual localStorage recovery...');
+                    const manualGamesData = localStorage.getItem('psfest_games');
+                    console.log('Stats widget: Manual recovery - localStorage has data?', !!manualGamesData);
+                    
+                    if (manualGamesData) {
+                        try {
+                            const manualGames = JSON.parse(manualGamesData);
+                            console.log('Stats widget: Manual recovery - parsed games:', manualGames.length);
+                            gameManager.games = manualGames;
+                            gameManager.updateStats();
+                            console.log('Stats widget: Manual recovery - SUCCESS! Games now loaded:', gameManager.games.length);
+                        } catch (e) {
+                            console.error('Stats widget: Manual recovery - parse error:', e);
+                        }
+                    }
+                }
+                
+                updateStats();
+                
+                // Update every 10 seconds
+                setInterval(updateStats, 10000);
+                console.log('Stats widget: Initialization complete');
+            } catch (error) {
+                console.error('Failed to initialize stats widget:', error);
+                // Show error in UI
+                document.getElementById('gameCount').textContent = 'Error';
+                document.getElementById('progressText').textContent = 'Failed to load';
+            }
+        }
+
+        function updateStats() {
+            if (!gameManager) {
+                console.warn('Stats widget: GameManager not available');
+                return;
+            }
+            
+            if (!gameManager.games) {
+                console.warn('Stats widget: No games data available');
+                return;
+            }
+            
+            console.log('Stats widget: Updating stats...');
+            console.log('Stats widget: Total games in array:', gameManager.games.length);
+            
+            const stats = gameManager.getChallengeStats();
+            console.log('Stats widget: Challenge stats:', stats);
+            
+            // Update game count (completed/total format)
+            const gameCountText = `${stats.completedGames}/${stats.totalGames}`;
+            document.getElementById('gameCount').textContent = gameCountText;
+            console.log('Stats widget: Set game count to:', gameCountText);
+            
+            // Update completion progress
+            const completionPercentage = stats.completionPercentage;
+            document.getElementById('progressFill').style.width = completionPercentage + '%';
+            document.getElementById('progressText').textContent = completionPercentage + '%';
+            console.log('Stats widget: Set completion to:', completionPercentage + '%');
+        }
+
+        // Initialize when page loads
+        init();
+
+        // Handle visibility changes (when OBS source is hidden/shown)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                updateStats();
+            }
+        });
+    </script>
+</body>
+</html>

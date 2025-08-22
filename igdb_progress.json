@@ -1,0 +1,12 @@
+{
+  "completed_platforms": [
+    "PlayStation",
+    "PlayStation 2",
+    "PlayStation Portable"
+  ],
+  "last_offset": {
+    "PlayStation": 1916,
+    "PlayStation 2": 1990,
+    "PlayStation Portable": 1293
+  }
+}
