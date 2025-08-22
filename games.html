@@ -33,6 +33,12 @@
                     <option value="Completed">Completed</option>
                 </select>
                 
+                <label class="checkbox-filter">
+                    <input type="checkbox" id="bonusGamesFilter" onchange="filterGames()">
+                    <span class="checkmark"></span>
+                    Show Bonus Games
+                </label>
+                
                 <select id="sortBy" onchange="sortGames()">
                     <option value="title">Sort by Title</option>
                     <option value="console">Sort by Console</option>
@@ -163,17 +169,39 @@
             document.getElementById('loadingGames').style.display = 'none';
         }
 
+        // Function to detect if a game is a bonus game
+        function isBonusGame(game) {
+            const title = game.title || '';
+            const lowerTitle = title.toLowerCase();
+            
+            // Check for various bonus game indicators based on actual game data patterns
+            // Only use specific patterns that actually exist in the data to avoid false positives
+            return lowerTitle.includes('~hack~') ||           // ROM hacks
+                   lowerTitle.includes('~homebrew~') ||       // Homebrew games
+                   lowerTitle.includes('~unlicensed~') ||     // Unlicensed games
+                   lowerTitle.includes('[subset') ||         // Achievement subsets (like "[Subset - Bonus]")
+                   lowerTitle.includes('~demo~') ||          // Demo games
+                   lowerTitle.includes('~prototype~') ||     // Prototype games
+                   lowerTitle.includes('~z~');               // Educational games marker
+        }
+
         function displayGames() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
             const consoleFilter = document.getElementById('consoleFilter').value;
             const statusFilter = document.getElementById('statusFilter').value;
+            const showBonusGames = document.getElementById('bonusGamesFilter').checked;
             const sortBy = document.getElementById('sortBy').value;
             
             filteredGames = gameManager.games.filter(game => {
                 const matchesSearch = game.title.toLowerCase().includes(searchTerm);
                 const matchesConsole = !consoleFilter || game.console === consoleFilter;
                 const matchesStatus = !statusFilter || game.status === statusFilter;
-                return matchesSearch && matchesConsole && matchesStatus;
+                
+                // Filter bonus games based on checkbox
+                const isBonus = isBonusGame(game);
+                const matchesBonusFilter = showBonusGames || !isBonus;
+                
+                return matchesSearch && matchesConsole && matchesStatus && matchesBonusFilter;
             });
 
             // Sort games
@@ -201,7 +229,14 @@
         }
 
         function updateStats() {
-            document.getElementById('gameCount').textContent = `${filteredGames.length} games`;
+            const bonusCount = filteredGames.filter(game => isBonusGame(game)).length;
+            const regularCount = filteredGames.length - bonusCount;
+            
+            let gameCountText = `${filteredGames.length} games`;
+            if (bonusCount > 0) {
+                gameCountText += ` (${regularCount} regular, ${bonusCount} bonus)`;
+            }
+            document.getElementById('gameCount').textContent = gameCountText;
             
             const breakdown = filteredGames.reduce((acc, game) => {
                 acc[game.status] = (acc[game.status] || 0) + 1;
@@ -230,7 +265,7 @@
                 container.className = 'games-grid';
                 // Create initial HTML with placeholders
                 container.innerHTML = filteredGames.map(game => `
-                    <div class="game-card ${game.status.toLowerCase().replace(' ', '-')}" 
+                    <div class="game-card ${game.status.toLowerCase().replace(' ', '-')} ${isBonusGame(game) ? 'bonus-game' : ''}" 
                          onclick="openGameModal('${game.id}')">
                         <div class="game-image">
                             <img id="img-${game.id}" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><rect width='100' height='100' fill='%23ddd'/><text x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999' font-family='Arial' font-size='10'>Loading...</text></svg>" 
@@ -238,6 +273,7 @@
                             <div class="status-badge ${game.status.toLowerCase().replace(' ', '-')}">
                                 ${game.status}
                             </div>
+                            ${isBonusGame(game) ? '<div class="bonus-badge">BONUS</div>' : ''}
                         </div>
                         <div class="game-info">
                             <h3 class="game-title">${game.title}</h3>
@@ -253,14 +289,14 @@
             } else {
                 container.className = 'games-list';
                 container.innerHTML = filteredGames.map(game => `
-                    <div class="game-row ${game.status.toLowerCase().replace(' ', '-')}" 
+                    <div class="game-row ${game.status.toLowerCase().replace(' ', '-')} ${isBonusGame(game) ? 'bonus-game' : ''}" 
                          onclick="openGameModal('${game.id}')">
                         <div class="game-image-small">
                             <img id="img-${game.id}" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='50' height='50'><rect width='50' height='50' fill='%23ddd'/><text x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999' font-family='Arial' font-size='8'>Loading...</text></svg>" 
                                  alt="${game.title}">
                         </div>
                         <div class="game-details">
-                            <h3>${game.title}</h3>
+                            <h3>${game.title} ${isBonusGame(game) ? '<span class="bonus-text">[BONUS]</span>' : ''}</h3>
                             <p>${game.console}</p>
                         </div>
                         <div class="game-status">

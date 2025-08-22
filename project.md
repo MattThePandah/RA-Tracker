@@ -18,7 +18,11 @@ Game Info Grabber/
 │   ├── retroAchievements.js # API integration
 │   ├── gameManager.js      # Core game logic
 │   ├── wheelLogic.js       # Traditional wheel spinner
-│   └── gamePicker.js       # CS:GO-style picker
+│   ├── gamePicker.js       # Horizontal wheel CS:GO-style picker
+│   ├── igdbApi.js          # IGDB API for cover art and metadata
+│   └── coverCache.js       # Local cover image caching system
+├── cache/
+│   └── covers/             # Local game cover image cache
 └── data/
     ├── games.json          # Game database (15 sample games)
     └── settings.json       # App configuration
@@ -40,17 +44,21 @@ Game Info Grabber/
 - **Stream-optimized**: Clear visibility for viewers
 
 ### 3. **OBS Integration**
-- **Transparent overlay**: Ready for streaming
-- **Real-time updates**: Current game display
-- **Game progress**: "Game #X / Total" counter
-- **Custom branding**: PSFest theming
-- **LiveSplit compatible**: Timer removed for external use
+- **Dual OBS widgets**: Main game display + separate stats widget
+- **Main overlay**: Game cover, name, console, year
+- **Stats widget**: PSFest branding, completion progress, game count
+- **Local cached covers**: Fast loading for streaming
+- **Auto year fetching**: IGDB API integration for missing release dates
+- **Real-time updates**: 5-10 second refresh rate
 
 ### 4. **Game Management**
 - **Library view**: Grid/list toggle with filtering
-- **Search & filter**: By console, status, rating
+- **Advanced filtering**: Console, status, rating, bonus games
+- **Bonus games filter**: Automatically detects hacks, demos, prototypes, subsets
+- **Local cover cache**: Fast image loading from /cache/covers/
 - **Quick actions**: Mark completed, set current game
 - **Progress tracking**: Dates, completion times, notes
+- **Visual indicators**: Bonus game badges and color coding
 
 ## 🛠 Technical Implementation
 
@@ -136,7 +144,8 @@ npx http-server -p 8000
 - **Dashboard**: http://localhost:8000
 - **Game Wheel**: http://localhost:8000/wheel.html
 - **Game Library**: http://localhost:8000/games.html
-- **OBS Overlay**: http://localhost:8000/obs.html
+- **OBS Main Overlay**: http://localhost:8000/obs.html
+- **OBS Stats Widget**: http://localhost:8000/obs-stats.html
 
 ## 📊 Game Data Structure
 
@@ -204,7 +213,9 @@ npx http-server -p 8000
 - **Horizontal strip**: Game cover images
 - **Infinite scroll**: Seamless game cycling
 - **Selection box**: Yellow highlight with glow
-- **Spin animation**: CS:GO case opening style
+- **Roulette wheel physics**: Fast start with exponential slowdown
+- **15-second spins**: Perfect for streaming drama
+- **Auto-centering**: Perfect alignment after spin
 - **Optimal for**: 50+ games (6616 total)
 
 ## 🔧 Key Functions
@@ -351,6 +362,55 @@ api.testConnection(user, key)     // Validate credentials
 
 ---
 
-**Project Status**: ✅ **COMPLETE & FUNCTIONAL**  
-**Last Updated**: August 21, 2025  
-**Version**: 1.0.0 - Initial Release
+---
+
+## 🆕 Latest Improvements (Session Update)
+
+### ✅ **Enhanced Horizontal Wheel**
+- **Roulette wheel physics**: Exponential decay for realistic slowdown
+- **15-second spins**: Extended duration for streaming excitement
+- **Auto-centering**: Perfect game alignment after spin
+- **Massive game support**: 250+ duplicates for long spins
+- **Wrapping logic**: Prevents games going off-screen
+
+### ✅ **Dual OBS System**
+- **obs.html**: Simplified game display (cover, name, console, year)
+- **obs-stats.html**: Separate stats widget (PSFest, game count, completion %)
+- **IGDB integration**: Auto-fetches missing release years
+- **Local cache priority**: Fast loading from /cache/covers/
+- **Correct math**: Fixed completion percentage calculation
+
+### ✅ **Advanced Game Library**
+- **Bonus games filter**: Smart detection of hacks, demos, prototypes, subsets
+- **Visual indicators**: Orange badges and borders for bonus content
+- **Performance optimization**: Cached covers instead of external URLs
+- **Batch loading**: 20 images at a time for responsive UI
+- **Enhanced stats**: Shows regular vs bonus game counts
+
+### ✅ **Bonus Game Detection**
+**Automatically identifies:**
+- `~Hack~` - ROM hacks
+- `~Homebrew~` - Fan-made games  
+- `~Demo~` - Demo versions
+- `~Prototype~` - Prototype builds
+- `~Unlicensed~` - Unofficial releases
+- `[Subset` - Achievement subsets
+- `~Z~` - Educational games
+
+### ✅ **Performance Improvements**
+- **Local image caching**: No more slow external downloads
+- **Better completion math**: Shows accurate small percentages (0.02% vs 0%)
+- **Optimized filtering**: Smart bonus game detection
+- **Responsive loading**: Progressive image loading
+
+### ✅ **Technical Enhancements**
+- **Cover cache system**: `/cache/covers/` directory management
+- **API integration**: IGDB for missing game metadata
+- **Error handling**: Graceful fallbacks for missing data
+- **Memory optimization**: Efficient image loading and caching
+
+---
+
+**Project Status**: ✅ **COMPLETE & ENHANCED**  
+**Last Updated**: August 22, 2025  
+**Version**: 1.1.0 - Major Performance & Feature Update
