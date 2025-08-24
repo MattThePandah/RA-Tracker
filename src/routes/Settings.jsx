@@ -1,19 +1,60 @@
 import React, { useState } from 'react'
 import { useGame } from '../context/GameContext.jsx'
+import { useAchievements } from '../context/AchievementContext.jsx'
 import * as RA from '../services/retroachievements.js'
 import * as IGDB from '../services/igdb.js'
 import * as Storage from '../services/storage.js'
 
 export default function Settings() {
   const { state, dispatch } = useGame()
-  const [username, setUsername] = useState(import.meta.env.VITE_RA_USERNAME || '')
-  const [apiKey, setApiKey] = useState(import.meta.env.VITE_RA_API_KEY || '')
+  const { state: achievementState, updateSettings } = useAchievements()
+  const [username, setUsername] = useState(() => {
+    // Try to get from various sources in priority order
+    return import.meta.env.VITE_RA_USERNAME || 
+           achievementState.settings.raUsername || 
+           state.settings.raUsername || 
+           ''
+  })
+  const [apiKey, setApiKey] = useState(() => {
+    return import.meta.env.VITE_RA_API_KEY || 
+           achievementState.settings.raApiKey || 
+           state.settings.raApiKey || 
+           ''
+  })
   const [raEnabled, setRaEnabled] = useState(state.settings.raEnabled)
   const [igdbEnabled, setIgdbEnabled] = useState(state.settings.igdbEnabled)
   const [hideBonusGames, setHideBonusGames] = useState(state.settings.hideBonusGames)
   const [pollMs, setPollMs] = useState(state.settings.pollMs || 5000)
   const [loading, setLoading] = useState(false)
   const [precacheState, setPrecacheState] = useState({ running: false, done: 0, total: 0, last: '' })
+  
+  // Achievement settings
+  const [achievementSettings, setAchievementSettings] = useState({
+    ...achievementState.settings,
+    // Ensure we have the current username/apiKey 
+    raUsername: achievementState.settings.raUsername || username,
+    raApiKey: achievementState.settings.raApiKey || apiKey
+  })
+
+  // Sync achievement settings when RA credentials change
+  React.useEffect(() => {
+    setAchievementSettings(prev => ({
+      ...prev,
+      raUsername: username,
+      raApiKey: apiKey
+    }))
+  }, [username, apiKey])
+
+  // Auto-sync achievement settings on mount to ensure RA credentials are available
+  React.useEffect(() => {
+    if ((username || apiKey) && (!achievementState.settings.raUsername || !achievementState.settings.raApiKey)) {
+      updateSettings({
+        ...achievementState.settings,
+        raUsername: username || achievementState.settings.raUsername,
+        raApiKey: apiKey || achievementState.settings.raApiKey
+      })
+    }
+  }, [username, apiKey, achievementState.settings.raUsername, achievementState.settings.raApiKey, updateSettings])
 
   // Seed overlay idle wheel with a small 16-slot sample based on current settings
   const seedOverlayWheel = React.useCallback(async (opts = {}) => {
@@ -46,8 +87,20 @@ export default function Settings() {
 
   const save = async () => {
     dispatch({ type: 'SET_SETTINGS', settings: { ...state.settings, raEnabled, igdbEnabled, hideBonusGames, pollMs } })
+    
+    // Update achievement settings
+    updateSettings({
+      ...achievementSettings,
+      raUsername: username,
+      raApiKey: apiKey
+    })
+    
     await seedOverlayWheel({ hideBonusGames })
     alert('Saved settings. Overlay wheel updated.')
+  }
+
+  const updateAchievementSetting = (key, value) => {
+    setAchievementSettings(prev => ({ ...prev, [key]: value }))
   }
 
   const clearAllInProgress = () => {
@@ -190,6 +243,91 @@ export default function Settings() {
             </div>
             <div className="d-flex gap-2">
               <button className="btn btn-outline-danger" onClick={resetPSFestTimer}>Reset PSFest Total</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="col-12">
+          <div className="card bg-panel p-3">
+            <h3 className="h6">🏆 Achievement Notifications</h3>
+            <div className="text-secondary small mb-3">
+              Configure achievement popup notifications and ticker settings for streaming.
+            </div>
+            
+            <div className="row g-3">
+              <div className="col-md-6">
+                <div className="form-check form-switch mb-2">
+                  <input 
+                    className="form-check-input" 
+                    type="checkbox" 
+                    checked={achievementSettings.enablePopups} 
+                    onChange={e=>updateAchievementSetting('enablePopups', e.target.checked)} 
+                    id="enablePopups" 
+                  />
+                  <label className="form-check-label" htmlFor="enablePopups">Enable Achievement Popups</label>
+                </div>
+                
+                <div className="form-check form-switch mb-2">
+                  <input 
+                    className="form-check-input" 
+                    type="checkbox" 
+                    checked={achievementSettings.enableTicker} 
+                    onChange={e=>updateAchievementSetting('enableTicker', e.target.checked)} 
+                    id="enableTicker" 
+                  />
+                  <label className="form-check-label" htmlFor="enableTicker">Enable Achievement Ticker</label>
+                </div>
+                
+                <div className="form-check form-switch mb-3">
+                  <input 
+                    className="form-check-input" 
+                    type="checkbox" 
+                    checked={achievementSettings.showHardcoreMode} 
+                    onChange={e=>updateAchievementSetting('showHardcoreMode', e.target.checked)} 
+                    id="showHardcoreMode" 
+                  />
+                  <label className="form-check-label" htmlFor="showHardcoreMode">Show Hardcore Mode Indicators</label>
+                </div>
+              </div>
+              
+              <div className="col-md-6">
+                <div className="mb-3">
+                  <label className="form-label">Popup Duration (ms)</label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    value={achievementSettings.popupDuration} 
+                    onChange={e=>updateAchievementSetting('popupDuration', parseInt(e.target.value||'5000',10))}
+                    min="2000"
+                    max="30000"
+                    step="1000"
+                  />
+                  <div className="form-text">How long popups stay visible (2-30 seconds)</div>
+                </div>
+                
+                <div className="mb-3">
+                  <label className="form-label">Ticker Speed (px/s)</label>
+                  <input 
+                    type="number" 
+                    className="form-control" 
+                    value={achievementSettings.tickerSpeed} 
+                    onChange={e=>updateAchievementSetting('tickerSpeed', parseInt(e.target.value||'30',10))}
+                    min="10"
+                    max="100"
+                    step="5"
+                  />
+                  <div className="form-text">Speed of scrolling ticker (10-100 pixels per second)</div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-3 p-3 bg-dark rounded">
+              <h6 className="small mb-2">📺 Overlay URLs</h6>
+              <div className="small text-secondary">
+                <div><strong>Achievement Progress:</strong> <code>http://localhost:5173/overlay/achievements?style=progress&poll=5000</code></div>
+                <div><strong>Achievement Grid:</strong> <code>http://localhost:5173/overlay/achievements?style=grid&compact=1</code></div>
+                <div><strong>Recent Achievements:</strong> <code>http://localhost:5173/overlay/achievements?style=recent&max=10</code></div>
+              </div>
             </div>
           </div>
         </div>

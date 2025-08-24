@@ -1,6 +1,9 @@
 import React from 'react'
+import { Link } from 'react-router-dom'
 import { useGame } from '../context/GameContext.jsx'
-import { startCurrentTimer, pauseCurrentTimer, resetCurrentTimer, resetPSFestTimer, getTimerStatus } from '../services/storage.js'
+import { useAchievements } from '../context/AchievementContext.jsx'
+import { startCurrentTimer, pauseCurrentTimer, resetCurrentTimer, resetPSFestTimer, getTimerStatus, getTimerData } from '../services/storage.js'
+import * as RA from '../services/retroachievements.js'
 
 // Proxy cover helper (uses disk cache via server if available)
 const proxyImage = (url) => {
@@ -11,8 +14,20 @@ const proxyImage = (url) => {
 
 export default function Current() {
   const { state, dispatch } = useGame()
+  const { 
+    state: achievementState, 
+    loadGameAchievements, 
+    isConfigured: isAchievementsConfigured 
+  } = useAchievements()
   const game = state.games.find(g => g.id === state.currentGameId) || null
   const [running, setRunning] = React.useState(false)
+  const [timerData, setTimerData] = React.useState({
+    running: false,
+    currentTime: 0,
+    totalTime: 0,
+    currentFormatted: '0:00:00',
+    totalFormatted: '0:00:00'
+  })
   const [form, setForm] = React.useState(() => ({
     status: game?.status || 'Not Started',
     rating: game?.rating || '',
@@ -34,17 +49,25 @@ export default function Current() {
     })
   }, [game?.id])
 
-  // Poll timer running status for UI
+  // Poll timer data for UI
   React.useEffect(() => {
     let id
     const tick = async () => {
-      const s = await getTimerStatus()
-      setRunning(!!s.running)
+      const data = await getTimerData()
+      setRunning(!!data.running)
+      setTimerData(data)
     }
     tick()
-    id = setInterval(tick, 2000)
+    id = setInterval(tick, 1000) // Update every second for live timer
     return () => clearInterval(id)
   }, [])
+
+  // Load achievements when current game changes
+  React.useEffect(() => {
+    if (game && RA.hasRetroAchievementsSupport(game) && isAchievementsConfigured) {
+      loadGameAchievements(game.id)
+    }
+  }, [game, isAchievementsConfigured, loadGameAchievements])
 
   const update = (patch) => {
     if (!game) return
@@ -103,6 +126,21 @@ export default function Current() {
             <button className="btn btn-sm btn-outline-light" onClick={()=>dispatch({ type: 'SET_CURRENT', id: null })}>Clear Current</button>
             <span className="text-secondary ms-2" style={{fontSize: '0.9rem'}}>Timer: {running ? 'Running' : 'Paused'}</span>
           </div>
+          
+          {/* Timer Display */}
+          <div className="mt-3 p-3 bg-dark rounded">
+            <div className="row text-center">
+              <div className="col-6">
+                <div className="h4 text-primary mb-1">{timerData.currentFormatted}</div>
+                <div className="small text-secondary">Current Session</div>
+              </div>
+              <div className="col-6">
+                <div className="h4 text-info mb-1">{timerData.totalFormatted}</div>
+                <div className="small text-secondary">Total PSFest Time</div>
+              </div>
+            </div>
+          </div>
+          
           <div className="d-flex gap-2 flex-wrap mt-2">
             {running ? (
               <button className="btn btn-sm btn-outline-warning" onClick={pauseCurrentTimer}>Pause Timer</button>
@@ -114,6 +152,125 @@ export default function Current() {
           </div>
         </div>
       </div>
+
+      {/* Achievement Progress Section */}
+      {game && RA.hasRetroAchievementsSupport(game) && isAchievementsConfigured && (
+        <div className="card bg-panel border border-secondary rounded-4 p-3 mb-3">
+          <h3 className="h6 text-light mb-3">🏆 RetroAchievements Progress</h3>
+          {achievementState.loading.gameAchievements ? (
+            <div className="text-center py-3">
+              <div className="spinner-border spinner-border-sm text-primary me-2" role="status">
+                <span className="visually-hidden">Loading...</span>
+              </div>
+              Loading achievements...
+            </div>
+          ) : achievementState.currentGameAchievements.length > 0 ? (
+            <>
+              {/* Progress Stats */}
+              <div className="row g-3 mb-4">
+                <div className="col-sm-6 col-md-3">
+                  <div className="text-center">
+                    <div className="h4 text-brand mb-0">
+                      {achievementState.currentGameAchievements.filter(a => a.isEarned).length}
+                    </div>
+                    <div className="small text-secondary">Earned</div>
+                  </div>
+                </div>
+                <div className="col-sm-6 col-md-3">
+                  <div className="text-center">
+                    <div className="h4 text-light mb-0">
+                      {achievementState.currentGameAchievements.length}
+                    </div>
+                    <div className="small text-secondary">Total</div>
+                  </div>
+                </div>
+                <div className="col-sm-6 col-md-3">
+                  <div className="text-center">
+                    <div className="h4 text-accent mb-0">
+                      {achievementState.currentGameAchievements.filter(a => a.isEarned).reduce((sum, a) => sum + a.points, 0)}
+                    </div>
+                    <div className="small text-secondary">Points</div>
+                  </div>
+                </div>
+                <div className="col-sm-6 col-md-3">
+                  <div className="text-center">
+                    <div className="h4 text-success mb-0">
+                      {Math.round((achievementState.currentGameAchievements.filter(a => a.isEarned).length / Math.max(1, achievementState.currentGameAchievements.length)) * 100)}%
+                    </div>
+                    <div className="small text-secondary">Complete</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="progress mb-3" style={{ height: '12px' }}>
+                <div 
+                  className="progress-bar bg-gradient" 
+                  style={{ 
+                    width: `${Math.round((achievementState.currentGameAchievements.filter(a => a.isEarned).length / Math.max(1, achievementState.currentGameAchievements.length)) * 100)}%`,
+                    background: 'linear-gradient(90deg, var(--brand), var(--accent))'
+                  }}
+                ></div>
+              </div>
+
+              {/* Recent Achievements */}
+              {achievementState.currentGameAchievements.filter(a => a.isEarned).length > 0 && (
+                <div>
+                  <h6 className="small text-light mb-2">Recent Achievements</h6>
+                  <div className="row g-2">
+                    {achievementState.currentGameAchievements
+                      .filter(a => a.isEarned)
+                      .sort((a, b) => new Date(b.dateEarned) - new Date(a.dateEarned))
+                      .slice(0, 4)
+                      .map(achievement => (
+                        <div key={achievement.id} className="col-sm-6 col-lg-3">
+                          <div className="achievement-mini p-2 rounded bg-dark border border-secondary">
+                            <div className="d-flex align-items-center gap-2">
+                              <img 
+                                src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`}
+                                alt={achievement.title}
+                                width="32"
+                                height="32"
+                                className="rounded"
+                              />
+                              <div className="min-w-0 flex-grow-1">
+                                <div className="small fw-semibold text-light truncate-1" title={achievement.title}>
+                                  {achievement.title}
+                                </div>
+                                <div className="text-accent" style={{ fontSize: '0.75rem' }}>
+                                  {achievement.points} pts
+                                  {achievement.isEarnedHardcore && (
+                                    <span className="ms-1 text-warning">👑</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    }
+                  </div>
+                </div>
+              )}
+
+              {/* Link to full achievement gallery */}
+              <div className="text-center mt-3">
+                <Link 
+                  to="/achievements?current=true" 
+                  className="btn btn-outline-primary btn-sm"
+                >
+                  View All Achievements
+                </Link>
+              </div>
+            </>
+          ) : (
+            <div className="text-center text-secondary py-3">
+              <div>No achievements loaded</div>
+              <div className="small">Check your RetroAchievements configuration</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Editable Details */}
       <div className="card bg-panel border border-secondary rounded-4 p-3">

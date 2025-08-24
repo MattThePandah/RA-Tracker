@@ -1,6 +1,7 @@
 import React from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useGame } from './context/GameContext.jsx'
+import AchievementNotificationManager from './components/AchievementNotificationManager.jsx'
 
 export default function App() {
   const { state } = useGame()
@@ -14,6 +15,7 @@ export default function App() {
         <ul className="navbar-nav me-auto mb-2 mb-lg-0">
           <li className="nav-item"><Link className={`nav-link ${active('/current')}`} to="/current">Current</Link></li>
           <li className="nav-item"><Link className={`nav-link ${active('/library')}`} to="/library">Library</Link></li>
+          <li className="nav-item"><Link className={`nav-link ${active('/achievements')}`} to="/achievements">Achievements</Link></li>
           <li className="nav-item"><Link className={`nav-link ${active('/select')}`} to="/select">Select</Link></li>
           <li className="nav-item"><Link className={`nav-link ${active('/import-export')}`} to="/import-export">Import/Export</Link></li>
           <li className="nav-item"><Link className={`nav-link ${active('/settings')}`} to="/settings">Settings</Link></li>
@@ -30,6 +32,7 @@ export default function App() {
       <footer className="bg-black border-top border-secondary text-center p-2 small opacity-75">
         PSFest • RetroAchievements Tracker
       </footer>
+      <AchievementNotificationManager />
     </div>
   )
 }

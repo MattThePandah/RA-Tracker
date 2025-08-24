@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useGame } from '../context/GameContext.jsx'
+import * as Cache from '../services/cache.js'
 
 export default function GameDetailModal({ game, onClose }) {
   const { dispatch } = useGame()
+  const fileInputRef = useRef(null)
+  const [currentCover, setCurrentCover] = useState(null)
+  const [isUploadingCover, setIsUploadingCover] = useState(false)
   const [formData, setFormData] = useState({
     status: '',
     rating: '',
@@ -11,6 +15,47 @@ export default function GameDetailModal({ game, onClose }) {
     date_finished: '',
     notes: ''
   })
+
+  // Load current cover
+  useEffect(() => {
+    const loadCover = async () => {
+      if (!game?.image_url) {
+        setCurrentCover(null)
+        return
+      }
+
+      try {
+        // Try IndexedDB cache first
+        const cachedBlob = await Cache.getCover(game.image_url)
+        if (cachedBlob) {
+          setCurrentCover(URL.createObjectURL(cachedBlob))
+          return
+        }
+
+        // Try local hashed file
+        if (game.image_url.startsWith('https://')) {
+          const urlBuffer = new TextEncoder().encode(game.image_url)
+          const hashBuffer = await crypto.subtle.digest('SHA-1', urlBuffer)
+          const hashArray = Array.from(new Uint8Array(hashBuffer))
+          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+          
+          const response = await fetch(`/covers/${hashHex}.jpg`)
+          if (response.ok) {
+            setCurrentCover(`/covers/${hashHex}.jpg`)
+            return
+          }
+        }
+
+        // Fallback to direct URL
+        setCurrentCover(game.image_url)
+      } catch (error) {
+        console.warn('Failed to load cover:', error)
+        setCurrentCover(null)
+      }
+    }
+
+    loadCover()
+  }, [game?.image_url])
 
   useEffect(() => {
     if (game) {
@@ -72,6 +117,77 @@ export default function GameDetailModal({ game, onClose }) {
     dispatch({ type: 'UPDATE_GAME', game: updatedGame })
   }
 
+  const handleCoverUpload = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file.')
+      return
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be smaller than 5MB.')
+      return
+    }
+
+    setIsUploadingCover(true)
+
+    try {
+      // Create a unique path for this custom cover
+      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+      const customPath = `custom-covers/${game.id}.${fileExt}`
+      
+      // Save to IndexedDB cache
+      await Cache.saveCover(customPath, file)
+      
+      // Update game with new image_url
+      const updatedGame = {
+        ...game,
+        image_url: customPath
+      }
+      dispatch({ type: 'UPDATE_GAME', game: updatedGame })
+      
+      // Update current cover display
+      setCurrentCover(URL.createObjectURL(file))
+      
+    } catch (error) {
+      console.error('Failed to upload cover:', error)
+      alert('Failed to upload cover. Please try again.')
+    } finally {
+      setIsUploadingCover(false)
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const handleRemoveCover = async () => {
+    if (!confirm('Remove the current cover?')) return
+
+    try {
+      // Remove from cache if it's a custom cover
+      if (game.image_url?.startsWith('custom-covers/')) {
+        await Cache.deleteCover(game.image_url)
+      }
+      
+      // Update game to remove cover
+      const updatedGame = {
+        ...game,
+        image_url: null
+      }
+      dispatch({ type: 'UPDATE_GAME', game: updatedGame })
+      
+      setCurrentCover(null)
+    } catch (error) {
+      console.error('Failed to remove cover:', error)
+      alert('Failed to remove cover. Please try again.')
+    }
+  }
+
   const handleResetProgress = () => {
     if (confirm('Reset all progress for this game?')) {
       const updatedGame = {
@@ -95,20 +211,91 @@ export default function GameDetailModal({ game, onClose }) {
     }
   }
 
+  // Cleanup object URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (currentCover && currentCover.startsWith('blob:')) {
+        URL.revokeObjectURL(currentCover)
+      }
+    }
+  }, [currentCover])
+
   if (!game) return null
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-dialog" onClick={e => e.stopPropagation()}>
+      <div className="modal-dialog modal-lg" onClick={e => e.stopPropagation()}>
         <div className="modal-content">
           <div className="modal-header">
-            <h5 className="modal-title">{game.title}</h5>
+            <h5 className="modal-title text-truncate me-3">{game.title}</h5>
             <button type="button" className="btn-close" onClick={onClose}>&times;</button>
           </div>
           
           <div className="modal-body">
             <div className="row">
-              <div className="col-md-6">
+              <div className="col-lg-4 mb-4">
+                {/* Cover Section */}
+                <div className="cover-upload-section">
+                  <h6 className="text-secondary mb-3">Game Cover</h6>
+                  <div className="cover-preview-container mb-3">
+                    {currentCover ? (
+                      <img 
+                        src={currentCover} 
+                        alt="Game cover" 
+                        className="cover-preview img-fluid rounded"
+                        style={{ maxHeight: '300px', width: '100%', objectFit: 'cover' }}
+                      />
+                    ) : (
+                      <div className="cover-placeholder d-flex align-items-center justify-content-center bg-secondary rounded" 
+                           style={{ height: '200px' }}>
+                        <i className="bi bi-controller text-muted" style={{ fontSize: '3rem' }}></i>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="d-flex gap-2 flex-wrap">
+                    <button 
+                      type="button" 
+                      className="btn btn-outline-primary btn-sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploadingCover}
+                    >
+                      {isUploadingCover ? (
+                        <><span className="spinner-border spinner-border-sm me-2"></span>Uploading...</>
+                      ) : (
+                        <><i className="bi bi-upload me-2"></i>{currentCover ? 'Replace' : 'Upload'} Cover</>
+                      )}
+                    </button>
+                    
+                    {currentCover && (
+                      <button 
+                        type="button" 
+                        className="btn btn-outline-danger btn-sm"
+                        onClick={handleRemoveCover}
+                        disabled={isUploadingCover}
+                      >
+                        <i className="bi bi-trash me-2"></i>Remove
+                      </button>
+                    )}
+                  </div>
+                  
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleCoverUpload}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                  />
+                  
+                  <small className="text-muted d-block mt-2">
+                    Supports JPG, PNG, WebP. Max 5MB.
+                  </small>
+                </div>
+              </div>
+              
+              <div className="col-lg-8">
+                <div className="row">
+                  <div className="col-md-6">
                 <div className="mb-3">
                   <label className="form-label">Console</label>
                   <input type="text" className="form-control" value={game.console} readOnly />
@@ -150,9 +337,9 @@ export default function GameDetailModal({ game, onClose }) {
                     onChange={e => handleFieldChange('completion_time', e.target.value)}
                   />
                 </div>
-              </div>
-              
-              <div className="col-md-6">
+                  </div>
+                  
+                  <div className="col-md-6">
                 <div className="mb-3">
                   <label className="form-label">Date Started</label>
                   <input 
@@ -182,39 +369,43 @@ export default function GameDetailModal({ game, onClose }) {
                     onChange={e => handleFieldChange('notes', e.target.value)}
                   />
                 </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
           
           <div className="modal-footer">
-            <button 
-              type="button" 
-              className="btn btn-primary"
-              onClick={handleSetCurrent}
-            >
-              Set as Current
-            </button>
-            <button 
-              type="button" 
-              className="btn btn-success"
-              onClick={handleMarkCompleted}
-            >
-              Mark Completed
-            </button>
-            <button 
-              type="button" 
-              className="btn btn-danger"
-              onClick={handleResetProgress}
-            >
-              Reset Progress
-            </button>
-            <button 
-              type="button" 
-              className="btn btn-secondary"
-              onClick={onClose}
-            >
-              Close
-            </button>
+            <div className="d-flex gap-2 flex-wrap">
+              <button 
+                type="button" 
+                className="btn btn-primary"
+                onClick={handleSetCurrent}
+              >
+                <i className="bi bi-play-circle me-2"></i>Set as Current
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-success"
+                onClick={handleMarkCompleted}
+              >
+                <i className="bi bi-check-circle me-2"></i>Mark Completed
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-outline-danger"
+                onClick={handleResetProgress}
+              >
+                <i className="bi bi-arrow-counterclockwise me-2"></i>Reset Progress
+              </button>
+              <button 
+                type="button" 
+                className="btn btn-secondary ms-auto"
+                onClick={onClose}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       </div>

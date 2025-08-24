@@ -80,3 +80,196 @@ export async function resolveDefaultPSConsoleIds({ apiKey }) {
     return fallback
   }
 }
+
+// Achievement-specific API functions
+
+export async function getGameInfoAndUserProgress({ apiKey, username, gameId, includeAwards = false }) {
+  if (!apiKey || !username || !gameId) {
+    throw new Error('apiKey, username, and gameId are required')
+  }
+  
+  const params = new URLSearchParams()
+  params.set('y', apiKey)
+  params.set('u', username)
+  params.set('g', String(gameId))
+  if (includeAwards) params.set('a', '1')
+  
+  const url = `${RA_BASE}/API_GetGameInfoAndUserProgress.php?${params.toString()}`
+  
+  try {
+    const { data } = await axios.get(url)
+    return {
+      gameInfo: {
+        id: data.ID,
+        title: data.Title,
+        console: data.ConsoleName,
+        imageIcon: data.ImageIcon,
+        imageTitle: data.ImageTitle,
+        imageInGame: data.ImageInGame,
+        imageBoxArt: data.ImageBoxArt,
+        publisher: data.Publisher,
+        developer: data.Developer,
+        genre: data.Genre,
+        released: data.Released
+      },
+      achievements: Object.values(data.Achievements || {}).map(achievement => ({
+        id: achievement.ID,
+        title: achievement.Title,
+        description: achievement.Description,
+        points: achievement.Points,
+        badgeName: achievement.BadgeName,
+        displayOrder: achievement.DisplayOrder,
+        dateEarned: achievement.DateEarned,
+        dateEarnedHardcore: achievement.DateEarnedHardcore,
+        isEarned: !!achievement.DateEarned,
+        isEarnedHardcore: !!achievement.DateEarnedHardcore
+      })),
+      userProgress: {
+        numPossibleAchievements: data.NumPossibleAchievements,
+        possibleScore: data.PossibleScore,
+        numAchieved: data.NumAchieved,
+        numAchievedHardcore: data.NumAchievedHardcore,
+        scoreAchieved: data.ScoreAchieved,
+        scoreAchievedHardcore: data.ScoreAchievedHardcore,
+        completionPercentage: data.NumPossibleAchievements > 0 
+          ? Math.round((data.NumAchieved / data.NumPossibleAchievements) * 100) 
+          : 0,
+        completionPercentageHardcore: data.NumPossibleAchievements > 0 
+          ? Math.round((data.NumAchievedHardcore / data.NumPossibleAchievements) * 100) 
+          : 0
+      }
+    }
+  } catch (error) {
+    console.error('Failed to fetch game info and user progress:', error)
+    throw error
+  }
+}
+
+export async function getUserProgress({ apiKey, username, gameIds }) {
+  if (!apiKey || !username || !gameIds?.length) {
+    throw new Error('apiKey, username, and gameIds are required')
+  }
+  
+  const params = new URLSearchParams()
+  params.set('y', apiKey)
+  params.set('u', username)
+  params.set('i', gameIds.join(','))
+  
+  const url = `${RA_BASE}/API_GetUserProgress.php?${params.toString()}`
+  
+  try {
+    const { data } = await axios.get(url)
+    return Object.entries(data).map(([gameId, progress]) => ({
+      gameId: parseInt(gameId),
+      numPossibleAchievements: progress.NumPossibleAchievements,
+      possibleScore: progress.PossibleScore,
+      numAchieved: progress.NumAchieved,
+      scoreAchieved: progress.ScoreAchieved,
+      numAchievedHardcore: progress.NumAchievedHardcore,
+      scoreAchievedHardcore: progress.ScoreAchievedHardcore,
+      completionPercentage: progress.NumPossibleAchievements > 0 
+        ? Math.round((progress.NumAchieved / progress.NumPossibleAchievements) * 100) 
+        : 0,
+      completionPercentageHardcore: progress.NumPossibleAchievements > 0 
+        ? Math.round((progress.NumAchievedHardcore / progress.NumPossibleAchievements) * 100) 
+        : 0
+    }))
+  } catch (error) {
+    console.error('Failed to fetch user progress:', error)
+    throw error
+  }
+}
+
+export async function getUserCompletionProgress({ apiKey, username, count = 100, offset = 0 }) {
+  if (!apiKey || !username) {
+    throw new Error('apiKey and username are required')
+  }
+  
+  const params = new URLSearchParams()
+  params.set('y', apiKey)
+  params.set('u', username)
+  params.set('c', String(count))
+  params.set('o', String(offset))
+  
+  const url = `${RA_BASE}/API_GetUserCompletionProgress.php?${params.toString()}`
+  
+  try {
+    const { data } = await axios.get(url)
+    return {
+      count: data.Count,
+      total: data.Total,
+      results: data.Results.map(result => ({
+        gameId: result.GameID,
+        title: result.Title,
+        imageIcon: result.ImageIcon,
+        consoleId: result.ConsoleID,
+        consoleName: result.ConsoleName,
+        maxPossible: result.MaxPossible,
+        numAwarded: result.NumAwarded,
+        numAwardedHardcore: result.NumAwardedHardcore,
+        mostRecentAwardedDate: result.MostRecentAwardedDate,
+        highestAwardKind: result.HighestAwardKind,
+        highestAwardDate: result.HighestAwardDate,
+        completionPercentage: result.MaxPossible > 0 
+          ? Math.round((result.NumAwarded / result.MaxPossible) * 100) 
+          : 0,
+        completionPercentageHardcore: result.MaxPossible > 0 
+          ? Math.round((result.NumAwardedHardcore / result.MaxPossible) * 100) 
+          : 0
+      }))
+    }
+  } catch (error) {
+    console.error('Failed to fetch user completion progress:', error)
+    throw error
+  }
+}
+
+export async function getRecentAchievements({ apiKey, username, count = 50 }) {
+  if (!apiKey || !username) {
+    throw new Error('apiKey and username are required')
+  }
+  
+  const params = new URLSearchParams()
+  params.set('y', apiKey)
+  params.set('u', username)
+  params.set('c', String(count))
+  
+  const url = `${RA_BASE}/API_GetUserRecentAchievements.php?${params.toString()}`
+  
+  try {
+    const { data } = await axios.get(url)
+    return (data || []).map(achievement => ({
+      date: achievement.Date,
+      hardcoreMode: achievement.HardcoreMode,
+      achievementId: achievement.AchievementID,
+      title: achievement.Title,
+      description: achievement.Description,
+      badgeName: achievement.BadgeName,
+      points: achievement.Points,
+      author: achievement.Author,
+      gameTitle: achievement.GameTitle,
+      gameIcon: achievement.GameIcon,
+      gameId: achievement.GameID,
+      consoleName: achievement.ConsoleName,
+      cumulScore: achievement.CumulScore
+    }))
+  } catch (error) {
+    console.error('Failed to fetch recent achievements:', error)
+    throw error
+  }
+}
+
+// Helper function to extract game ID from internal game ID format (ra-consoleId-gameId)
+export function extractGameIdFromInternalId(internalId) {
+  if (!internalId || typeof internalId !== 'string') return null
+  const parts = internalId.split('-')
+  if (parts.length >= 3 && parts[0] === 'ra') {
+    return parseInt(parts[2])
+  }
+  return null
+}
+
+// Helper function to check if a game has RetroAchievements support
+export function hasRetroAchievementsSupport(game) {
+  return game?.id?.startsWith('ra-') || false
+}

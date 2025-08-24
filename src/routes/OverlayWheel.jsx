@@ -139,17 +139,7 @@ export default function OverlayWheel() {
     ctx.stroke()
     ctx.restore()
 
-    // pointer (top)
-    ctx.fillStyle = '#ff3b3b'
-    ctx.strokeStyle = '#000'
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.moveTo(w/2, 6)
-    ctx.lineTo(w/2 + 18, 42)
-    ctx.lineTo(w/2 - 18, 42)
-    ctx.closePath()
-    ctx.fill()
-    ctx.stroke()
+    // Canvas pointer removed - using CSS pointer instead
   }, [sample])
 
   React.useEffect(() => { draw() }, [sample, draw])

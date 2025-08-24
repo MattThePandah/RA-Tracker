@@ -78,6 +78,7 @@ const DATA_DIR = path.join(process.cwd(), 'server', 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
 const TIMERS_FILE = path.join(DATA_DIR, 'timers.json')
 const CURRENT_FILE = path.join(DATA_DIR, 'overlay-current.json')
+const STATS_FILE = path.join(DATA_DIR, 'overlay-stats.json')
 
 function loadJSON(file, fallback) {
   try {
@@ -285,7 +286,7 @@ app.post('/overlay/wheel-state', (req, res) => {
 })
 
 // Lightweight overlay stats (counts only) to avoid big payloads
-let overlayStats = { total: 0, completed: 0, percent: 0, updatedAt: 0 }
+let overlayStats = loadJSON(STATS_FILE, { total: 0, completed: 0, percent: 0, updatedAt: 0 })
 app.get('/overlay/stats', (req, res) => {
   res.json(overlayStats)
 })
@@ -294,6 +295,7 @@ app.post('/overlay/stats', (req, res) => {
   const completed = Number(req.body?.completed) || 0
   const percent = total ? Math.round((completed / total) * 100) : 0
   overlayStats = { total, completed, percent, updatedAt: Date.now() }
+  saveJSON(STATS_FILE, overlayStats)
   res.json({ ok: true, updatedAt: overlayStats.updatedAt })
 })
 

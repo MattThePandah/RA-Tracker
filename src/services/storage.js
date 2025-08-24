@@ -50,8 +50,10 @@ export function bootstrap() {
   // Publish lightweight stats for overlays
   try {
     const total = games.length
-    const completed = games.filter(g => g.status === 'Completed').length
-    postOverlayStats({ total, completed })
+    if (total > 0) {
+      const completed = games.filter(g => g.status === 'Completed').length
+      postOverlayStats({ total, completed })
+    }
   } catch {}
   // Publish current game (if any) so OBS overlay sees it even on fresh loads
   try {
@@ -85,8 +87,10 @@ export function saveGames(games) {
   // Do NOT post full games to overlay to avoid large payloads
   try {
     const total = games.length
-    const completed = games.filter(g => g.status === 'Completed').length
-    postOverlayStats({ total, completed })
+    if (total > 0) {
+      const completed = games.filter(g => g.status === 'Completed').length
+      postOverlayStats({ total, completed })
+    }
   } catch {}
 }
 
@@ -201,4 +205,20 @@ export async function getTimerStatus() {
     const j = await r.json()
     return { running: !!j.running }
   } catch { return { running: false } }
+}
+
+export async function getTimerData() {
+  try {
+    const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+    const r = await fetch(`${base}/overlay/timers`)
+    if (!r.ok) return { running: false, currentTime: 0, totalTime: 0 }
+    const j = await r.json()
+    return {
+      running: !!j.running,
+      currentTime: j.currentTime || 0,
+      totalTime: j.totalTime || 0,
+      currentFormatted: j.currentFormatted || '0:00:00',
+      totalFormatted: j.totalFormatted || '0:00:00'
+    }
+  } catch { return { running: false, currentTime: 0, totalTime: 0, currentFormatted: '0:00:00', totalFormatted: '0:00:00' } }
 }
