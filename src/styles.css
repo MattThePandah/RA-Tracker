@@ -219,6 +219,61 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
   position: relative;
 }
 
+/* RA Announcement Panel (slides down, bar remains visible) */
+.ra-announce-wrap {
+  position: absolute;
+  top: 8px; left: 12px; right: 12px;
+  z-index: 10;
+  display: flex; justify-content: center; pointer-events: none;
+}
+
+.ra-announce {
+  --size: var(--ra-announce-size, 116px);
+  display: flex; gap: 14px; align-items: center;
+  max-width: 880px; width: 100%;
+  padding: 10px 14px; border-radius: 16px;
+  background: rgba(0,0,0,0.65);
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 12px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+  transform: translateY(-140%);
+  opacity: 0;
+  transition: transform 400ms ease, opacity 400ms ease;
+  pointer-events: auto;
+}
+
+.ra-announce.in {
+  transform: translateY(0%);
+  opacity: 1;
+}
+
+.ra-announce-badge { position: relative; width: var(--size); height: var(--size); flex: 0 0 var(--size); }
+.ra-announce-badge img { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; display: block; }
+.ra-announce-hc {
+  position: absolute; top: -6px; right: -6px; width: 28px; height: 28px;
+  border-radius: 50%; display: grid; place-items: center; font-weight: 900;
+  background: linear-gradient(45deg, #ff6b35, #f7931e); color: #fff; font-size: 12px;
+  box-shadow: 0 0 12px rgba(255,107,53,0.6);
+}
+.ra-announce-info { flex: 1; min-width: 0; }
+.ra-announce-title {
+  font-weight: 900;
+  /* Scales with emblem size; keeps readable in OBS */
+  font-size: clamp(24px, calc(var(--size) * 0.28), 40px);
+  color: #fff;
+  line-height: 1.15;
+  margin-bottom: 6px;
+  text-shadow: 0 3px 6px rgba(0,0,0,0.65);
+}
+.ra-announce-desc {
+  color: #ffffff;
+  /* Larger default; scale with emblem size */
+  font-size: clamp(18px, calc(var(--size) * 0.22), 30px);
+  line-height: 1.35;
+  text-shadow: 0 2px 5px rgba(0,0,0,0.7);
+  word-break: break-word;
+}
+.ra-announce-debug { margin-top: 6px; font-size: 12px; opacity: 0.8; }
+
 .ref-card { 
   padding: 32px; 
   border-radius: 28px; 
@@ -2513,4 +2568,156 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
   color: #ff6b35;
   font-weight: 700;
   font-size: 0.9rem;
+}
+
+/* Compact RA badge strip for reference layout */
+.badge-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  flex-wrap: wrap;
+}
+
+.badge-strip.scroll {
+  mask-image: linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%);
+}
+
+.badge-strip.scroll,
+.badge-strip.ticker {
+  position: relative;
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+
+.badge-strip.ticker::before,
+.badge-strip.ticker::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; width: 18px; z-index: 1;
+}
+.badge-strip.ticker::before { left: 0; background: linear-gradient(to right, rgba(0,0,0,0.6), rgba(0,0,0,0)); }
+.badge-strip.ticker::after { right: 0; background: linear-gradient(to left, rgba(0,0,0,0.6), rgba(0,0,0,0)); }
+
+.badge-strip.ticker > * {
+  animation: ra-ticker var(--ra-ticker-speed, 30s) linear infinite;
+}
+
+@keyframes ra-ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.badge-mini {
+  --size: var(--ra-badge-size, 28px);
+  width: var(--size);
+  height: var(--size);
+  border-radius: 6px;
+  position: relative;
+  flex: 0 0 var(--size);
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+}
+
+.badge-mini img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.badge-mini.hardcore .hc-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px; height: 10px;
+  background: linear-gradient(45deg, #ff6b35, #f7931e);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(255,107,53,0.6);
+}
+
+.badge-mini.locked {
+  opacity: 0.55;
+  filter: grayscale(0.8);
+}
+
+.badge-more {
+  --size: var(--ra-badge-size, 28px);
+  min-width: calc(var(--size) + 8px);
+  height: var(--size);
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: calc(var(--size) * 0.32);
+  line-height: 1;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+}
+
+.ra-debug {
+  font-size: 11px;
+  line-height: 1.25;
+  color: rgba(255,255,255,0.9);
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 8px;
+  padding: 6px 8px;
+  display: inline-block;
+}
+.ra-debug-row { opacity: 0.9; }
+.ra-announce-inline {
+  --size: var(--ra-announce-size, 116px);
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: max-height 450ms ease, opacity 350ms ease, transform 350ms ease;
+  will-change: max-height, opacity, transform;
+}
+.ra-announce-inline.open {
+  max-height: calc(var(--size) + 180px);
+  opacity: 1;
+  transform: translateY(0);
+}
+.ra-announce-card { transition: transform 350ms ease, opacity 350ms ease; will-change: transform, opacity; }
+.ra-announce-inline .ra-announce-card { transform: translateY(-12px); opacity: 0; }
+.ra-announce-inline.open .ra-announce-card { transform: translateY(0); opacity: 1; }
+.ra-announce-card {
+  display: flex; gap: 14px; align-items: center;
+  padding: 34px 14px 10px; /* add space for header pill */
+  border-radius: 16px; margin-top: 8px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.18);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
+  position: relative;
+}
+.ra-announce-heading {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: 10px; align-items: baseline;
+  z-index: 2;
+}
+.ra-announce-text {
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 1.4rem;
+  letter-spacing: 0.2px;
+  text-shadow: 0 3px 6px rgba(0,0,0,0.8);
+}
+.ra-announce-hc-text {
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 1rem;
+  opacity: 0.9;
 }

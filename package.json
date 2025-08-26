@@ -10,7 +10,13 @@
     "server": "node server/index.js",
     "dev-all": "concurrently -k -n VITE,API \"npm:dev\" \"npm:server\"",
     "prefetch:covers": "node server/prefetch-covers.js games.with-covers.json",
-    "resolve:covers": "node server/resolve-covers.js games.json games.with-covers.json"
+    "resolve:covers": "node server/resolve-covers.js games.json games.with-covers.json 750",
+    "update:new": "node server/update-new-games.js",
+    "update:new:example": "node server/update-new-games.js old-games.json games.json games.with-covers.json 1 750 8",
+    "build:library": "node server/build-library.js games.json games.with-covers.json 1 750 8",
+    "build:library:inplace": "node server/build-library.js games.with-covers.json games.with-covers.json 1 750 8",
+    "build:library": "node server/build-library.js games.json games.with-covers.json 1 750 8",
+    "build:library:inplace": "node server/build-library.js games.with-covers.json games.with-covers.json 1 750 8"
   },
   "dependencies": {
     "axios": "^1.7.7",

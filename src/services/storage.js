@@ -63,7 +63,7 @@ export function bootstrap() {
       if (g) {
         postOverlayCurrent({
           id: g.id, title: g.title, console: g.console, image_url: g.image_url,
-          release_year: g.release_year, status: g.status
+          release_year: g.release_year, publisher: g.publisher, status: g.status
         })
         // Also ensure timers know which game is current
         syncTimersToServer()
@@ -130,6 +130,7 @@ export function setCurrentGameId(id) {
         console: g.console,
         image_url: g.image_url,
         release_year: g.release_year,
+        publisher: g.publisher,
         status: g.status
       })
     } else {

@@ -2,33 +2,37 @@
 
 **✨ Redesigned with modern, stream-friendly styling**
 
-For use in OBS Browser Source widgets:
+For use in OBS Browser Source widgets (Vite default port 5173):
 
 ## 🎮 Main Game Display (Modern Design + Integrated Timers)
-- **Modern Card Style with Timers**: http://localhost:5174/overlay/main
-- **Modern Lower Third**: http://localhost:5174/overlay/main?style=lowerthird  
-- **Transparent Background**: http://localhost:5174/overlay/main?clean=1
-- **No Cover Image**: http://localhost:5174/overlay/main?showcover=0
+- Modern Card: http://localhost:5173/overlay/main
+- Lower Third: http://localhost:5173/overlay/main?style=lowerthird
+- Reference Card: http://localhost:5173/overlay/main?style=reference
+- Options:
+  - `&clean=1` (transparent background)
+  - `&showcover=0` (hide cover)
+  - `&showyear=0` and/or `&showpublisher=0` (toggle year/publisher)
+  - `&poll=5000` (update interval in ms)
 
 ## 📊 Progress Stats (Modern Design)
-- **Modern Progress Display**: http://localhost:5174/overlay/stats
-- **Transparent Background**: http://localhost:5174/overlay/stats?clean=1
-- **Faster Updates**: http://localhost:5174/overlay/stats?poll=2000
-- **Compact Bar**: http://localhost:5174/overlay/stats?style=compact  (or `?compact=1`)
+- http://localhost:5173/overlay/stats
+- http://localhost:5173/overlay/stats?clean=1 (transparent)
+- http://localhost:5173/overlay/stats?poll=2000 (faster updates)
+- http://localhost:5173/overlay/stats?style=compact (or `?compact=1`)
   - Optional: `&title=Your%20Text` and `&width=300`
 
 ## 🎡 Game Wheel/Roulette (Modern Design)
-- **Modern Wheel**: http://localhost:5174/overlay/wheel
-- **Transparent Background**: http://localhost:5174/overlay/wheel?clean=1
-- **Hide Game Strip**: http://localhost:5174/overlay/wheel?strip=0
-- **Custom Title**: http://localhost:5174/overlay/wheel?title=Game%20Selection
+- http://localhost:5173/overlay/wheel
+- http://localhost:5173/overlay/wheel?clean=1
+- http://localhost:5173/overlay/wheel?strip=0
+- http://localhost:5173/overlay/wheel?title=Game%20Selection
 
-## 🏆 **NEW: Achievement Overlays (RetroAchievements)**
-- **Achievement Progress**: http://localhost:5174/overlay/achievements?style=progress&poll=5000
-- **Achievement Grid**: http://localhost:5174/overlay/achievements?style=grid&compact=1&max=20
-- **Recent Achievements**: http://localhost:5174/overlay/achievements?style=recent&max=10
-- **Transparent Background**: http://localhost:5174/overlay/achievements?clean=1
-- **Show Hardcore Mode**: http://localhost:5174/overlay/achievements?hardcore=1
+## 🏆 Achievement Overlays (RetroAchievements)
+- http://localhost:5173/overlay/achievements?style=progress&poll=5000
+- http://localhost:5173/overlay/achievements?style=grid&compact=1&max=20
+- http://localhost:5173/overlay/achievements?style=recent&max=10
+- http://localhost:5173/overlay/achievements?clean=1
+- http://localhost:5173/overlay/achievements?hardcore=1
 
 ## 🚨 **Achievement Notifications & Features**
 - **Popup Notifications**: Configurable achievement unlock popups with animations
@@ -76,7 +80,7 @@ For use in OBS Browser Source widgets:
 - **Refresh**: Enable "Refresh browser when scene becomes active"
 - **Main Overlay**: Use `?clean=1` for transparent background perfect for streaming
 ## 📺 Bottom Ticker Bar (New)
-- **Footer Bar**: http://localhost:5174/overlay/footer?clean=1
+- Footer Bar: http://localhost:5173/overlay/footer?clean=1
   - Options: `&barheight=72` `&title=PSFest` `&width=320` `&time=datetime|time` `&timefmt=24|12` `&seconds=1|0` `&datefmt=short|long` `&timestyle=psfest|neon|glow|solid` `&showtimers=1|0` `&showcurrent=1|0` `&cgcover=1|0` `&containerwidth=1276` `&poll=5000`
   - Tips:
     - `timestyle=psfest` matches the PSFest gradient text style.

@@ -4,7 +4,7 @@ import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
 import * as Cache from '../services/cache.js'
 
-// Enhanced cover loading that handles custom covers and proxies
+// Enhanced cover loading that handles custom covers, local hashed covers, and proxies
 const loadCoverUrl = async (imageUrl) => {
   if (!imageUrl) return null
   
@@ -20,10 +20,43 @@ const loadCoverUrl = async (imageUrl) => {
     }
   }
   
-  // Handle IGDB URLs with proxy support
-  const base = import.meta.env.VITE_IGDB_PROXY_URL
-  if (imageUrl.startsWith('https://') && base) {
-    return `${base}/cover?src=${encodeURIComponent(imageUrl)}`
+  // Try to find local hashed file for HTTPS URLs
+  if (imageUrl.startsWith('https://')) {
+    try {
+      // Create a hash from the URL to match file system naming
+      const urlBuffer = new TextEncoder().encode(imageUrl)
+      const hashBuffer = await crypto.subtle.digest('SHA-1', urlBuffer)
+      const hashArray = Array.from(new Uint8Array(hashBuffer))
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+      
+      // Try to load from local covers directory (both .jpg and .png)
+      // RetroAchievements URLs are always .png, so try .png first for those
+      const extensions = imageUrl.includes('retroachievements.org') 
+        ? ['.png', '.jpg'] 
+        : ['.jpg', '.png']
+      
+      // Prefer fetching from the overlay server if configured (port 8787)
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || ''
+      for (const ext of extensions) {
+        const localPath = base ? `${base}/covers/${hashHex}${ext}` : `/covers/${hashHex}${ext}`
+        try {
+          const response = await fetch(localPath)
+          if (response.ok) {
+            return localPath
+          }
+        } catch (e) {
+          // Continue to next extension
+        }
+      }
+    } catch (error) {
+      console.log('Local cover lookup failed:', error)
+    }
+    
+    // Handle IGDB URLs with proxy support
+    const base = import.meta.env.VITE_IGDB_PROXY_URL
+    if (base) {
+      return `${base}/cover?src=${encodeURIComponent(imageUrl)}`
+    }
   }
   
   // Return direct URL for local paths or when no proxy
@@ -79,15 +112,40 @@ export default function OverlayMain() {
     isConfigured,
     getUnlockRate,
     getHardcoreUnlockRate,
-    isInHardcoreMode
+    isInHardcoreMode,
+    clearCurrentGameData
   } = useAchievements()
 
   const params = new URLSearchParams(location.search)
   const poll = parseInt(params.get('poll') || '5000', 10)
   const style = (params.get('style') || 'card').toLowerCase() // 'card' | 'lowerthird' | 'slim'
   const showCover = params.get('showcover') !== '0'
+  const showYear = params.get('showyear') !== '0'
+  const showPublisher = params.get('showpublisher') !== '0'
   const showAchievements = params.get('achievements') !== '0'
   const isClean = params.get('clean') === '1'
+  // RA presentation controls for reference style
+  const raMode = (params.get('ramode') || 'default').toLowerCase() // 'default' | 'compact' | 'ticker'
+  const raSize = parseInt(params.get('rasize') || '58', 10) // badge size in px (default 58)
+  const raMax = parseInt(params.get('ramax') || '10', 10) // max badges to display
+  const raScroll = params.get('rascroll') === '1' // enable auto-scroll of badges
+  const raSpeed = params.get('raspeed') || '30s' // ticker speed duration (e.g., '30s')
+  const raShow = (params.get('rashow') || 'earned').toLowerCase() // 'earned' | 'all'
+  const raDebug = params.get('radebug') === '1' // show debug overlay
+  // Auto mode: switch to emblem showcase for a duration when a new achievement is earned
+  const raAuto = params.get('raauto') === '1'
+  const raAutoDuration = parseInt(params.get('raautoduration') || '30', 10) // seconds
+  const raAutoTest = params.get('raautotest') === '1' // force showcase once for testing
+  const raAutoSize = parseInt(params.get('raautosize') || '72', 10) // preferred badge size during auto showcase
+  const raAutoMax = parseInt(params.get('raautomax') || String(Math.max(raMax, 0)), 10) // preferred max badges during auto showcase
+  // Announcement overlay: keep bar visible and slide in a large achievement card for N seconds
+  const raAnnounce = params.get('raannounce') === '1'
+  const raAnnounceDuration = parseInt(params.get('raannounceduration') || String(raAutoDuration), 10)
+  const raAnnounceSize = parseInt(params.get('raannouncesize') || '116', 10)
+  // Inline badges visibility: by default, hide when announcement mode is on
+  const raInlineParam = params.get('rainline')
+  const showInlineBadges = raInlineParam != null ? (raInlineParam !== '0') : !raAnnounce
+  const raRows = parseInt(params.get('rarows') || '0', 10) // limit rows when wrapping; 0 = unlimited
   const refreshSec = parseInt(params.get('refresh') || '0', 10) // optional: add <meta refresh> every N seconds
   const hardRefreshMin = parseInt(params.get('hardrefresh') || '0', 10) // optional: force reload every N minutes
   const timerPx = parseInt(params.get('timerpx') || '0', 10) // optional: override timer font size in px
@@ -130,6 +188,52 @@ export default function OverlayMain() {
   const [psfestTime, setPsfestTime] = React.useState('000:00:00')
   const [lastUpdate, setLastUpdate] = React.useState('')
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
+  const [raShowcaseUntil, setRaShowcaseUntil] = React.useState(0)
+  const [announceUntil, setAnnounceUntil] = React.useState(0)
+  const autoTestTriggeredForGame = React.useRef(null)
+
+  // Track earned achievements to trigger auto showcase
+  const earnedCount = React.useMemo(() => (state.currentGameAchievements || []).filter(a => a.isEarned).length, [state.currentGameAchievements])
+  const latestEarnedTs = React.useMemo(() => {
+    const times = (state.currentGameAchievements || [])
+      .filter(a => a.isEarned && a.dateEarned)
+      .map(a => new Date(a.dateEarned).getTime())
+    return times.length ? Math.max(...times) : 0
+  }, [state.currentGameAchievements])
+  const prevEarnedRef = React.useRef({ count: 0, latest: 0 })
+
+  React.useEffect(() => {
+    const prev = prevEarnedRef.current
+    const gained = earnedCount > prev.count || latestEarnedTs > prev.latest
+    if (raAuto && gained) {
+      const now = Date.now()
+      setRaShowcaseUntil(now + raAutoDuration * 1000)
+      if (raAnnounce) setAnnounceUntil(now + raAnnounceDuration * 1000)
+    }
+    prevEarnedRef.current = { count: earnedCount, latest: latestEarnedTs }
+  }, [earnedCount, latestEarnedTs, raAuto, raAutoDuration])
+
+  // Auto-test trigger to preview the showcase without earning
+  React.useEffect(() => {
+    if (raAuto && raAutoTest) {
+      const now = Date.now()
+      setRaShowcaseUntil(now + raAutoDuration * 1000)
+      if (raAnnounce) setAnnounceUntil(now + raAnnounceDuration * 1000)
+    }
+  }, [raAuto, raAutoTest, raAutoDuration])
+
+  // Ensure autotest also fires after a game switch when achievements finish loading
+  React.useEffect(() => {
+    if (!raAuto || !raAutoTest) return
+    if (!game?.id) return
+    if (autoTestTriggeredForGame.current === game.id) return
+    if (state.loading?.gameAchievements) return
+    if ((state.currentGameAchievements || []).length === 0) return
+    autoTestTriggeredForGame.current = game.id
+    const now = Date.now()
+    setRaShowcaseUntil(now + raAutoDuration * 1000)
+    if (raAnnounce) setAnnounceUntil(now + raAnnounceDuration * 1000)
+  }, [raAuto, raAutoTest, raAutoDuration, game?.id, state.loading?.gameAchievements, state.currentGameAchievements])
 
   React.useEffect(() => {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
@@ -175,12 +279,19 @@ export default function OverlayMain() {
     tryFetch()
   }, [tick, storageUpdate])
 
-  // Load achievements when game changes
+  // Load achievements when game changes; clear stale data, force reload, reset auto state
   React.useEffect(() => {
-    if (game && RA.hasRetroAchievementsSupport(game) && isConfigured && showAchievements) {
-      loadGameAchievements(game.id)
+    if (!game?.id) return
+    // Clear old game's achievements and reset auto showcase tracking
+    clearCurrentGameData()
+    prevEarnedRef.current = { count: 0, latest: 0 }
+    setRaShowcaseUntil(0)
+    setAnnounceUntil(0)
+    autoTestTriggeredForGame.current = null
+    if (RA.hasRetroAchievementsSupport(game) && isConfigured && showAchievements) {
+      loadGameAchievements(game.id, true)
     }
-  }, [game, isConfigured, loadGameAchievements, showAchievements])
+  }, [game?.id, isConfigured, showAchievements])
 
   // Timer updates: prefer server-calculated timers for OBS reliability.
   React.useEffect(() => {
@@ -271,6 +382,17 @@ export default function OverlayMain() {
     const hardcoreCount = currentGameProgress?.numAchievedHardcore || currentGameAchievements.filter(a => a.isEarnedHardcore).length
     const showHardcore = hardcoreCount > 0 || isInHardcoreMode()
     
+    // Effective RA mode: if auto is active, force compact (emblem showcase)
+    const now = Date.now()
+    const isAutoShowcase = raAuto && now < raShowcaseUntil
+    let effMode = (isAutoShowcase && !raAnnounce) ? 'compact' : raMode
+    const effSize = isAutoShowcase ? Math.max(raSize, raAutoSize) : raSize
+    const effMax = isAutoShowcase ? raAutoMax : raMax
+    // If no badges are allowed (ramax=0), don't hide the bar during auto
+    if (effMode === 'compact' && effMax <= 0) {
+      effMode = 'default'
+    }
+
     return (
       <div className={`overlay-chrome ${isClean ? 'overlay-clean' : ''}`} style={{ ...(timerPx>0?{'--timer-font-size': `${timerPx}px`}:{}) }}>
         <div className="ref-container" style={{ maxWidth, margin: '0 auto' }}>
@@ -288,7 +410,11 @@ export default function OverlayMain() {
                 )}
                 <div className="ref-title-block">
                   <div className={`ref-title ${titleLines === 2 ? 'title-wrap-2' : 'title-wrap-1'}`}>{game.title}</div>
-                  <div className="ref-sub">{game.console}</div>
+                  <div className="ref-sub">
+                    {game.console}
+                    {showYear && game.release_year ? ` • ${game.release_year}` : ''}
+                    {showPublisher && game.publisher ? ` • ${game.publisher}` : ''}
+                  </div>
                 </div>
               </div>
               <div className="ref-right">
@@ -316,40 +442,170 @@ export default function OverlayMain() {
                 <div className="ref-divider" />
                 <div className="ref-achievements">
                   <div className="achievement-info">
-                    <div className="achievement-progress">
-                      <div className="achievement-count">
-                        <span className="psfest-achievements" title={`${achievementPercent}% complete`}>
-                          {achievementCount}/{totalAchievements} Achievements
-                      </span>
-                      </div>
-                      <div className="achievement-bar" style={{flex: 1}}>
-                        <div className="achievement-fill" style={{width: `${achievementPercent}%`}} />
-                        <div className="achievement-percent">{achievementPercent}%</div>
-                      </div>
-                      {showHardcore && (
-                        <div className="hardcore-count" title="Hardcore achievements earned">
-                          <i className="bi bi-lightning-charge-fill hardcore-icon"></i>
-                          <span className="hardcore-text">{hardcoreCount} HC</span>
+                    {/* Progress row (hidden in compact mode) */}
+                    {effMode !== 'compact' && (
+                      <div className="achievement-progress">
+                        <div className="achievement-count">
+                          <span className="psfest-achievements" title={`${achievementPercent}% complete`}>
+                            {achievementCount}/{totalAchievements} Achievements
+                          </span>
                         </div>
-                      )}
-                    </div>
+                        <div className="achievement-bar" style={{flex: 1}}>
+                          <div className="achievement-fill" style={{width: `${achievementPercent}%`}} />
+                          <div className="achievement-percent">{achievementPercent}%</div>
+                        </div>
+                        {showHardcore && (
+                          <div className="hardcore-count" title="Hardcore achievements earned">
+                            <i className="bi bi-lightning-charge-fill hardcore-icon"></i>
+                            <span className="hardcore-text">{hardcoreCount} HC</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
-                    {/* Recently earned badge strip */}
-                    {(() => {
-                      const recentEarned = state.currentGameAchievements
+                    {/* Inline announcement inside the card; expands the card instead of floating */}
+                    {raAnnounce && (() => {
+                      const nowMs = Date.now()
+                      const active = nowMs < announceUntil
+                      const lastAchievement = (state.currentGameAchievements || [])
                         .filter(a => a.isEarned)
-                        .sort((a,b) => new Date(b.dateEarned) - new Date(a.dateEarned))
-                        .slice(0, 10)
-                      if (!recentEarned.length) return null
+                        .sort((a,b) => new Date(b.dateEarned) - new Date(a.dateEarned))[0]
+                      const a = lastAchievement || (state.currentGameAchievements || [])[0] || null
                       return (
-                        <div className="badge-strip" style={{marginTop: '6px'}}>
-                          {recentEarned.map(a => (
-                            <div key={a.id} className={`badge-mini ${a.isEarnedHardcore ? 'hardcore' : ''}`} title={`${a.title} • ${a.points} pts`}>
-                              <img src={`https://media.retroachievements.org/Badge/${a.badgeName}.png`} alt={a.title} />
-                              {a.isEarnedHardcore && <span className="hc-dot" aria-label="Hardcore" />}
+                        <div className={`ra-announce-inline ${active ? 'open' : ''}`} style={{ '--ra-announce-size': `${raAnnounceSize}px` }}>
+                          {a && (
+                            <div className="ra-announce-card">
+                              <div className="ra-announce-heading">
+                                <span className="ra-announce-text">Achievement unlocked</span>
+                              </div>
+                              <div className="ra-announce-badge">
+                                <img src={`https://media.retroachievements.org/Badge/${a.badgeName}.png`} alt={a.title} />
+                              </div>
+                              <div className="ra-announce-info">
+                                <div className="ra-announce-title" title={a.title}>{a.title}</div>
+                                <div className="ra-announce-desc" title={a.description}>{a.description}</div>
+                                {raDebug && (
+                                  <div className="ra-announce-debug">Announce {active ? 'active' : 'idle'} • hides in {Math.max(0, Math.ceil((announceUntil - nowMs)/1000))}s</div>
+                                )}
+                              </div>
                             </div>
-                          ))}
+                          )}
                         </div>
+                      )
+                    })()}
+
+                    {raDebug && (
+                      <div className="ra-debug-controls" style={{marginTop:'6px', display:'flex', gap:'8px', flexWrap:'wrap'}}>
+                        <button onClick={() => setAnnounceUntil(Date.now() + raAnnounceDuration * 1000)} style={{padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.12)', color: '#fff', cursor: 'pointer'}}>
+                          Test Announce ({raAnnounceDuration}s)
+                        </button>
+                        <button onClick={() => setRaShowcaseUntil(Date.now() + raAutoDuration * 1000)} style={{padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.12)', color: '#fff', cursor: 'pointer'}}>
+                          Test Showcase ({raAutoDuration}s)
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Inline badge strip (optional) */}
+                    {showInlineBadges && (() => {
+                      // Build the list for the strip based on rashow/debug
+                      let list = [...(state.currentGameAchievements || [])]
+                      let autoFallbackUsed = false
+                      if (raShow === 'earned' && !raDebug) {
+                        list = list.filter(a => a.isEarned)
+                        // Sort by most recent earned
+                        list.sort((a,b) => new Date(b.dateEarned) - new Date(a.dateEarned))
+                      } else {
+                        // Include all, prioritize earned first then display order
+                        list.sort((a,b) => {
+                          if (a.isEarned !== b.isEarned) return a.isEarned ? -1 : 1
+                          // Prefer recently earned on top within earned
+                          const da = a.dateEarned ? new Date(a.dateEarned).getTime() : 0
+                          const db = b.dateEarned ? new Date(b.dateEarned).getTime() : 0
+                          if (db !== da) return db - da
+                          return (a.displayOrder || 0) - (b.displayOrder || 0)
+                        })
+                      }
+
+                      // If auto showcase is active but nothing earned to show, fall back to locked badges
+                      if (effMode === 'compact' && list.length === 0 && (raAuto || raAutoTest)) {
+                        autoFallbackUsed = true
+                        list = [...(state.currentGameAchievements || [])].sort((a,b) => {
+                          if (a.isEarned !== b.isEarned) return a.isEarned ? -1 : 1
+                          const da = a.dateEarned ? new Date(a.dateEarned).getTime() : 0
+                          const db = b.dateEarned ? new Date(b.dateEarned).getTime() : 0
+                          if (db !== da) return db - da
+                          return (a.displayOrder || 0) - (b.displayOrder || 0)
+                        })
+                      }
+
+                      // Determine visible items and +X more pill when exceeding max
+                      let visible = list
+                      let moreCount = 0
+                      const cap = Math.max(0, (effMode === 'ticker' ? raMax : (isAutoShowcase ? raAutoMax : raMax)))
+                      if (cap === 0) return null // hidden when max is 0
+                      if (cap > 0 && list.length > cap) {
+                        const visibleCount = Math.max(1, cap - 1) // reserve one slot for +X more
+                        visible = list.slice(0, visibleCount)
+                        moreCount = list.length - visibleCount
+                      } else if (cap > 0) {
+                        visible = list.slice(0, cap)
+                      }
+
+                      if (!visible.length && moreCount === 0) return raDebug ? (
+                        <div className="ra-empty-note" style={{opacity:0.7, fontSize: '12px'}}>RA badge strip: no achievements to show</div>
+                      ) : null
+
+                      // For 'ticker' duplicate list for seamless loop
+                      const items = effMode === 'ticker' ? [...visible, ...visible] : visible
+                      const containerClass = effMode === 'ticker' ? 'badge-strip ticker' : (raScroll ? 'badge-strip scroll' : 'badge-strip')
+
+                      return (
+                        <>
+                          <div 
+                            className={containerClass}
+                            style={{
+                              marginTop: '6px',
+                              '--ra-badge-size': `${effSize}px`,
+                              '--ra-ticker-speed': raSpeed,
+                              ...(raRows > 0 ? { maxHeight: `${(effSize * raRows) + (Math.max(raRows - 1, 0) * 6)}px` } : {})
+                            }}
+                          >
+                            {items.map((a, idx) => (
+                              <div 
+                                key={`${a.id}-${idx}`} 
+                                className={`badge-mini ${a.isEarnedHardcore ? 'hardcore' : ''} ${!a.isEarned ? 'locked' : ''}`} 
+                                title={`${a.title} • ${a.points} pts${!a.isEarned ? ' (locked)' : ''}`}
+                              >
+                                <img src={`https://media.retroachievements.org/Badge/${a.badgeName}.png`} alt={a.title} />
+                                {a.isEarnedHardcore && <span className="hc-dot" aria-label="Hardcore" />}
+                              </div>
+                            ))}
+                            {moreCount > 0 && effMode !== 'ticker' && (
+                              <div className="badge-more" title={`${moreCount} more achievements`}>
+                                +{moreCount}
+                              </div>
+                            )}
+                          </div>
+
+                          {raDebug && (
+                            <div className="ra-debug" style={{marginTop: '8px'}}>
+                              <div className="ra-debug-row"><b>RA Configured:</b> {String(isConfigured)}</div>
+                              <div className="ra-debug-row"><b>Has RA Support:</b> {String(hasRASupport)}</div>
+                              <div className="ra-debug-row"><b>Counts:</b> {achievementCount}/{totalAchievements} ({achievementPercent}%) • HC {hardcoreCount}</div>
+                              <div className="ra-debug-row"><b>Mode:</b> {effMode} (requested: {raMode}) • <b>Show:</b> {raShow} • <b>Size:</b> {isAutoShowcase ? `${Math.max(raSize, raAutoSize)} (auto)` : raSize}px • <b>Max:</b> {isAutoShowcase ? `${raAutoMax} (auto)` : raMax}</div>
+                              <div className="ra-debug-row"><b>Scroll:</b> {String(raScroll)} • <b>Speed:</b> {raSpeed}</div>
+                              <div className="ra-debug-row"><b>Auto:</b> {String(raAuto)} • <b>Auto Test:</b> {String(raAutoTest)} • <b>Duration:</b> {raAutoDuration}s • <b>Time left:</b> {Math.max(0, Math.ceil((raShowcaseUntil - now)/1000))}s • <b>Fallback:</b> {String(autoFallbackUsed)} • <b>+More:</b> {moreCount}</div>
+                              <div className="ra-debug-row" style={{display:'flex', gap:'8px', flexWrap:'wrap'}}>
+                                <button onClick={() => setRaShowcaseUntil(Date.now() + raAutoDuration * 1000)} style={{marginTop: '4px', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.12)', color: '#fff', cursor: 'pointer'}}>
+                                  Trigger Auto Showcase ({raAutoDuration}s)
+                                </button>
+                                <button onClick={() => setAnnounceUntil(Date.now() + raAnnounceDuration * 1000)} style={{marginTop: '4px', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(255,255,255,0.12)', color: '#fff', cursor: 'pointer'}}>
+                                  Trigger Announce ({raAnnounceDuration}s)
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </>
                       )
                     })()}
                   </div>
@@ -382,7 +638,9 @@ export default function OverlayMain() {
           <div className="game-info flex-grow-1 d-flex flex-column">
             <div className="game-title title-wrap-2" style={{fontSize: '2.5rem', fontWeight: '700', marginBottom: '1rem'}}>{game.title}</div>
             <div className="game-meta" style={{fontSize: '1.5rem', fontWeight: '500'}}>
-              {game.console}{game.release_year ? ` • ${game.release_year}` : ''}
+              {game.console}
+              {showYear && game.release_year ? ` • ${game.release_year}` : ''}
+              {showPublisher && game.publisher ? ` • ${game.publisher}` : ''}
             </div>
 
             {/* Inline Achievements inside main card */}

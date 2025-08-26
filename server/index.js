@@ -39,17 +39,30 @@ app.post('/igdb/search', async (req, res) => {
       'Client-ID': process.env.TWITCH_CLIENT_ID,
       'Authorization': `Bearer ${token}`,
     }
-    // Prefer platform match; request cover image_id and first_release_date
+    // Prefer platform match; request cover image_id, first_release_date, and publisher via involved_companies
     const where = platformId ? `where platforms = (${platformId});` : ''
-    const body = `fields name,cover.image_id,first_release_date,platforms.name; search "${q.replace('"','')}"; ${where} limit 5;`
+    const body = `fields name,cover.image_id,first_release_date,platforms.name,involved_companies.company.name,involved_companies.publisher; search "${q.replace('"','')}"; ${where} limit 5;`
     const { data } = await axios.post('https://api.igdb.com/v4/games', body, { headers })
-    const mapped = data.map(g => ({
-      id: g.id,
-      name: g.name,
-      image_id: g.cover?.image_id || null,
-      platform_name: (g.platforms && g.platforms[0]?.name) || null,
-      first_release_date: g.first_release_date || null
-    }))
+    const mapped = data.map(g => {
+      let publisher_name = null
+      try {
+        const ics = Array.isArray(g.involved_companies) ? g.involved_companies : []
+        const pub = ics.find(ic => ic && ic.publisher && ic.company && ic.company.name)
+        if (pub && pub.company && pub.company.name) publisher_name = pub.company.name
+        if (!publisher_name && ics.length) {
+          const firstCo = ics.find(ic => ic && ic.company && ic.company.name)
+          if (firstCo && firstCo.company && firstCo.company.name) publisher_name = firstCo.company.name
+        }
+      } catch {}
+      return ({
+        id: g.id,
+        name: g.name,
+        image_id: g.cover?.image_id || null,
+        platform_name: (g.platforms && g.platforms[0]?.name) || null,
+        first_release_date: g.first_release_date || null,
+        publisher_name
+      })
+    })
     res.json(mapped)
   } catch (e) {
     console.error(e.response?.data || e.message)
@@ -138,6 +151,7 @@ app.post('/overlay/current', (req, res) => {
     console: g.console || '',
     image_url: g.image_url || null,
     release_year: g.release_year || null,
+    publisher: g.publisher || null,
     status: g.status || null
   }
   overlayState.current = current

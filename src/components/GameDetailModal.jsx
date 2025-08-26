@@ -39,10 +39,18 @@ export default function GameDetailModal({ game, onClose }) {
           const hashArray = Array.from(new Uint8Array(hashBuffer))
           const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
           
-          const response = await fetch(`/covers/${hashHex}.jpg`)
-          if (response.ok) {
-            setCurrentCover(`/covers/${hashHex}.jpg`)
-            return
+          // Try both .jpg and .png extensions
+          // RetroAchievements URLs are always .png, so try .png first for those
+          const extensions = game.image_url.includes('retroachievements.org') 
+            ? ['.png', '.jpg'] 
+            : ['.jpg', '.png']
+          
+          for (const ext of extensions) {
+            const response = await fetch(`/covers/${hashHex}${ext}`)
+            if (response.ok) {
+              setCurrentCover(`/covers/${hashHex}${ext}`)
+              return
+            }
           }
         }
 

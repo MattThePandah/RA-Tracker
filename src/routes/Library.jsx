@@ -27,12 +27,19 @@ function GameCard({ game, onQuick, onOpenDetail }) {
             const hashArray = Array.from(new Uint8Array(hashBuffer))
             const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
             
-            // Try to load from local covers directory
-            const localPath = `/covers/${hashHex}.jpg`
-            const response = await fetch(localPath)
-            if (response.ok) {
-              setUrl(localPath)
-              return
+            // Try to load from local covers directory (both .jpg and .png)
+            // RetroAchievements URLs are always .png, so try .png first for those
+            const extensions = game.image_url.includes('retroachievements.org') 
+              ? ['.png', '.jpg'] 
+              : ['.jpg', '.png']
+            
+            for (const ext of extensions) {
+              const localPath = `/covers/${hashHex}${ext}`
+              const response = await fetch(localPath)
+              if (response.ok) {
+                setUrl(localPath)
+                return
+              }
             }
           } catch (error) {
             console.log('Local cover lookup failed:', error)
@@ -90,6 +97,8 @@ export default function Library() {
   const [consoleFilter, setConsoleFilter] = useState('All')
   const [hideBonus, setHideBonus] = useState(state.settings.hideBonusGames)
   const [selectedGame, setSelectedGame] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage] = useState(50) // Show 50 items per page
   const [params] = useSearchParams()
 
   const consoles = useMemo(() => Array.from(new Set(state.games.map(g => g.console))), [state.games])
@@ -102,6 +111,18 @@ export default function Library() {
     if (hideBonus) arr = arr.filter(g => !Bonus.isBonus(g.title))
     return arr
   }, [state.games, q, status, consoleFilter, hideBonus])
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filtered.length / itemsPerPage)
+  const paginatedGames = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage
+    return filtered.slice(startIndex, startIndex + itemsPerPage)
+  }, [filtered, currentPage, itemsPerPage])
+
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1)
+  }, [q, status, consoleFilter, hideBonus])
 
   const onQuick = (game) => {
     dispatch({ type: 'UPDATE_GAME', game })
@@ -123,7 +144,10 @@ export default function Library() {
       <div className="d-flex flex-wrap gap-2 align-items-end mb-3">
         <div className="me-auto">
           <h2 className="h4 mb-0">Game Library</h2>
-          <div className="text-secondary small">Grid/List • Filters • Quick actions</div>
+          <div className="text-secondary small">
+            Showing {paginatedGames.length} of {filtered.length} games
+            {totalPages > 1 && ` • Page ${currentPage} of ${totalPages}`}
+          </div>
         </div>
         <input className="form-control form-control-sm w-auto" placeholder="Search..." value={q} onChange={e => setQ(e.target.value)} />
         <select className="form-select form-select-sm w-auto" value={consoleFilter} onChange={e=>setConsoleFilter(e.target.value)}>
@@ -148,7 +172,7 @@ export default function Library() {
 
       {view==='grid' ? (
         <div className="row g-2">
-          {filtered.map(g => (
+          {paginatedGames.map(g => (
             <div key={g.id} className="col-6 col-sm-4 col-md-3 col-lg-2">
               <GameCard game={g} onQuick={onQuick} onOpenDetail={onOpenDetail} />
             </div>
@@ -159,7 +183,7 @@ export default function Library() {
           <table className="table table-sm table-dark align-middle">
             <thead><tr><th>Title</th><th>Console</th><th>Status</th><th>Started</th><th>Finished</th><th></th></tr></thead>
             <tbody>
-              {filtered.map(g => (
+              {paginatedGames.map(g => (
                 <tr key={g.id}>
                   <td>{g.title}{g.is_bonus && <span className="ms-2 badge badge-soft">Bonus</span>}</td>
                   <td>{g.console}</td>
@@ -180,6 +204,71 @@ export default function Library() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="d-flex justify-content-center mt-4">
+          <nav>
+            <ul className="pagination pagination-sm">
+              <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                <button 
+                  className="page-link" 
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  First
+                </button>
+              </li>
+              <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                <button 
+                  className="page-link" 
+                  onClick={() => setCurrentPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </button>
+              </li>
+              
+              {/* Page numbers */}
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
+                if (pageNum <= totalPages) {
+                  return (
+                    <li key={pageNum} className={`page-item ${currentPage === pageNum ? 'active' : ''}`}>
+                      <button 
+                        className="page-link" 
+                        onClick={() => setCurrentPage(pageNum)}
+                      >
+                        {pageNum}
+                      </button>
+                    </li>
+                  )
+                }
+                return null
+              })}
+
+              <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                <button 
+                  className="page-link" 
+                  onClick={() => setCurrentPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </button>
+              </li>
+              <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                <button 
+                  className="page-link" 
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                >
+                  Last
+                </button>
+              </li>
+            </ul>
+          </nav>
         </div>
       )}
       

@@ -25,7 +25,8 @@ export async function fetchIGDBCover({ name, console }) {
     const img = await axios.get(`${PROXY}/image?src=${encodeURIComponent(url)}`, { responseType: 'blob' })
     await Cache.saveCover(path, img.data)
     const release_year = first.first_release_date ? new Date(first.first_release_date * 1000).getUTCFullYear().toString() : null
-    return { path, blob: img.data, release_year, matched_name: first.name }
+    const publisher = first.publisher_name || null
+    return { path, blob: img.data, release_year, publisher, matched_name: first.name }
   } catch (e) {
     console.warn('IGDB cover fetch failed', e?.message || e)
     return null
@@ -46,6 +47,7 @@ export async function precacheCovers({ games, onProgress }) {
       if (res) {
         g.image_url = res.path
         if (!g.release_year && res.release_year) g.release_year = res.release_year
+        if (!g.publisher && res.publisher) g.publisher = res.publisher
       }
     }
   }
