@@ -118,6 +118,7 @@ export default function OverlayMain() {
 
   const params = new URLSearchParams(location.search)
   const poll = parseInt(params.get('poll') || '5000', 10)
+  const achievementPoll = parseInt(params.get('rapoll') || '60000', 10) // Default 60 seconds for achievements
   const style = (params.get('style') || 'card').toLowerCase() // 'card' | 'lowerthird' | 'slim'
   const showCover = params.get('showcover') !== '0'
   const showYear = params.get('showyear') !== '0'
@@ -191,6 +192,7 @@ export default function OverlayMain() {
   const [raShowcaseUntil, setRaShowcaseUntil] = React.useState(0)
   const [announceUntil, setAnnounceUntil] = React.useState(0)
   const autoTestTriggeredForGame = React.useRef(null)
+  const [recentActivityDetected, setRecentActivityDetected] = React.useState(false)
 
   // Track earned achievements to trigger auto showcase
   const earnedCount = React.useMemo(() => (state.currentGameAchievements || []).filter(a => a.isEarned).length, [state.currentGameAchievements])
@@ -292,6 +294,49 @@ export default function OverlayMain() {
       loadGameAchievements(game.id, true)
     }
   }, [game?.id, isConfigured, showAchievements])
+
+  // Detect recent achievement activity for smart polling
+  React.useEffect(() => {
+    if ((state.currentGameAchievements || []).length === 0) return
+    
+    const now = Date.now()
+    const latestEarnedTime = Math.max(...(state.currentGameAchievements || [])
+      .filter(a => a.isEarned && a.dateEarned)
+      .map(a => new Date(a.dateEarned).getTime()), 0)
+    
+    // If we have a recent achievement (within last 5 minutes), enable frequent checking
+    const recentThreshold = now - (5 * 60 * 1000) // 5 minutes
+    const hasRecentActivity = latestEarnedTime > recentThreshold
+    
+    if (hasRecentActivity !== recentActivityDetected) {
+      console.log('Main overlay: Recent activity detected:', hasRecentActivity, latestEarnedTime > 0 ? 'Latest earned: ' + new Date(latestEarnedTime).toLocaleTimeString() : '')
+      setRecentActivityDetected(hasRecentActivity)
+    }
+  }, [state.currentGameAchievements, recentActivityDetected])
+
+  // Smart polling: frequent when recent activity, normal otherwise
+  React.useEffect(() => {
+    if (!game?.id || !RA.hasRetroAchievementsSupport(game) || !isConfigured || !showAchievements) {
+      return
+    }
+    
+    // Use shorter intervals if recent activity detected
+    const pollInterval = recentActivityDetected ? 15000 : achievementPoll // 15 seconds vs 60 seconds
+    console.log('Main overlay: Setting up achievement polling every', pollInterval, 'ms', recentActivityDetected ? '(frequent - recent activity)' : '(normal)')
+    
+    const achievementPollInterval = setInterval(() => {
+      console.log('Main overlay: Polling achievements for game', game.id)
+      // Only poll if not currently loading and we have a game
+      if (game?.id && !state.loading?.gameAchievements) {
+        loadGameAchievements(game.id, true) // Force refresh to get latest achievement state
+      }
+    }, pollInterval)
+    
+    return () => {
+      console.log('Main overlay: Clearing achievement polling interval')
+      clearInterval(achievementPollInterval)
+    }
+  }, [game?.id, isConfigured, showAchievements, achievementPoll, recentActivityDetected]) // Include recentActivityDetected
 
   // Timer updates: prefer server-calculated timers for OBS reliability.
   React.useEffect(() => {

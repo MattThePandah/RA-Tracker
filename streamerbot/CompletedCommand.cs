@@ -63,7 +63,7 @@ public class CPHInline
             
             // Add total completion count
             int totalCompleted = games.Count(g => g["status"]?.ToString() == "Completed");
-            message += $" | Total: {totalCompleted}/1834 completed";
+            message += $" | Total: {totalCompleted}/1841 completed";
             
             CPH.SendMessage(message, true);
             return true;

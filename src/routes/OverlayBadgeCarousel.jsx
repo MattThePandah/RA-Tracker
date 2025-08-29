@@ -16,6 +16,7 @@ export default function OverlayBadgeCarousel() {
   const { state, loadGameAchievements, isConfigured } = useAchievements()
   const params = new URLSearchParams(location.search)
   const poll = parseInt(params.get('poll') || '5000', 10)
+  const achievementPoll = parseInt(params.get('rapoll') || '60000', 10) // Default 60 seconds for achievements
   const rotateMs = parseInt(params.get('rotate') || '8000', 10) // Longer rotation for readability
   const isClean = params.get('clean') === '1'
   
@@ -57,11 +58,74 @@ export default function OverlayBadgeCarousel() {
     }
   }, [isClean])
 
+  // Track game ID separately to avoid reloading achievements on every game object update
+  const [currentGameId, setCurrentGameId] = React.useState(null)
+  const [lastAchievementCheck, setLastAchievementCheck] = React.useState(0)
+  const [recentActivityDetected, setRecentActivityDetected] = React.useState(false)
+  const [lastUpdateTime, setLastUpdateTime] = React.useState(0)
+  
   React.useEffect(() => {
-    if (!game?.current) return
-    if (!RA.hasRetroAchievementsSupport(game.current)) return
-    loadGameAchievements(game.current.id)
-  }, [game, loadGameAchievements])
+    const newGameId = game?.current?.id || null
+    if (newGameId !== currentGameId) {
+      setCurrentGameId(newGameId)
+      if (newGameId && RA.hasRetroAchievementsSupport(game.current)) {
+        loadGameAchievements(newGameId, true) // Only reload when game ID actually changes
+      }
+    }
+  }, [game?.current?.id, currentGameId, loadGameAchievements])
+
+  // Detect achievement changes and adjust polling frequency
+  React.useEffect(() => {
+    const earnedCount = state.currentGameAchievements.filter(a => a.isEarned).length
+    const now = Date.now()
+    
+    // Update timestamp when achievements change
+    if (state.currentGameAchievements.length > 0) {
+      setLastUpdateTime(now)
+    }
+    
+    if (lastAchievementCheck > 0 && earnedCount > 0) {
+      const latestEarnedTime = Math.max(...state.currentGameAchievements
+        .filter(a => a.isEarned && a.dateEarned)
+        .map(a => new Date(a.dateEarned).getTime()), 0)
+      
+      // If we have a recent achievement (within last 5 minutes), enable frequent checking
+      const recentThreshold = now - (5 * 60 * 1000) // 5 minutes
+      const hasRecentActivity = latestEarnedTime > recentThreshold
+      
+      if (hasRecentActivity !== recentActivityDetected) {
+        console.log('Badge carousel: Recent activity detected:', hasRecentActivity, 'Latest earned:', new Date(latestEarnedTime).toLocaleTimeString())
+        setRecentActivityDetected(hasRecentActivity)
+      }
+    }
+    
+    setLastAchievementCheck(now)
+  }, [state.currentGameAchievements, lastAchievementCheck, recentActivityDetected])
+
+  // Smart polling: frequent when recent activity, normal otherwise
+  React.useEffect(() => {
+    if (!currentGameId || !game?.current || !RA.hasRetroAchievementsSupport(game.current) || !isConfigured) {
+      console.log('Badge carousel: Skipping achievement polling', { currentGameId, hasRA: !!game?.current && RA.hasRetroAchievementsSupport(game.current), isConfigured })
+      return
+    }
+    
+    // Use shorter intervals if recent activity detected
+    const pollInterval = recentActivityDetected ? 15000 : achievementPoll // 15 seconds vs 60 seconds
+    console.log('Badge carousel: Setting up achievement polling every', pollInterval, 'ms', recentActivityDetected ? '(frequent - recent activity)' : '(normal)')
+    
+    const achievementPollInterval = setInterval(() => {
+      console.log('Badge carousel: Polling achievements for game', currentGameId)
+      // Only poll if not currently loading and we have a game
+      if (currentGameId && !state.loading?.gameAchievements) {
+        loadGameAchievements(currentGameId, true) // Force refresh to get latest achievement state
+      }
+    }, pollInterval)
+    
+    return () => {
+      console.log('Badge carousel: Clearing achievement polling interval')
+      clearInterval(achievementPollInterval)
+    }
+  }, [currentGameId, isConfigured, achievementPoll, recentActivityDetected]) // Include recentActivityDetected
 
   const upcoming = React.useMemo(() => {
     return state.currentGameAchievements
@@ -70,24 +134,41 @@ export default function OverlayBadgeCarousel() {
   }, [state.currentGameAchievements])
 
   const [index, setIndex] = React.useState(0)
+  const [lastUpcomingLength, setLastUpcomingLength] = React.useState(0)
+  
   React.useEffect(() => {
-    if (upcoming.length === 0) return
-    setIndex(0)
+    if (upcoming.length === 0) {
+      setIndex(0)
+      setLastUpcomingLength(0)
+      return
+    }
+    
+    // Only reset index if the number of achievements changed significantly (not just updates)
+    if (Math.abs(upcoming.length - lastUpcomingLength) > 0) {
+      console.log('Badge carousel: Achievement count changed from', lastUpcomingLength, 'to', upcoming.length)
+      setIndex(0)
+      setLastUpcomingLength(upcoming.length)
+    }
+    
     if (upcoming.length <= showCount) return
     
     const id = setInterval(() => {
       setIsTransitioning(true)
       setTimeout(() => {
-        setIndex(i => (i + 1) % upcoming.length) // Rotate one at a time for smoother transitions
+        setIndex(i => {
+          const nextIndex = i + showCount
+          return nextIndex >= upcoming.length ? 0 : nextIndex // Jump to next page, wrap to start
+        })
         setIsTransitioning(false)
       }, 300) // Short transition delay
     }, rotateMs)
     return () => clearInterval(id)
-  }, [upcoming.length, rotateMs, showCount])
+  }, [upcoming.length, rotateMs, showCount, lastUpcomingLength])
   
   const visible = React.useMemo(() => {
-    const count = Math.min(showCount, upcoming.length)
-    return Array.from({ length: count }, (_, i) => upcoming[(index + i) % upcoming.length])
+    const remainingFromIndex = upcoming.length - index
+    const count = Math.min(showCount, remainingFromIndex)
+    return upcoming.slice(index, index + count)
   }, [upcoming, index, showCount])
 
   const containerClass = `overlay-chrome badge-carousel-overlay position-${position} ${isClean ? 'overlay-clean' : ''} ${isTransitioning ? 'transitioning' : ''}`
@@ -114,6 +195,11 @@ export default function OverlayBadgeCarousel() {
         <div className="badge-heading">Locked Achievements</div>
         {pageCount > 1 && (
           <div className="badge-counter">{currentPage}/{pageCount}</div>
+        )}
+        {lastUpdateTime > 0 && (
+          <div style={{fontSize: '10px', opacity: 0.6, marginTop: '2px'}}>
+            Updated: {new Date(lastUpdateTime).toLocaleTimeString()}
+          </div>
         )}
       </div>
       <div className="badge-list">
