@@ -46,6 +46,8 @@ Notes:
 - Stats: `http://localhost:5173/overlay/stats`
 - Wheel: `http://localhost:5173/overlay/wheel`
 - Footer: `http://localhost:5173/overlay/footer?clean=1`
+- Badge carousel (upcoming achievements with icons, descriptions, and points): `http://localhost:5173/overlay/badge-carousel`
+  - `&show=3` controls how many achievements are shown at once
 
 Common options:
 - `&clean=1` (transparent background)
@@ -66,6 +68,7 @@ Troubleshooting covers:
 
 - Main overlay: `http://localhost:5173/overlay/main?poll=5000`
 - Stats overlay: `http://localhost:5173/overlay/stats?poll=5000`
+- Badge carousel overlay: `http://localhost:5173/overlay/badge-carousel?poll=5000&rotate=5000&show=3` (rotates through upcoming achievements, showing three at a time)
 
 ## Notes
 - If IGDB creds are not set, the app falls back to a placeholder cover and mock data so you can test the UI immediately.

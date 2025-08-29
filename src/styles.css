@@ -2721,3 +2721,60 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
   font-size: 1rem;
   opacity: 0.9;
 }
+
+/* Badge carousel overlay for small top-left display */
+.badge-carousel-overlay {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+}
+.badge-carousel-overlay .badge-heading {
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+  text-align: center;
+}
+.badge-carousel-overlay .badge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.badge-carousel-overlay .badge-item {
+  display: flex;
+  align-items: center;
+}
+.badge-carousel-overlay .badge-image {
+  width: 48px;
+  height: 48px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+.badge-carousel-overlay .badge-image img {
+  width: 100%;
+  height: 100%;
+}
+.badge-carousel-overlay .badge-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.badge-carousel-overlay .badge-title {
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+.badge-carousel-overlay .badge-desc {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+.badge-carousel-overlay .badge-points {
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+.badge-carousel-overlay .badge-counter {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  text-align: center;
+  opacity: 0.75;
+}
+
