@@ -54,3 +54,4 @@ tmp/
 
 # Project-specific helpers (not needed in repo)
 .claude/
+.claude/settings.local.json

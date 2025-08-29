@@ -270,10 +270,9 @@ export function AchievementProvider({ children }) {
   }
 
   // Check if achievement features are configured
-  const isConfigured = !!(
-    state.settings.raApiKey && state.settings.raUsername ||
-    (import.meta.env.VITE_RA_API_KEY && import.meta.env.VITE_RA_USERNAME)
-  )
+  const settingsConfig = !!(state.settings.raApiKey && state.settings.raUsername)
+  const envConfig = !!(import.meta.env.VITE_RA_API_KEY && import.meta.env.VITE_RA_USERNAME)
+  const isConfigured = settingsConfig || envConfig
 
   // Get achievement progress for a specific game
   const getGameProgress = (gameId) => {

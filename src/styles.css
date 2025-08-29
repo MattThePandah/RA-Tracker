@@ -2232,10 +2232,48 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
 /* Clean overlays (remove page background only) via ?clean=1 */
 .overlay-clean, 
 .overlay-clean .overlay-chrome, 
-.overlay-clean .bg-dark { 
+.overlay-clean .bg-dark,
+.overlay-clean.badge-carousel-overlay { 
   background: transparent !important; 
   background-color: transparent !important; 
+  border: none !important;
+  box-shadow: none !important;
 }
+
+.badge-carousel-overlay.overlay-clean,
+.overlay-clean .badge-carousel-overlay {
+  background: rgba(0,0,0,0.75) !important;
+  border: 1px solid rgba(255,255,255,0.2) !important;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.6) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.badge-carousel-overlay.overlay-clean .badge-item,
+.overlay-clean .badge-carousel-overlay .badge-item {
+  background: rgba(0,0,0,0.8) !important;
+  border: 1px solid rgba(255,255,255,0.3) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6) !important;
+}
+
+.badge-carousel-overlay.overlay-clean .badge-title,
+.badge-carousel-overlay.overlay-clean .badge-desc,
+.badge-carousel-overlay.overlay-clean .badge-points,
+.badge-carousel-overlay.overlay-clean .badge-counter,
+.overlay-clean .badge-carousel-overlay .badge-title,
+.overlay-clean .badge-carousel-overlay .badge-desc,
+.overlay-clean .badge-carousel-overlay .badge-points,
+.overlay-clean .badge-carousel-overlay .badge-counter {
+  color: #fff !important;
+  text-shadow: 0 4px 16px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,1), 3px 3px 6px rgba(0,0,0,1) !important;
+}
+
+.badge-carousel-overlay.overlay-clean .badge-heading,
+.overlay-clean .badge-carousel-overlay .badge-heading {
+  color: var(--brand) !important;
+  text-shadow: 0 4px 16px rgba(0,0,0,1), 0 0 12px rgba(0,0,0,1), 3px 3px 6px rgba(0,0,0,1) !important;
+}
+
 /* Keep the card designs but ensure canvas backgrounds are transparent */
 .overlay-clean canvas { 
   background: transparent !important; 
@@ -2722,59 +2760,208 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
   opacity: 0.9;
 }
 
-/* Badge carousel overlay for small top-left display */
+/* Badge carousel overlay - Stream-friendly corner overlay */
 .badge-carousel-overlay {
+  position: fixed;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100%;
-  padding: 4px;
+  width: 480px;
+  max-width: 480px;
+  padding: 16px;
+  box-sizing: border-box;
+  color: #fff;
+  background: rgba(0,0,0,0.92);
+  border: 2px solid rgba(255,255,255,0.2);
+  border-radius: 12px;
+  box-shadow: 
+    0 8px 24px rgba(0,0,0,0.8),
+    inset 0 1px 0 rgba(255,255,255,0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 1000;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* Position variants for stream layouts */
+.badge-carousel-overlay.position-top-right {
+  top: 20px;
+  right: 20px;
+}
+
+.badge-carousel-overlay.position-top-left {
+  top: 20px;
+  left: 20px;
+}
+
+.badge-carousel-overlay.position-bottom-right {
+  bottom: 20px;
+  right: 20px;
+}
+
+.badge-carousel-overlay.position-bottom-left {
+  bottom: 20px;
+  left: 20px;
+}
+
+.badge-carousel-overlay.position-center {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.badge-carousel-overlay .badge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+}
+
 .badge-carousel-overlay .badge-heading {
-  font-size: 0.9rem;
-  margin-bottom: 4px;
-  text-align: center;
+  font-size: 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--brand);
+  text-shadow: 0 2px 6px rgba(0,0,0,0.8);
 }
+
+.badge-carousel-overlay .badge-counter {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.7);
+  background: rgba(255,255,255,0.1);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+
 .badge-carousel-overlay .badge-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 12px;
 }
+
 .badge-carousel-overlay .badge-item {
   display: flex;
   align-items: center;
+  padding: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0;
+  transform: translateX(20px);
+  animation: slideIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: var(--delay, 0s);
 }
+
+.badge-carousel-overlay .badge-item:hover {
+  border-color: rgba(135,202,254,0.4);
+  box-shadow: 
+    0 6px 24px rgba(0,0,0,0.7),
+    0 0 20px rgba(135,202,254,0.2);
+}
+
+@keyframes slideIn {
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.badge-carousel-overlay.transitioning .badge-item {
+  opacity: 0;
+  transform: translateX(-20px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .badge-carousel-overlay .badge-image {
-  width: 48px;
-  height: 48px;
-  margin-right: 6px;
+  width: 56px;
+  height: 56px;
+  margin-right: 16px;
   flex-shrink: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6);
 }
+
 .badge-carousel-overlay .badge-image img {
   width: 100%;
   height: 100%;
+  object-fit: cover;
 }
+
 .badge-carousel-overlay .badge-info {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
 }
+
 .badge-carousel-overlay .badge-title {
   font-weight: 700;
-  font-size: 0.8rem;
+  font-size: 16px;
+  line-height: 1.3;
+  margin-bottom: 6px;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
 .badge-carousel-overlay .badge-desc {
-  font-size: 0.7rem;
-  line-height: 1;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: rgba(255,255,255,0.8);
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
+
 .badge-carousel-overlay .badge-points {
-  font-size: 0.7rem;
-  opacity: 0.75;
+  font-size: 16px;
+  font-weight: 800;
+  color: #00ff88;
+  text-shadow: 
+    0 2px 8px rgba(0,0,0,1),
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000;
+  background: rgba(0,255,136,0.15);
+  padding: 4px 8px;
+  border-radius: 8px;
+  display: inline-block;
 }
-.badge-carousel-overlay .badge-counter {
-  margin-top: 4px;
-  font-size: 0.75rem;
-  text-align: center;
-  opacity: 0.75;
+
+/* Responsive adjustments for smaller screens */
+@media (max-width: 480px) {
+  .badge-carousel-overlay {
+    width: 400px;
+    padding: 20px;
+  }
+  
+  .badge-carousel-overlay .badge-item {
+    padding: 16px;
+  }
+  
+  .badge-carousel-overlay .badge-image {
+    width: 60px;
+    height: 60px;
+  }
+  
+  .badge-carousel-overlay .badge-title {
+    font-size: 18px;
+  }
+  
+  .badge-carousel-overlay .badge-points {
+    font-size: 16px;
+  }
 }
+
 
