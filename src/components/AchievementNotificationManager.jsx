@@ -1,15 +1,19 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { useAchievements } from '../context/AchievementContext.jsx'
 import AchievementPopup from './AchievementPopup.jsx'
+import MilestoneCelebration from './MilestoneCelebration.jsx'
+import ErrorBoundary, { ComponentErrorFallback } from './ErrorBoundary.jsx'
 
-const AchievementNotificationManager = () => {
+const AchievementNotificationManagerInner = () => {
   const { state } = useAchievements()
   const [activePopups, setActivePopups] = useState([])
   const [lastCheckedTimestamp, setLastCheckedTimestamp] = useState(Date.now())
+  const [activeMilestone, setActiveMilestone] = useState(null)
 
   // Configuration from achievement settings
   const popupDuration = state.settings.popupDuration || 5000
   const enablePopups = state.settings.enablePopups !== false
+  const enableMilestones = state.settings.enableMilestoneSounds !== false
 
   // Check for new achievements from recent achievements list
   useEffect(() => {
@@ -70,6 +74,28 @@ const AchievementNotificationManager = () => {
     return () => clearInterval(cleanup)
   }, [popupDuration])
 
+  // Check for milestone celebrations
+  useEffect(() => {
+    if (!enableMilestones || state.milestoneData.milestonesReached.length === 0) {
+      return
+    }
+
+    const latestMilestone = state.milestoneData.milestonesReached[state.milestoneData.milestonesReached.length - 1]
+    
+    // Show milestone celebration if it's new
+    if (latestMilestone && (!activeMilestone || latestMilestone.timestamp > activeMilestone.timestamp)) {
+      // Get current game info for the milestone
+      const currentGame = state.currentGameAchievements.length > 0 ? {
+        title: latestMilestone.gameTitle || 'Current Game'
+      } : null
+
+      setActiveMilestone({
+        ...latestMilestone,
+        gameTitle: currentGame?.title
+      })
+    }
+  }, [state.milestoneData.milestonesReached, enableMilestones, activeMilestone])
+
   // Calculate positions to stack multiple popups
   const getPopupPosition = (index, total) => {
     const basePosition = 'top-right'
@@ -96,13 +122,15 @@ const AchievementNotificationManager = () => {
     }
   }
 
-  if (!enablePopups || activePopups.length === 0) {
+  // Show nothing if no popups and no milestone
+  if ((!enablePopups || activePopups.length === 0) && (!activeMilestone || !enableMilestones)) {
     return null
   }
 
   return (
     <div className="achievement-notification-manager">
-      {activePopups.map((popup, index) => {
+      {/* Achievement popups */}
+      {enablePopups && activePopups.map((popup, index) => {
         const positionConfig = getPopupPosition(index, activePopups.length)
         
         return (
@@ -117,12 +145,32 @@ const AchievementNotificationManager = () => {
               duration={popupDuration}
               position={positionConfig.position}
               showGameInfo={true}
+              gameProgress={state.currentGameProgress}
             />
           </div>
         )
       })}
+      
+      {/* Milestone celebration */}
+      {activeMilestone && enableMilestones && (
+        <MilestoneCelebration
+          milestone={activeMilestone.milestone}
+          gameTitle={activeMilestone.gameTitle}
+          earnedCount={activeMilestone.earnedCount}
+          totalCount={activeMilestone.totalCount}
+          onClose={() => setActiveMilestone(null)}
+          duration={6000}
+        />
+      )}
     </div>
   )
 }
+
+// Wrap with error boundary for better reliability
+const AchievementNotificationManager = () => (
+  <ErrorBoundary fallback={props => <ComponentErrorFallback {...props} componentName="Achievement Notifications" />}>
+    <AchievementNotificationManagerInner />
+  </ErrorBoundary>
+)
 
 export default AchievementNotificationManager

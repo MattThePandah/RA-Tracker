@@ -2,6 +2,7 @@ import React from 'react'
 import { useAchievements } from '../context/AchievementContext.jsx'
 import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
+import ErrorBoundary, { OverlayErrorFallback } from '../components/ErrorBoundary.jsx'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -12,7 +13,7 @@ function usePoll(ms) {
   return tick
 }
 
-export default function OverlayBadgeCarousel() {
+function OverlayBadgeCarouselInner() {
   const { state, loadGameAchievements, isConfigured } = useAchievements()
   const params = new URLSearchParams(location.search)
   const poll = parseInt(params.get('poll') || '5000', 10)
@@ -34,16 +35,49 @@ export default function OverlayBadgeCarousel() {
     const tryFetch = async () => {
       let g = null
       try {
-        const r = await fetch(`${base}/overlay/current`)
-        if (r.ok) g = await r.json()
-        if (!g) {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+        
+        const r = await fetch(`${base}/overlay/current`, {
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+        
+        if (r.ok) {
+          g = await r.json()
+        } else {
+          console.warn('Badge carousel: Server returned', r.status, r.statusText)
+        }
+        
+        // Fallback to localStorage if server fails
+        if (!g?.current) {
           const id = Storage.getCurrentGameId()
           if (id) {
             const games = Storage.getGames()
-            g = games.find(x => x.id === id)
+            const found = games.find(x => x.id === id)
+            if (found) {
+              g = { current: found }
+              console.log('Badge carousel: Using localStorage fallback for game', found.title)
+            }
           }
         }
-      } catch {}
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          console.warn('Badge carousel: Game fetch timeout')
+        } else {
+          console.warn('Badge carousel: Game fetch error:', error.message)
+        }
+        
+        // Always fallback to localStorage on error
+        const id = Storage.getCurrentGameId()
+        if (id) {
+          const games = Storage.getGames()
+          const found = games.find(x => x.id === id)
+          if (found) {
+            g = { current: found }
+          }
+        }
+      }
       setGame(g)
     }
     tryFetch()
@@ -113,19 +147,51 @@ export default function OverlayBadgeCarousel() {
     const pollInterval = recentActivityDetected ? 15000 : achievementPoll // 15 seconds vs 60 seconds
     console.log('Badge carousel: Setting up achievement polling every', pollInterval, 'ms', recentActivityDetected ? '(frequent - recent activity)' : '(normal)')
     
-    const achievementPollInterval = setInterval(() => {
-      console.log('Badge carousel: Polling achievements for game', currentGameId)
-      // Only poll if not currently loading and we have a game
-      if (currentGameId && !state.loading?.gameAchievements) {
-        loadGameAchievements(currentGameId, true) // Force refresh to get latest achievement state
+    let isActive = true // Flag to prevent race conditions
+    let lastPollPromise = null // Track in-flight requests
+    
+    const pollAchievements = async () => {
+      if (!isActive || !currentGameId) return
+      
+      // Wait for previous poll to complete to avoid concurrent requests
+      if (lastPollPromise) {
+        try {
+          await lastPollPromise
+        } catch (error) {
+          // Previous request failed, continue with new one
+        }
       }
-    }, pollInterval)
+      
+      // Don't start new poll if component unmounted or game changed
+      if (!isActive || currentGameId !== game?.current?.id) return
+      
+      console.log('Badge carousel: Polling achievements for game', currentGameId)
+      
+      // Only poll if not currently loading
+      if (!state.loading?.gameAchievements) {
+        lastPollPromise = loadGameAchievements(currentGameId, true)
+        try {
+          await lastPollPromise
+        } catch (error) {
+          console.error('Badge carousel: Error loading achievements:', error)
+          // Context handles retries with exponential backoff
+        } finally {
+          lastPollPromise = null
+        }
+      }
+    }
+    
+    const achievementPollInterval = setInterval(pollAchievements, pollInterval)
+    
+    // Initial poll
+    pollAchievements()
     
     return () => {
       console.log('Badge carousel: Clearing achievement polling interval')
+      isActive = false
       clearInterval(achievementPollInterval)
     }
-  }, [currentGameId, isConfigured, achievementPoll, recentActivityDetected]) // Include recentActivityDetected
+  }, [currentGameId, isConfigured, achievementPoll, recentActivityDetected]) // Removed unstable dependencies
 
   const upcoming = React.useMemo(() => {
     return state.currentGameAchievements
@@ -216,6 +282,15 @@ export default function OverlayBadgeCarousel() {
         ))}
       </div>
     </div>
+  )
+}
+
+// Wrap with error boundary for better reliability
+export default function OverlayBadgeCarousel() {
+  return (
+    <ErrorBoundary fallback={OverlayErrorFallback}>
+      <OverlayBadgeCarouselInner />
+    </ErrorBoundary>
   )
 }
 

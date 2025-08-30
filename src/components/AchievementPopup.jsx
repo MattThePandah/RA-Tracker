@@ -1,16 +1,26 @@
 import React, { useEffect, useState } from 'react'
+import soundManager from '../services/soundManager.js'
 
 const AchievementPopup = ({ 
   achievement, 
   onClose, 
   duration = 5000,
   position = 'top-right',
-  showGameInfo = true 
+  showGameInfo = true,
+  gameProgress = null
 }) => {
   const [isVisible, setIsVisible] = useState(false)
   const [isLeaving, setIsLeaving] = useState(false)
 
   useEffect(() => {
+    // Initialize sound manager on first achievement popup
+    soundManager.initialize().then(() => {
+      soundManager.loadSounds()
+    })
+    
+    // Play achievement sound
+    soundManager.playAchievementSound(achievement, gameProgress)
+    
     // Animate in
     const showTimer = setTimeout(() => setIsVisible(true), 100)
     
@@ -26,7 +36,7 @@ const AchievementPopup = ({
       clearTimeout(showTimer)
       clearTimeout(closeTimer)
     }
-  }, [duration, onClose])
+  }, [duration, onClose, achievement, gameProgress])
 
   const badgeUrl = `https://media.retroachievements.org/Badge/${achievement.badgeName}.png`
   

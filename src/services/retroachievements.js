@@ -96,7 +96,20 @@ export async function getGameInfoAndUserProgress({ apiKey, username, gameId, inc
   params.set('apiKey', apiKey)
   
   try {
-    const { data } = await axios.get(`${url}?${params.toString()}`)
+    // Add timeout and retry logic
+    const config = {
+      timeout: 15000, // 15 second timeout
+      headers: {
+        'User-Agent': 'PSFest-RetroAchievements-Tracker/1.0'
+      }
+    }
+    
+    const { data } = await axios.get(`${url}?${params.toString()}`, config)
+    
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid response format from RetroAchievements API')
+    }
+    
     return {
       gameInfo: {
         id: data.ID,

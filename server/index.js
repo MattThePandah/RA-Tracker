@@ -334,23 +334,84 @@ let timerState = {
   updatedAt: Date.now(),
 }
 
-// Load persisted timer state if available
+// Load persisted timer state if available with backup recovery
+let timerStateLoaded = false
 try {
   const persistedTimers = loadJSON(TIMERS_FILE, null)
   if (persistedTimers && typeof persistedTimers === 'object') {
     timerState = { ...timerState, ...persistedTimers }
-    // Migrate legacy single current accumulator to perGame map
-    if (!timerState.perGame) timerState.perGame = {}
-    if (typeof persistedTimers.currentAccumulatedSec === 'number' && persistedTimers.currentGameId) {
-      timerState.perGame[persistedTimers.currentGameId] = (timerState.perGame[persistedTimers.currentGameId] || 0) + persistedTimers.currentAccumulatedSec
-      delete timerState.currentAccumulatedSec
-    }
-    // If we were running before restart, resume from now to avoid counting downtime twice
-    if (timerState.running) {
-      timerState.currentStartedAt = Date.now()
-    }
+    timerStateLoaded = true
+    console.log('Timer state loaded from primary file')
   }
-} catch {}
+} catch (primaryError) {
+  console.warn('Failed to load primary timer state:', primaryError.message)
+  
+  // Try to load from backup
+  try {
+    const backupFile = TIMERS_FILE.replace('.json', '.backup.json')
+    const backupTimers = loadJSON(backupFile, null)
+    if (backupTimers && typeof backupTimers === 'object' && backupTimers.isBackup) {
+      timerState = { ...timerState, ...backupTimers }
+      timerStateLoaded = true
+      console.log('Timer state recovered from backup file')
+      
+      // Save backup as primary to fix corruption
+      try {
+        delete backupTimers.isBackup
+        delete backupTimers.backupTimestamp
+        saveJSON(TIMERS_FILE, backupTimers)
+        console.log('Primary timer state restored from backup')
+      } catch (restoreError) {
+        console.warn('Failed to restore primary timer state:', restoreError.message)
+      }
+    }
+  } catch (backupError) {
+    console.warn('Failed to load backup timer state:', backupError.message)
+  }
+}
+
+// If we loaded timer state, migrate and validate it
+if (timerStateLoaded) {
+  // Migrate legacy single current accumulator to perGame map
+  if (!timerState.perGame) timerState.perGame = {}
+  if (typeof timerState.currentAccumulatedSec === 'number' && timerState.currentGameId) {
+    timerState.perGame[timerState.currentGameId] = (timerState.perGame[timerState.currentGameId] || 0) + timerState.currentAccumulatedSec
+    delete timerState.currentAccumulatedSec
+  }
+  
+  // Detect potential crash recovery scenario
+  const now = Date.now()
+  const timeSinceLastUpdate = now - (timerState.updatedAt || 0)
+  
+  if (timerState.running && timeSinceLastUpdate > 300_000) { // More than 5 minutes
+    console.log('Detected potential crash recovery scenario - timer was running for', Math.floor(timeSinceLastUpdate / 60000), 'minutes')
+    
+    // Don't count the downtime - resume from now
+    timerState.currentStartedAt = now
+    
+    // Log crash recovery stats
+    const gameProgress = timerState.currentGameId ? (timerState.perGame[timerState.currentGameId] || 0) : 0
+    console.log('Crash recovery - resuming timer for game:', timerState.currentGameId, 'with', gameProgress, 'seconds accumulated')
+  } else if (timerState.running) {
+    // Normal restart - resume from now
+    timerState.currentStartedAt = now
+  }
+  
+  // Validate state integrity
+  if (timerState.psfestAccumulatedSec < 0) {
+    console.warn('Fixing negative PSFest time')
+    timerState.psfestAccumulatedSec = 0
+  }
+  
+  if (timerState.perGame) {
+    Object.keys(timerState.perGame).forEach(gameId => {
+      if (timerState.perGame[gameId] < 0) {
+        console.warn('Fixing negative game time for', gameId)
+        timerState.perGame[gameId] = 0
+      }
+    })
+  }
+}
 
 app.get('/overlay/timers', (req, res) => {
   const now = Date.now()
@@ -574,6 +635,7 @@ app.listen(port, () => {
 })
 
 // Periodic persistence while running to reduce write frequency (every 15s)
+// Also create backup saves for crash recovery
 setInterval(() => {
   const now = Date.now()
   if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
@@ -584,30 +646,117 @@ setInterval(() => {
       timerState.psfestAccumulatedSec += deltaSec
       timerState.currentStartedAt = now
       timerState.updatedAt = now
-      saveJSON(TIMERS_FILE, timerState)
+      
+      // Save primary state
+      try {
+        saveJSON(TIMERS_FILE, timerState)
+      } catch (error) {
+        console.error('Timer persistence failed:', error)
+      }
+      
+      // Create backup with timestamp for crash recovery
+      try {
+        const backupState = {
+          ...timerState,
+          backupTimestamp: now,
+          isBackup: true
+        }
+        saveJSON(TIMERS_FILE.replace('.json', '.backup.json'), backupState)
+      } catch (error) {
+        console.warn('Timer backup failed:', error)
+      }
     }
   }
 }, 15_000)
 
-// Graceful shutdown: checkpoint timers
-for (const sig of ['SIGINT', 'SIGTERM']) {
+// Graceful shutdown: checkpoint timers with enhanced error handling
+const gracefulShutdown = (signal) => {
+  console.log(`Received ${signal}, performing graceful shutdown...`)
+  
   try {
-    process.on(sig, () => {
+    const now = Date.now()
+    
+    // Checkpoint any running timer state
+    if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
+      const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
+      if (deltaSec > 0) {
+        const gid = timerState.currentGameId
+        timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
+        timerState.psfestAccumulatedSec += deltaSec
+        console.log(`Checkpointing ${deltaSec} seconds for game ${gid}`)
+      }
+      timerState.currentStartedAt = now
+      timerState.updatedAt = now
+    }
+    
+    // Save state with retry logic
+    let saveAttempts = 3
+    while (saveAttempts > 0) {
       try {
-        const now = Date.now()
-        if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
-          const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
-          if (deltaSec > 0) {
-            const gid = timerState.currentGameId
-            timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
-            timerState.psfestAccumulatedSec += deltaSec
-          }
-          timerState.currentStartedAt = now
-          timerState.updatedAt = now
-        }
         saveJSON(TIMERS_FILE, timerState)
-      } catch {}
-      process.exit(0)
-    })
-  } catch {}
+        console.log('Timer state saved successfully on shutdown')
+        break
+      } catch (error) {
+        saveAttempts--
+        console.error(`Timer save failed (${saveAttempts} attempts left):`, error.message)
+        if (saveAttempts === 0) {
+          // Try backup save as last resort
+          try {
+            const backupFile = TIMERS_FILE.replace('.json', '.emergency.json')
+            saveJSON(backupFile, { ...timerState, isEmergencyBackup: true, shutdownTime: now })
+            console.log('Emergency backup saved')
+          } catch (backupError) {
+            console.error('Emergency backup failed:', backupError.message)
+          }
+        }
+      }
+    }
+    
+  } catch (error) {
+    console.error('Graceful shutdown error:', error.message)
+  } finally {
+    console.log('Graceful shutdown complete')
+    process.exit(0)
+  }
 }
+
+// Handle multiple shutdown signals
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGQUIT']) {
+  try {
+    process.on(sig, () => gracefulShutdown(sig))
+  } catch (error) {
+    console.warn(`Failed to register ${sig} handler:`, error.message)
+  }
+}
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error)
+  try {
+    // Emergency save before crash
+    const now = Date.now()
+    if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
+      const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
+      if (deltaSec > 0) {
+        const gid = timerState.currentGameId
+        timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
+        timerState.psfestAccumulatedSec += deltaSec
+      }
+      timerState.currentStartedAt = now
+      timerState.updatedAt = now
+    }
+    
+    const crashFile = TIMERS_FILE.replace('.json', '.crash.json')
+    saveJSON(crashFile, { ...timerState, isCrashBackup: true, crashTime: now, crashError: error.message })
+    console.log('Crash backup saved')
+  } catch (crashError) {
+    console.error('Crash backup failed:', crashError.message)
+  }
+  process.exit(1)
+})
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled promise rejection:', reason)
+  console.error('Promise:', promise)
+})

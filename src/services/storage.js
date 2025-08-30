@@ -5,37 +5,107 @@ const LS_SETTINGS = 'psfest.settings'
 const LS_CURRENT = 'psfest.currentGameId'
 
 async function postOverlayState(partial) {
-  try {
-    const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-    if (!base) return
-    await fetch(`${base}/overlay/state`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(partial)
-    })
-  } catch { /* ignore overlay sync failures */ }
+  let retries = 3
+  let delay = 1000
+  
+  while (retries > 0) {
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      if (!base) return
+      
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+      
+      const response = await fetch(`${base}/overlay/state`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(partial),
+        signal: controller.signal
+      })
+      
+      clearTimeout(timeoutId)
+      
+      if (response.ok) {
+        return // Success
+      } else if (response.status >= 500) {
+        throw new Error(`Server error: ${response.status}`)
+      } else {
+        console.warn('Storage: Overlay state sync failed with status:', response.status)
+        return // Don't retry for client errors
+      }
+    } catch (error) {
+      retries--
+      if (retries === 0) {
+        console.warn('Storage: Overlay state sync failed after retries:', error.message)
+        return
+      }
+      
+      if (error.name === 'AbortError') {
+        console.warn('Storage: Overlay state sync timeout, retrying...')
+      } else {
+        console.warn('Storage: Overlay state sync error, retrying...', error.message)
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, delay))
+      delay *= 2 // Exponential backoff
+    }
+  }
 }
 async function postOverlayStats({ total, completed }) {
   try {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
     if (!base) return
-    await fetch(`${base}/overlay/stats`, {
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 3000)
+    
+    const response = await fetch(`${base}/overlay/stats`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ total, completed })
+      body: JSON.stringify({ total, completed }),
+      signal: controller.signal
     })
-  } catch { /* ignore */ }
+    
+    clearTimeout(timeoutId)
+    
+    if (!response.ok) {
+      console.warn('Storage: Overlay stats sync failed with status:', response.status)
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('Storage: Overlay stats sync timeout')
+    } else {
+      console.warn('Storage: Overlay stats sync error:', error.message)
+    }
+  }
 }
 async function postOverlayCurrent(current) {
   try {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
     if (!base) return
-    await fetch(`${base}/overlay/current`, {
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 3000)
+    
+    const response = await fetch(`${base}/overlay/current`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ current })
+      body: JSON.stringify({ current }),
+      signal: controller.signal
     })
-  } catch { /* ignore */ }
+    
+    clearTimeout(timeoutId)
+    
+    if (!response.ok) {
+      console.warn('Storage: Overlay current sync failed with status:', response.status)
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('Storage: Overlay current sync timeout')
+    } else {
+      console.warn('Storage: Overlay current sync error:', error.message)
+    }
+  }
 }
 
 export function bootstrap() {
@@ -155,25 +225,93 @@ async function syncTimersToServer() {
 
 // Timer controls
 export async function startCurrentTimer() {
-  try {
-    const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-    await fetch(`${base}/overlay/timers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ running: true })
-    })
-  } catch {}
+  let retries = 3
+  let delay = 1000
+  
+  while (retries > 0) {
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      if (!base) {
+        console.warn('Timer: No server URL configured for timer control')
+        throw new Error('No server URL configured')
+      }
+      
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+      
+      const response = await fetch(`${base}/overlay/timers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ running: true }),
+        signal: controller.signal
+      })
+      
+      clearTimeout(timeoutId)
+      
+      if (response.ok) {
+        console.log('Timer: Successfully started current timer')
+        return true
+      } else if (response.status >= 500) {
+        throw new Error(`Server error: ${response.status}`)
+      } else {
+        console.error('Timer: Failed to start timer with status:', response.status)
+        return false
+      }
+    } catch (error) {
+      retries--
+      if (retries === 0) {
+        console.error('Timer: Failed to start current timer after retries:', error.message)
+        throw error
+      }
+      
+      if (error.name === 'AbortError') {
+        console.warn('Timer: Start request timeout, retrying...')
+      } else {
+        console.warn('Timer: Start request error, retrying...', error.message)
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, delay))
+      delay *= 2
+    }
+  }
+  return false
 }
 
 export async function pauseCurrentTimer() {
   try {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-    await fetch(`${base}/overlay/timers`, {
+    if (!base) {
+      console.warn('Timer: No server URL configured for timer control')
+      return false
+    }
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+    
+    const response = await fetch(`${base}/overlay/timers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ running: false })
+      body: JSON.stringify({ running: false }),
+      signal: controller.signal
     })
-  } catch {}
+    
+    clearTimeout(timeoutId)
+    
+    if (response.ok) {
+      console.log('Timer: Successfully paused current timer')
+      return true
+    } else {
+      console.error('Timer: Failed to pause timer with status:', response.status)
+      return false
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.error('Timer: Pause request timeout')
+    } else {
+      console.error('Timer: Pause request error:', error.message)
+    }
+    return false
+  }
 }
 
 export async function resetCurrentTimer() {
@@ -211,15 +349,129 @@ export async function getTimerStatus() {
 export async function getTimerData() {
   try {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-    const r = await fetch(`${base}/overlay/timers`)
-    if (!r.ok) return { running: false, currentTime: 0, totalTime: 0 }
-    const j = await r.json()
-    return {
-      running: !!j.running,
-      currentTime: j.currentTime || 0,
-      totalTime: j.totalTime || 0,
-      currentFormatted: j.currentFormatted || '0:00:00',
-      totalFormatted: j.totalFormatted || '0:00:00'
+    if (!base) {
+      console.warn('Timer: No server URL configured for timer data')
+      return { running: false, currentTime: 0, totalTime: 0, currentFormatted: '0:00:00', totalFormatted: '0:00:00' }
     }
-  } catch { return { running: false, currentTime: 0, totalTime: 0, currentFormatted: '0:00:00', totalFormatted: '0:00:00' } }
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 3000)
+    
+    const r = await fetch(`${base}/overlay/timers`, {
+      signal: controller.signal
+    })
+    
+    clearTimeout(timeoutId)
+    
+    if (!r.ok) {
+      console.warn('Timer: Failed to fetch timer data, status:', r.status)
+      return { running: false, currentTime: 0, totalTime: 0, currentFormatted: '0:00:00', totalFormatted: '0:00:00' }
+    }
+    
+    const j = await r.json()
+    
+    // Validate the response data
+    const timerData = {
+      running: !!j.running,
+      currentTime: Math.max(0, j.currentTime || 0),
+      totalTime: Math.max(0, j.totalTime || 0),
+      currentFormatted: j.currentFormatted || j.currentGameTime || '0:00:00',
+      totalFormatted: j.totalFormatted || j.psfestTime || '0:00:00',
+      currentGameId: j.currentGameId || null,
+      lastUpdate: j.lastUpdate || Date.now()
+    }
+    
+    // Detect potential timer state corruption
+    if (timerData.running && timerData.currentTime === 0) {
+      console.warn('Timer: Detected potential timer state corruption (running but no current time)')
+    }
+    
+    if (timerData.currentTime > timerData.totalTime + 60) { // Allow small discrepancies
+      console.warn('Timer: Current time exceeds total time, possible state corruption')
+    }
+    
+    return timerData
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('Timer: Timer data request timeout')
+    } else {
+      console.warn('Timer: Timer data request error:', error.message)
+    }
+    return { running: false, currentTime: 0, totalTime: 0, currentFormatted: '0:00:00', totalFormatted: '0:00:00' }
+  }
+}
+
+// Validate and recover timer state if needed
+export async function validateAndRecoverTimerState() {
+  try {
+    const timerData = await getTimerData()
+    const currentGameId = getCurrentGameId()
+    
+    // Check for inconsistencies
+    let needsRecovery = false
+    const issues = []
+    
+    if (timerData.running && !currentGameId) {
+      issues.push('Timer running but no current game selected')
+      needsRecovery = true
+    }
+    
+    if (currentGameId && timerData.currentGameId && currentGameId !== timerData.currentGameId) {
+      issues.push('Timer game ID mismatch with current selection')
+      needsRecovery = true
+    }
+    
+    if (timerData.running && timerData.currentTime === 0) {
+      issues.push('Timer running but no accumulated time')
+      // This might be normal for just-started timers, so don't force recovery
+    }
+    
+    if (needsRecovery) {
+      console.warn('Timer: State validation issues detected:', issues)
+      
+      // Attempt recovery
+      if (currentGameId) {
+        console.log('Timer: Attempting to sync timer with current game:', currentGameId)
+        await syncTimerWithCurrentGame(currentGameId)
+      } else if (timerData.running) {
+        console.log('Timer: Pausing orphaned timer (no current game)')
+        await pauseCurrentTimer()
+      }
+      
+      return { recovered: true, issues }
+    }
+    
+    return { recovered: false, issues: [] }
+  } catch (error) {
+    console.error('Timer: Failed to validate timer state:', error)
+    return { recovered: false, issues: ['Validation failed: ' + error.message] }
+  }
+}
+
+// Helper function to sync timer with current game
+async function syncTimerWithCurrentGame(gameId) {
+  try {
+    const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+    if (!base) return false
+    
+    const response = await fetch(`${base}/overlay/timers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        syncCurrentGame: true,
+        currentGameId: gameId
+      })
+    })
+    
+    if (response.ok) {
+      console.log('Timer: Successfully synced with current game')
+      return true
+    } else {
+      console.error('Timer: Failed to sync with current game, status:', response.status)
+      return false
+    }
+  } catch (error) {
+    console.error('Timer: Error syncing with current game:', error)
+    return false
+  }
 }
