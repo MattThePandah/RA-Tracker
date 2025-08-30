@@ -26,7 +26,7 @@ export async function fetchIGDBCover({ name, console }) {
     await Cache.saveCover(path, img.data)
     const release_year = first.first_release_date ? new Date(first.first_release_date * 1000).getUTCFullYear().toString() : null
     const publisher = first.publisher_name || null
-    return { path, blob: img.data, release_year, publisher, matched_name: first.name }
+    return { path, url, blob: img.data, release_year, publisher, matched_name: first.name }
   } catch (e) {
     console.warn('IGDB cover fetch failed', e?.message || e)
     return null
@@ -37,6 +37,7 @@ export async function precacheCovers({ games, onProgress }) {
   // Concurrency-limited queue to fetch covers and save path+year back to each game
   const toFetch = games.filter(g => !g.image_url)
   let done = 0
+  const urls = []
   const limit = 3
   async function worker() {
     while (toFetch.length) {
@@ -48,9 +49,10 @@ export async function precacheCovers({ games, onProgress }) {
         g.image_url = res.path
         if (!g.release_year && res.release_year) g.release_year = res.release_year
         if (!g.publisher && res.publisher) g.publisher = res.publisher
+        urls.push(res.url)
       }
     }
   }
   await Promise.all(Array.from({ length: limit }, worker))
-  return games
+  return { games, urls }
 }
