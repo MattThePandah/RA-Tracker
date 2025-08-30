@@ -95,6 +95,7 @@ export default function OverlayAchievements() {
 
   const params = new URLSearchParams(location.search)
   const poll = parseInt(params.get('poll') || '5000', 10)
+  const achievementPoll = parseInt(params.get('rapoll') || '60000', 10) // Default 60 seconds for achievements
   const style = (params.get('style') || 'progress').toLowerCase() // 'progress' | 'grid' | 'recent' | 'tracker'
   const showHardcore = params.get('hardcore') !== '0'
   const compact = params.get('compact') === '1'
@@ -149,20 +150,50 @@ export default function OverlayAchievements() {
     tryFetch()
   }, [tick, storageUpdate])
 
-  // Load achievements when game changes
+  // Track game ID separately to avoid reloading achievements on every game object update
+  const [currentGameId, setCurrentGameId] = React.useState(null)
+  
+  // Load achievements when game ID changes (not game object)
   React.useEffect(() => {
+    const newGameId = game?.id || null
     console.log('OverlayAchievements Debug:', {
       game: game?.title,
-      gameId: game?.id,
+      gameId: newGameId,
+      currentGameId,
       hasRASupport: game ? RA.hasRetroAchievementsSupport(game) : false,
       isConfigured,
       achievementsCount: state.currentGameAchievements.length
     })
     
-    if (game && RA.hasRetroAchievementsSupport(game) && isConfigured) {
-      loadGameAchievements(game.id)
+    if (newGameId !== currentGameId) {
+      setCurrentGameId(newGameId)
+      if (newGameId && game && RA.hasRetroAchievementsSupport(game) && isConfigured) {
+        loadGameAchievements(newGameId, true) // Only reload when game ID actually changes
+      }
     }
-  }, [game, isConfigured, loadGameAchievements, state.currentGameAchievements.length])
+  }, [game?.id, currentGameId, isConfigured, loadGameAchievements])
+
+  // Poll for achievement updates at regular intervals
+  React.useEffect(() => {
+    if (!currentGameId || !game || !RA.hasRetroAchievementsSupport(game) || !isConfigured) {
+      console.log('Achievement overlay: Skipping achievement polling', { currentGameId, hasRA: !!game && RA.hasRetroAchievementsSupport(game), isConfigured, achievementPoll })
+      return
+    }
+    
+    console.log('Achievement overlay: Setting up achievement polling every', achievementPoll, 'ms')
+    const achievementPollInterval = setInterval(() => {
+      console.log('Achievement overlay: Polling achievements for game', currentGameId)
+      // Only poll if not currently loading and we have a game
+      if (currentGameId && !state.loading?.gameAchievements) {
+        loadGameAchievements(currentGameId, true) // Force refresh to get latest achievement state
+      }
+    }, achievementPoll) // Use separate, longer poll interval for achievements
+    
+    return () => {
+      console.log('Achievement overlay: Clearing achievement polling interval')
+      clearInterval(achievementPollInterval)
+    }
+  }, [currentGameId, isConfigured, achievementPoll]) // Use currentGameId instead of game object
 
   // Don't show anything if not configured
   if (!isConfigured) {

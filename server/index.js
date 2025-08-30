@@ -532,6 +532,37 @@ app.post('/wheel/spin', (req, res) => {
   }
 })
 
+// RetroAchievements API proxy to avoid CORS and manage rate limiting
+app.get('/api/retroachievements/game/:gameId', async (req, res) => {
+  try {
+    const gameId = req.params.gameId
+    const username = req.query.username || process.env.RA_USERNAME
+    const apiKey = req.query.apiKey || process.env.RA_API_KEY
+    
+    if (!gameId || !username || !apiKey) {
+      return res.status(400).json({ error: 'gameId, username, and apiKey required' })
+    }
+    
+    const params = new URLSearchParams()
+    params.set('y', apiKey)
+    params.set('u', username)
+    params.set('g', gameId)
+    params.set('a', '1') // Include awards
+    
+    const url = `https://retroachievements.org/API/API_GetGameInfoAndUserProgress.php?${params.toString()}`
+    
+    const response = await axios.get(url)
+    res.json(response.data)
+  } catch (error) {
+    console.error('RetroAchievements API error:', error.message)
+    if (error.response?.status === 429) {
+      res.status(429).json({ error: 'Rate limited by RetroAchievements API' })
+    } else {
+      res.status(500).json({ error: 'RetroAchievements API request failed' })
+    }
+  }
+})
+
 const port = process.env.PORT || 8787
 app.listen(port, () => {
   console.log(`IGDB proxy on :${port}`)

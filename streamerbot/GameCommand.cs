@@ -34,7 +34,17 @@ public class CPHInline
                 // Add RetroAchievements link if we have a game ID
                 if (!string.IsNullOrEmpty(gameId) && gameId != "0")
                 {
-                    message += $" | RetroAchievements: https://retroachievements.org/game/{gameId}";
+                    // Extract numeric game ID from internal format (ra-consoleId-gameId)
+                    string numericGameId = gameId;
+                    if (gameId.StartsWith("ra-"))
+                    {
+                        string[] parts = gameId.Split('-');
+                        if (parts.Length >= 3)
+                        {
+                            numericGameId = parts[2];
+                        }
+                    }
+                    message += $" | RetroAchievements: https://retroachievements.org/game/{numericGameId}";
                 }
                 
                 CPH.SendMessage(message, true);

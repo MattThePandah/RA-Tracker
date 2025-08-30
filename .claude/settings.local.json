@@ -12,7 +12,8 @@
       "Bash(curl:*)",
       "WebFetch(domain:api-docs.retroachievements.org)",
       "WebFetch(domain:docs.streamer.bot)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

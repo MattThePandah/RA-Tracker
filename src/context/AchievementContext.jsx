@@ -142,8 +142,13 @@ export function AchievementProvider({ children }) {
       return
     }
 
-    // Don't reload if already loading or already have data (unless forced)
-    if (state.loading.gameAchievements || (!force && state.currentGameAchievements.length > 0)) {
+    // Don't reload if already loading (but allow forced refreshes even with existing data)
+    if (state.loading.gameAchievements) {
+      return
+    }
+    
+    // Skip if we already have data and this isn't a forced refresh
+    if (!force && state.currentGameAchievements.length > 0) {
       return
     }
 
@@ -163,6 +168,12 @@ export function AchievementProvider({ children }) {
         includeAwards: true
       })
 
+      console.log('AchievementContext: Updated achievements for game', gameId, {
+        achievementCount: result.achievements.length,
+        earnedCount: result.achievements.filter(a => a.isEarned).length,
+        progress: result.userProgress
+      })
+      
       dispatch({
         type: 'SET_CURRENT_GAME_ACHIEVEMENTS',
         achievements: result.achievements,
@@ -270,10 +281,9 @@ export function AchievementProvider({ children }) {
   }
 
   // Check if achievement features are configured
-  const isConfigured = !!(
-    state.settings.raApiKey && state.settings.raUsername ||
-    (import.meta.env.VITE_RA_API_KEY && import.meta.env.VITE_RA_USERNAME)
-  )
+  const settingsConfig = !!(state.settings.raApiKey && state.settings.raUsername)
+  const envConfig = !!(import.meta.env.VITE_RA_API_KEY && import.meta.env.VITE_RA_USERNAME)
+  const isConfigured = settingsConfig || envConfig
 
   // Get achievement progress for a specific game
   const getGameProgress = (gameId) => {

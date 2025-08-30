@@ -9,6 +9,7 @@ import OverlayStats from './routes/OverlayStats.jsx'
 import OverlayWheel from './routes/OverlayWheel.jsx'
 import OverlayAchievements from './routes/OverlayAchievements.jsx'
 import OverlayFooter from './routes/OverlayFooter.jsx'
+import OverlayBadgeCarousel from './routes/OverlayBadgeCarousel.jsx'
 import Settings from './routes/Settings.jsx'
 import ImportExport from './routes/ImportExport.jsx'
 import Current from './routes/Current.jsx'
@@ -47,6 +48,7 @@ createRoot(document.getElementById('root')).render(
         <Route path='/overlay/wheel' element={<OverlayWheel />} />
         <Route path='/overlay/achievements' element={<AchievementProvider><OverlayAchievements /></AchievementProvider>} />
         <Route path='/overlay/footer' element={<OverlayFooter />} />
+        <Route path='/overlay/badge-carousel' element={<AchievementProvider><OverlayBadgeCarousel /></AchievementProvider>} />
 
         <Route path='*' element={<div className='p-4'>Not found</div>} />
       </Routes>

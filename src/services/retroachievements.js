@@ -88,16 +88,15 @@ export async function getGameInfoAndUserProgress({ apiKey, username, gameId, inc
     throw new Error('apiKey, username, and gameId are required')
   }
   
+  // Use local server proxy to avoid CORS issues and manage rate limiting
+  const proxyBase = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+  const url = `${proxyBase}/api/retroachievements/game/${gameId}`
   const params = new URLSearchParams()
-  params.set('y', apiKey)
-  params.set('u', username)
-  params.set('g', String(gameId))
-  if (includeAwards) params.set('a', '1')
-  
-  const url = `${RA_BASE}/API_GetGameInfoAndUserProgress.php?${params.toString()}`
+  params.set('username', username)
+  params.set('apiKey', apiKey)
   
   try {
-    const { data } = await axios.get(url)
+    const { data } = await axios.get(`${url}?${params.toString()}`)
     return {
       gameInfo: {
         id: data.ID,
