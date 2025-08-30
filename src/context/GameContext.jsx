@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
 import * as Storage from '../services/storage.js'
 import * as Bonus from '../utils/bonusDetection.js'
+import useRASync from '../hooks/useRASync.js'
 
 const GameContext = createContext(null)
 
@@ -67,6 +68,8 @@ function reducer(state, action) {
 export function GameProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState)
 
+  const rasync = useRASync({ state, dispatch })
+
   useEffect(() => {
     // initial bonus detection pass (idempotent)
     if (state.games.length) {
@@ -77,6 +80,12 @@ export function GameProvider({ children }) {
       if (JSON.stringify(updated) !== JSON.stringify(state.games)) {
         dispatch({ type: 'SET_GAMES', games: updated })
       }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (state.settings.raEnabled || !state.games.length) {
+      rasync()
     }
   }, [])
 
