@@ -13,11 +13,14 @@ const AchievementPopup = ({
   const [isLeaving, setIsLeaving] = useState(false)
 
   useEffect(() => {
-    // Initialize sound manager on first achievement popup
-    soundManager.initialize().then(() => {
+    // Initialize and load sounds only if not already done
+    if (!soundManager.initialized) {
+      soundManager.initialize()
+    }
+    if (!soundManager.soundsLoaded) {
       soundManager.loadSounds()
-    })
-    
+    }
+
     // Play achievement sound
     soundManager.playAchievementSound(achievement, gameProgress)
     

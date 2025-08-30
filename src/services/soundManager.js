@@ -7,6 +7,7 @@ class SoundManager {
     this.volume = 0.7
     this.enabled = true
     this.initialized = false
+    this.soundsLoaded = false
   }
 
   // Initialize audio context (must be called after user interaction)
@@ -24,6 +25,7 @@ class SoundManager {
 
   // Load achievement sound effects
   async loadSounds() {
+    if (this.soundsLoaded) return
     if (!this.initialized) await this.initialize()
     if (!this.audioContext) return
 
@@ -51,6 +53,8 @@ class SoundManager {
         this.createFallbackSound(name)
       }
     }
+
+    this.soundsLoaded = true
   }
 
   // Load sound buffer from URL
@@ -241,7 +245,8 @@ class SoundManager {
     return {
       enabled: this.enabled,
       volume: this.volume,
-      initialized: this.initialized
+      initialized: this.initialized,
+      soundsLoaded: this.soundsLoaded
     }
   }
 
