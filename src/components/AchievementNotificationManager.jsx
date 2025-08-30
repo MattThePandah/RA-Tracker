@@ -3,6 +3,7 @@ import { useAchievements } from '../context/AchievementContext.jsx'
 import AchievementPopup from './AchievementPopup.jsx'
 import MilestoneCelebration from './MilestoneCelebration.jsx'
 import ErrorBoundary, { ComponentErrorFallback } from './ErrorBoundary.jsx'
+import soundManager from '../services/soundManager.js'
 
 const AchievementNotificationManagerInner = () => {
   const { state } = useAchievements()
@@ -14,6 +15,16 @@ const AchievementNotificationManagerInner = () => {
   const popupDuration = state.settings.popupDuration || 5000
   const enablePopups = state.settings.enablePopups !== false
   const enableMilestones = state.settings.enableMilestoneSounds !== false
+
+  // Initialize sound manager once at mount
+  useEffect(() => {
+    if (!soundManager.initialized) {
+      soundManager.initialize()
+    }
+    if (!soundManager.soundsLoaded) {
+      soundManager.loadSounds()
+    }
+  }, [])
 
   // Check for new achievements from recent achievements list
   useEffect(() => {
