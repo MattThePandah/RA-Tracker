@@ -263,6 +263,15 @@ function SmartRoulette({ games, poolKey, onGameSelected, onSampleUpdate }) {
     }
   }, [spinning, games, draw, onGameSelected, segmentAngle])
 
+  React.useEffect(() => {
+    return () => {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+    }
+  }, [spinning])
+
   const hasValidGames = sample.some(g => g)
   const eligibleCount = games?.length || 0
 
