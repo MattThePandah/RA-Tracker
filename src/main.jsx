@@ -47,7 +47,7 @@ createRoot(document.getElementById('root')).render(
         <Route path='/overlay/stats' element={<OverlayStats />} />
         <Route path='/overlay/wheel' element={<OverlayWheel />} />
         <Route path='/overlay/achievements' element={<AchievementProvider><OverlayAchievements /></AchievementProvider>} />
-        <Route path='/overlay/footer' element={<OverlayFooter />} />
+        <Route path='/overlay/footer' element={<AchievementProvider><OverlayFooter /></AchievementProvider>} />
         <Route path='/overlay/badge-carousel' element={<AchievementProvider><OverlayBadgeCarousel /></AchievementProvider>} />
 
         <Route path='*' element={<div className='p-4'>Not found</div>} />

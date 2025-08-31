@@ -499,12 +499,6 @@ export default function OverlayMain() {
                           <div className="achievement-fill" style={{width: `${achievementPercent}%`}} />
                           <div className="achievement-percent">{achievementPercent}%</div>
                         </div>
-                        {showHardcore && (
-                          <div className="hardcore-count" title="Hardcore achievements earned">
-                            <i className="bi bi-lightning-charge-fill hardcore-icon"></i>
-                            <span className="hardcore-text">{hardcoreCount} HC</span>
-                          </div>
-                        )}
                       </div>
                     )}
 

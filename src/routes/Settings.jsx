@@ -135,7 +135,23 @@ export default function Settings() {
       }
       const merged = Array.from(map.values())
       dispatch({ type: 'SET_GAMES', games: merged })
-      alert(`Synced ${games.length} games from RetroAchievements.`)
+      
+      // Auto-publish stats to overlay after sync
+      try {
+        const total = merged.length
+        const completed = merged.filter(g => g.status === 'Completed').length
+        const base = import.meta.env.VITE_IGDB_PROXY_URL
+        if (base) {
+          await fetch(`${base}/overlay/stats`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ total, completed })
+          })
+        }
+      } catch (e) {
+        console.warn('Failed to auto-publish stats to overlay:', e)
+      }
+      
+      alert(`Synced ${merged.length} games from RetroAchievements.`)
     } catch (e) {
       alert('RA sync failed: ' + (e?.message || e))
     } finally {

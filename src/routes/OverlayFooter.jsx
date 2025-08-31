@@ -1,5 +1,7 @@
 import React from 'react'
 import * as Storage from '../services/storage.js'
+import { useAchievements } from '../context/AchievementContext.jsx'
+import * as RA from '../services/retroachievements.js'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -20,6 +22,7 @@ function useClock() {
 }
 
 export default function OverlayFooter() {
+  const { state, loadGameAchievements, isConfigured } = useAchievements()
   const params = new URLSearchParams(location.search)
   const poll = parseInt(params.get('poll') || '5000', 10)
   const isClean = params.get('clean') === '1'
@@ -36,6 +39,12 @@ export default function OverlayFooter() {
   const showCurrent = params.get('showcurrent') === '1'
   const currentCover = params.get('cgcover') !== '0'
   const containerWidth = params.get('containerwidth') ? Math.max(600, Math.min(3840, parseInt(params.get('containerwidth'), 10) || 0)) : null
+  
+  // Badge carousel integration parameters
+  const showBadges = params.get('showbadges') === '1'
+  const badgeCount = Math.max(1, Math.min(8, parseInt(params.get('badgecount') || '4', 10)))
+  const rotateMs = parseInt(params.get('badgerotate') || '8000', 10)
+  const achievementPoll = parseInt(params.get('rapoll') || '60000', 10)
   const now = useClock()
   const timeStr = formatTimeString(now, { timeFmt, showSeconds })
   const dateStr = formatDate(now, dateFmt)
@@ -53,6 +62,11 @@ export default function OverlayFooter() {
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
   const [timers, setTimers] = React.useState({ currentGameTime: '00:00:00', psfestTime: '000:00:00' })
   const [current, setCurrent] = React.useState(null)
+  
+  // Badge carousel state
+  const [game, setGame] = React.useState(null)
+  const [badgeIndex, setBadgeIndex] = React.useState(0)
+  const [isTransitioning, setIsTransitioning] = React.useState(false)
 
   React.useEffect(() => {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
@@ -131,10 +145,127 @@ export default function OverlayFooter() {
     return () => clearInterval(id)
   }, [showTimers])
 
+  // Badge carousel game loading
+  React.useEffect(() => {
+    if (!showBadges) return
+    
+    const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+    const tryFetch = async () => {
+      let g = null
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000)
+        
+        const r = await fetch(`${base}/overlay/current`, {
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+        
+        if (r.ok) {
+          g = await r.json()
+        }
+        
+        if (!g?.current) {
+          const id = Storage.getCurrentGameId()
+          if (id) {
+            const games = Storage.getGames()
+            const found = games.find(x => x.id === id)
+            if (found) {
+              g = { current: found }
+            }
+          }
+        }
+      } catch (error) {
+        const id = Storage.getCurrentGameId()
+        if (id) {
+          const games = Storage.getGames()
+          const found = games.find(x => x.id === id)
+          if (found) {
+            g = { current: found }
+          }
+        }
+      }
+      setGame(g)
+    }
+    tryFetch()
+  }, [tick, showBadges])
+
+  // Load achievements when game changes
+  const [currentGameId, setCurrentGameId] = React.useState(null)
+  
+  React.useEffect(() => {
+    if (!showBadges) return
+    
+    const newGameId = game?.current?.id || null
+    if (newGameId !== currentGameId) {
+      setCurrentGameId(newGameId)
+      if (newGameId && RA.hasRetroAchievementsSupport(game.current)) {
+        loadGameAchievements(newGameId, true)
+      }
+    }
+  }, [game?.current?.id, currentGameId, loadGameAchievements, showBadges])
+
+  // Badge carousel rotation
+  const upcoming = React.useMemo(() => {
+    if (!showBadges) return []
+    return state.currentGameAchievements
+      .filter(a => !a.isEarned)
+      .sort((a, b) => b.points - a.points)
+  }, [state.currentGameAchievements, showBadges])
+
+  React.useEffect(() => {
+    if (!showBadges || upcoming.length <= badgeCount) return
+    
+    const id = setInterval(() => {
+      setIsTransitioning(true)
+      setTimeout(() => {
+        setBadgeIndex(i => {
+          const nextIndex = i + badgeCount
+          return nextIndex >= upcoming.length ? 0 : nextIndex
+        })
+        setIsTransitioning(false)
+      }, 300)
+    }, rotateMs)
+    return () => clearInterval(id)
+  }, [upcoming.length, rotateMs, badgeCount, showBadges])
+  
+  const visibleBadges = React.useMemo(() => {
+    if (!showBadges) return []
+    const remainingFromIndex = upcoming.length - badgeIndex
+    const count = Math.min(badgeCount, remainingFromIndex)
+    return upcoming.slice(badgeIndex, badgeIndex + count)
+  }, [upcoming, badgeIndex, badgeCount, showBadges])
+
   return (
     <div className={`overlay-chrome ${isClean ? 'overlay-clean' : ''}`} style={{ width: '100vw', height: '100vh' }}>
       <div className="overlay-footer-bar" style={{ height: `${barHeight}px` }}>
         <div className="footer-inner" style={{ ...(containerWidth ? { maxWidth: containerWidth, margin: '0 auto' } : {}) }}>
+          {/* Badge carousel at far left */}
+          {showBadges && game?.current && isConfigured && RA.hasRetroAchievementsSupport(game.current) && visibleBadges.length > 0 && (
+            <div className="footer-badges-section">
+              <div className="footer-badges-label">
+                <i className="bi bi-trophy"></i>
+                <span>Upcoming Achievements</span>
+              </div>
+              <div className={`footer-inline-badges ${isTransitioning ? 'transitioning' : ''}`}>
+              {visibleBadges.map((achievement, i) => (
+                <div className="footer-inline-badge" key={`${achievement.id}-${badgeIndex}-${i}`} style={{'--delay': `${i * 0.1}s`}}>
+                  <div className="inline-badge-image">
+                    <img src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`} alt={achievement.title} />
+                    <div className="badge-lock-overlay">
+                      <i className="bi bi-lock-fill"></i>
+                    </div>
+                  </div>
+                  <div className="inline-badge-info">
+                    <div className="inline-badge-title">{achievement.title}</div>
+                    <div className="inline-badge-desc">{achievement.description}</div>
+                  </div>
+                </div>
+              ))}
+              </div>
+            </div>
+          )}
+
           {/* Spacer pushes time + PSFest cluster to the right */}
           <div className="footer-spacer" />
 

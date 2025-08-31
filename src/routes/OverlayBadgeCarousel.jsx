@@ -20,6 +20,7 @@ function OverlayBadgeCarouselInner() {
   const achievementPoll = parseInt(params.get('rapoll') || '60000', 10) // Default 60 seconds for achievements
   const rotateMs = parseInt(params.get('rotate') || '8000', 10) // Longer rotation for readability
   const isClean = params.get('clean') === '1'
+  const isHorizontal = params.get('horizontal') === '1'
   
   // Stream-friendly: compact layout for corner positioning  
   const showCount = Math.max(parseInt(params.get('show') || '3', 10), 1)
@@ -237,7 +238,7 @@ function OverlayBadgeCarouselInner() {
     return upcoming.slice(index, index + count)
   }, [upcoming, index, showCount])
 
-  const containerClass = `overlay-chrome badge-carousel-overlay position-${position} ${isClean ? 'overlay-clean' : ''} ${isTransitioning ? 'transitioning' : ''}`
+  const containerClass = `overlay-chrome badge-carousel-overlay position-${position} ${isClean ? 'overlay-clean' : ''} ${isTransitioning ? 'transitioning' : ''} ${isHorizontal ? 'horizontal' : ''}`
   const currentGame = game?.current
   const pageCount = Math.ceil(upcoming.length / showCount)
   const currentPage = Math.floor(index / showCount) + 1
