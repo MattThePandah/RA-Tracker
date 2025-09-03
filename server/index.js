@@ -455,6 +455,30 @@ app.get('/overlay/timers', (req, res) => {
   })
 })
 
+// Per-game fixed time (seconds accumulated) with formatted string
+app.get('/overlay/timers/game/:id', (req, res) => {
+  try {
+    const id = req.params.id
+    const now = Date.now()
+    let seconds = 0
+
+    if (timerState && timerState.perGame) {
+      seconds = Math.max(0, Number(timerState.perGame[id] || 0))
+    }
+
+    // If this game is currently running, include live delta
+    if (timerState && timerState.running && timerState.currentGameId === id && timerState.currentStartedAt) {
+      const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
+      if (deltaSec > 0) seconds += deltaSec
+    }
+
+    const formatted = formatTime(seconds)
+    res.json({ id, seconds, formatted, updatedAt: now })
+  } catch (error) {
+    res.status(500).json({ error: 'failed_to_compute_fixed_time' })
+  }
+})
+
 app.post('/overlay/timers', (req, res) => {
   const now = Date.now()
   const body = req.body || {}

@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { useAchievements } from '../context/AchievementContext.jsx'
 import AchievementPopup from './AchievementPopup.jsx'
-import MilestoneCelebration from './MilestoneCelebration.jsx'
 import ErrorBoundary, { ComponentErrorFallback } from './ErrorBoundary.jsx'
 import soundManager from '../services/soundManager.js'
 
@@ -9,12 +8,10 @@ const AchievementNotificationManagerInner = () => {
   const { state } = useAchievements()
   const [activePopups, setActivePopups] = useState([])
   const [lastCheckedTimestamp, setLastCheckedTimestamp] = useState(Date.now())
-  const [activeMilestone, setActiveMilestone] = useState(null)
 
   // Configuration from achievement settings
   const popupDuration = state.settings.popupDuration || 5000
   const enablePopups = state.settings.enablePopups !== false
-  const enableMilestones = state.settings.enableMilestoneSounds !== false
 
   // Initialize sound manager once at mount
   useEffect(() => {
@@ -39,16 +36,24 @@ const AchievementNotificationManagerInner = () => {
     })
 
     if (newAchievements.length > 0) {
-      // Add new popups for each achievement
+      // For multiple achievements unlocked at once, show them with better spacing
+      const staggerDelay = newAchievements.length > 3 ? 300 : 500 // Faster stagger for many achievements
+      
       newAchievements.forEach((achievement, index) => {
-        // Stagger popup appearances slightly
+        // Stagger popup appearances
         setTimeout(() => {
           addPopup(achievement)
-        }, index * 500)
+        }, index * staggerDelay)
       })
 
       // Update last checked timestamp
       setLastCheckedTimestamp(Date.now())
+      
+      // Log multiple achievement unlock for debugging
+      if (newAchievements.length > 1) {
+        console.log(`AchievementNotificationManager: Multiple achievements unlocked (${newAchievements.length})`, 
+          newAchievements.map(a => a.title))
+      }
     }
   }, [state.recentAchievements, enablePopups, lastCheckedTimestamp])
 
@@ -85,32 +90,12 @@ const AchievementNotificationManagerInner = () => {
     return () => clearInterval(cleanup)
   }, [popupDuration])
 
-  // Check for milestone celebrations
-  useEffect(() => {
-    if (!enableMilestones || state.milestoneData.milestonesReached.length === 0) {
-      return
-    }
-
-    const latestMilestone = state.milestoneData.milestonesReached[state.milestoneData.milestonesReached.length - 1]
-    
-    // Show milestone celebration if it's new
-    if (latestMilestone && (!activeMilestone || latestMilestone.timestamp > activeMilestone.timestamp)) {
-      // Get current game info for the milestone
-      const currentGame = state.currentGameAchievements.length > 0 ? {
-        title: latestMilestone.gameTitle || 'Current Game'
-      } : null
-
-      setActiveMilestone({
-        ...latestMilestone,
-        gameTitle: currentGame?.title
-      })
-    }
-  }, [state.milestoneData.milestonesReached, enableMilestones, activeMilestone])
 
   // Calculate positions to stack multiple popups
   const getPopupPosition = (index, total) => {
     const basePosition = 'top-right'
-    const spacing = 120 // pixels between popups
+    // Reduce spacing when many popups are shown simultaneously
+    const spacing = total > 4 ? 100 : 120 // Tighter spacing for many popups
     
     // For top positions, stack downward
     if (basePosition.includes('top')) {
@@ -118,7 +103,9 @@ const AchievementNotificationManagerInner = () => {
         position: basePosition,
         style: {
           transform: `translateY(${index * spacing}px)`,
-          zIndex: 1000 - index
+          zIndex: 1000 - index,
+          // Add slight offset for visual variety with many popups
+          ...(total > 2 ? { marginRight: `${(index % 3) * 5}px` } : {})
         }
       }
     }
@@ -128,13 +115,14 @@ const AchievementNotificationManagerInner = () => {
       position: basePosition,
       style: {
         transform: `translateY(-${index * spacing}px)`,
-        zIndex: 1000 - index
+        zIndex: 1000 - index,
+        ...(total > 2 ? { marginRight: `${(index % 3) * 5}px` } : {})
       }
     }
   }
 
-  // Show nothing if no popups and no milestone
-  if ((!enablePopups || activePopups.length === 0) && (!activeMilestone || !enableMilestones)) {
+  // Show nothing if no popups
+  if (!enablePopups || activePopups.length === 0) {
     return null
   }
 
@@ -161,18 +149,6 @@ const AchievementNotificationManagerInner = () => {
           </div>
         )
       })}
-      
-      {/* Milestone celebration */}
-      {activeMilestone && enableMilestones && (
-        <MilestoneCelebration
-          milestone={activeMilestone.milestone}
-          gameTitle={activeMilestone.gameTitle}
-          earnedCount={activeMilestone.earnedCount}
-          totalCount={activeMilestone.totalCount}
-          onClose={() => setActiveMilestone(null)}
-          duration={6000}
-        />
-      )}
     </div>
   )
 }

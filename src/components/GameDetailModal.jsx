@@ -7,6 +7,7 @@ export default function GameDetailModal({ game, onClose }) {
   const fileInputRef = useRef(null)
   const [currentCover, setCurrentCover] = useState(null)
   const [isUploadingCover, setIsUploadingCover] = useState(false)
+  const [fixedTime, setFixedTime] = useState('-')
   const [formData, setFormData] = useState({
     status: '',
     rating: '',
@@ -78,14 +79,40 @@ export default function GameDetailModal({ game, onClose }) {
     }
   }, [game])
 
+  // Load fixed time from server timers per-game seconds
+  useEffect(() => {
+    let cancelled = false
+    const loadFixedTime = async () => {
+      try {
+        if (!game?.id) { setFixedTime('-'); return }
+        const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+        const r = await fetch(`${base}/overlay/timers/game/${encodeURIComponent(game.id)}`)
+        if (!r.ok) { setFixedTime('-'); return }
+        const j = await r.json()
+        if (!cancelled) setFixedTime(j.formatted || '-')
+      } catch {
+        if (!cancelled) setFixedTime('-')
+      }
+    }
+    loadFixedTime()
+    return () => { cancelled = true }
+  }, [game?.id])
+
   const handleFieldChange = (field, value) => {
-    const newFormData = { ...formData, [field]: value }
-    setFormData(newFormData)
+    // Normalize date fields: keep date-only in form, store ISO at midnight in data
+    let displayValue = value
+    let storedValue = value === '' ? null : value
+    if (field === 'date_started' || field === 'date_finished') {
+      displayValue = value
+      storedValue = value ? value + 'T00:00:00.000Z' : null
+    }
+
+    setFormData(prev => ({ ...prev, [field]: displayValue }))
     
     // Auto-save on change
     const updatedGame = {
       ...game,
-      [field]: value === '' ? null : value
+      [field]: storedValue
     }
     
     // Auto-set dates based on status
@@ -335,14 +362,12 @@ export default function GameDetailModal({ game, onClose }) {
                 </div>
                 
                 <div className="mb-3">
-                  <label className="form-label">Completion Time (hours)</label>
-                  <input 
-                    type="number" 
-                    className="form-control" 
-                    step="0.5" 
-                    min="0"
-                    value={formData.completion_time}
-                    onChange={e => handleFieldChange('completion_time', e.target.value)}
+                  <label className="form-label">Fixed Time</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={fixedTime}
+                    readOnly
                   />
                 </div>
                   </div>
@@ -354,7 +379,7 @@ export default function GameDetailModal({ game, onClose }) {
                     type="date" 
                     className="form-control"
                     value={formData.date_started}
-                    onChange={e => handleFieldChange('date_started', e.target.value + 'T00:00:00.000Z')}
+                    onChange={e => handleFieldChange('date_started', e.target.value)}
                   />
                 </div>
                 
@@ -364,7 +389,7 @@ export default function GameDetailModal({ game, onClose }) {
                     type="date" 
                     className="form-control"
                     value={formData.date_finished}
-                    onChange={e => handleFieldChange('date_finished', e.target.value + 'T00:00:00.000Z')}
+                    onChange={e => handleFieldChange('date_finished', e.target.value)}
                   />
                 </div>
                 

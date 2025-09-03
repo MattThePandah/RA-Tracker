@@ -105,9 +105,15 @@ export default function Current() {
   }
 
   const onField = async (k, v) => {
-    setForm(prev => ({ ...prev, [k]: v }))
-    const mapped = (key, val) => (val === '' ? null : val)
-    const patch = { [k]: mapped(k, v) }
+    // Normalize date fields: keep date-only in form state; store ISO midnight in data
+    let formVal = v
+    let storeVal = (v === '' ? null : v)
+    if (k === 'date_started' || k === 'date_finished') {
+      formVal = v
+      storeVal = v ? v + 'T00:00:00.000Z' : null
+    }
+    setForm(prev => ({ ...prev, [k]: formVal }))
+    const patch = { [k]: storeVal }
     
     if (k === 'status') {
       const now = new Date().toISOString()
@@ -412,11 +418,11 @@ export default function Current() {
           <div className="col-md-6">
             <div className="mb-3">
               <label className="form-label text-light">Date Started</label>
-              <input type="date" className="form-control" value={form.date_started} onChange={e=>onField('date_started', e.target.value + 'T00:00:00.000Z')} />
+              <input type="date" className="form-control" value={form.date_started} onChange={e=>onField('date_started', e.target.value)} />
             </div>
             <div className="mb-3">
               <label className="form-label text-light">Date Finished</label>
-              <input type="date" className="form-control" value={form.date_finished} onChange={e=>onField('date_finished', e.target.value + 'T00:00:00.000Z')} />
+              <input type="date" className="form-control" value={form.date_finished} onChange={e=>onField('date_finished', e.target.value)} />
             </div>
             <div className="mb-3">
               <label className="form-label text-light">Notes</label>

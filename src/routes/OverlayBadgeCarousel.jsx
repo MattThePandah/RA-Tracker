@@ -1,5 +1,6 @@
 import React from 'react'
 import { useAchievements } from '../context/AchievementContext.jsx'
+import AchievementNotificationManager from '../components/AchievementNotificationManager.jsx'
 import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
 import ErrorBoundary, { OverlayErrorFallback } from '../components/ErrorBoundary.jsx'
@@ -244,45 +245,68 @@ function OverlayBadgeCarouselInner() {
   const currentPage = Math.floor(index / showCount) + 1
 
   if (!currentGame) {
-    return <div className={containerClass}>No game selected</div>
+    return (
+      <>
+        <div className={containerClass}>No game selected</div>
+        <AchievementNotificationManager />
+      </>
+    )
   }
   if (!isConfigured || !RA.hasRetroAchievementsSupport(currentGame)) {
-    return <div className={containerClass}>RetroAchievements not configured</div>
+    return (
+      <>
+        <div className={containerClass}>RetroAchievements not configured</div>
+        <AchievementNotificationManager />
+      </>
+    )
   }
   if (state.loading.gameAchievements) {
-    return <div className={containerClass}>Loading achievements…</div>
+    return (
+      <>
+        <div className={containerClass}>Loading achievements…</div>
+        <AchievementNotificationManager />
+      </>
+    )
   }
   if (upcoming.length === 0) {
-    return <div className={containerClass}>All achievements earned!</div>
+    return (
+      <>
+        <div className={containerClass}>All achievements earned!</div>
+        <AchievementNotificationManager />
+      </>
+    )
   }
 
   return (
-    <div className={containerClass}>
-      <div className="badge-header">
-        <div className="badge-heading">Locked Achievements</div>
-        {pageCount > 1 && (
-          <div className="badge-counter">{currentPage}/{pageCount}</div>
-        )}
-        {lastUpdateTime > 0 && (
-          <div style={{fontSize: '10px', opacity: 0.6, marginTop: '2px'}}>
-            Updated: {new Date(lastUpdateTime).toLocaleTimeString()}
-          </div>
-        )}
-      </div>
-      <div className="badge-list">
-        {visible.map((achievement, i) => (
-          <div className="badge-item" key={`${achievement.id}-${index}-${i}`} style={{'--delay': `${i * 0.1}s`}}>
-            <div className="badge-image">
-              <img src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`} alt={achievement.title} />
+    <>
+      <div className={containerClass}>
+        <div className="badge-header">
+          <div className="badge-heading">Locked Achievements</div>
+          {pageCount > 1 && (
+            <div className="badge-counter">{currentPage}/{pageCount}</div>
+          )}
+          {lastUpdateTime > 0 && (
+            <div style={{fontSize: '10px', opacity: 0.6, marginTop: '2px'}}>
+              Updated: {new Date(lastUpdateTime).toLocaleTimeString()}
             </div>
-            <div className="badge-info">
-              <div className="badge-title">{achievement.title}</div>
-              <div className="badge-desc">{achievement.description}</div>
+          )}
+        </div>
+        <div className="badge-list">
+          {visible.map((achievement, i) => (
+            <div className="badge-item" key={`${achievement.id}-${index}-${i}`} style={{'--delay': `${i * 0.1}s`}}>
+              <div className="badge-image">
+                <img src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`} alt={achievement.title} />
+              </div>
+              <div className="badge-info">
+                <div className="badge-title">{achievement.title}</div>
+                <div className="badge-desc">{achievement.description}</div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-    </div>
+      <AchievementNotificationManager />
+    </>
   )
 }
 

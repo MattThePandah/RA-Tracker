@@ -1,5 +1,6 @@
 import React from 'react'
 import { useAchievements } from '../context/AchievementContext.jsx'
+import AchievementNotificationManager from '../components/AchievementNotificationManager.jsx'
 import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
 
@@ -198,34 +199,43 @@ export default function OverlayAchievements() {
   // Don't show anything if not configured
   if (!isConfigured) {
     return (
-      <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
-        <div className="text-center">
-          <div className="text-warning">RetroAchievements not configured</div>
-          <div className="small text-secondary">Configure username and API key in Settings</div>
+      <>
+        <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
+          <div className="text-center">
+            <div className="text-warning">RetroAchievements not configured</div>
+            <div className="small text-secondary">Configure username and API key in Settings</div>
+          </div>
         </div>
-      </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 
   // Don't show anything if no current game
   if (!game) {
     return (
-      <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
-        <div className="text-center text-secondary">No current game</div>
-      </div>
+      <>
+        <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
+          <div className="text-center text-secondary">No current game</div>
+        </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 
   // Don't show anything if game doesn't support RetroAchievements
   if (!RA.hasRetroAchievementsSupport(game)) {
     return (
-      <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
-        <div className="text-center text-secondary">
-          <div>Current game doesn't support RetroAchievements</div>
-          <div className="small mt-1">Game: {game?.title || 'None'} (ID: {game?.id || 'None'})</div>
-          <div className="small">Sync RetroAchievements games from Settings first</div>
+      <>
+        <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
+          <div className="text-center text-secondary">
+            <div>Current game doesn't support RetroAchievements</div>
+            <div className="small mt-1">Game: {game?.title || 'None'} (ID: {game?.id || 'None'})</div>
+            <div className="small">Sync RetroAchievements games from Settings first</div>
+          </div>
         </div>
-      </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 
@@ -233,57 +243,66 @@ export default function OverlayAchievements() {
 
   if (loading.gameAchievements) {
     return (
-      <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
-        <div className="text-center">Loading achievements...</div>
-      </div>
+      <>
+        <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
+          <div className="text-center">Loading achievements...</div>
+        </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 
   if (!currentGameAchievements.length) {
     return (
-      <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
-        <div className="text-center text-secondary">No achievements available</div>
-      </div>
+      <>
+        <div className={`overlay-chrome p-3 ${isClean ? 'overlay-clean' : ''}`}>
+          <div className="text-center text-secondary">No achievements available</div>
+        </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 
   if (style === 'progress') {
     return (
-      <div className={`overlay-chrome achievement-progress p-4 ${isClean ? 'overlay-clean' : ''}`}>
-        <div className="achievement-overlay-container">
-          <div className="game-header">
-            <div className="game-title">{game.title}</div>
-            <div className="game-console">{game.console}</div>
-            {isInHardcoreMode() && (
-              <div className="hardcore-mode-badge">HARDCORE MODE</div>
-            )}
-          </div>
-          
-          <div className="progress-section">
-            <ProgressBar 
-              current={currentGameProgress?.numAchieved || currentGameAchievements.filter(a => a.isEarned).length}
-              total={currentGameProgress?.numPossibleAchievements || currentGameAchievements.length}
-              label="Achievement Progress"
-              hardcore={true}
-            />
-          </div>
+      <>
+        <div className={`overlay-chrome achievement-progress p-4 ${isClean ? 'overlay-clean' : ''}`}>
+          <div className="achievement-overlay-container">
+            <div className="game-header">
+              <div className="game-title">{game.title}</div>
+              <div className="game-console">{game.console}</div>
+              {isInHardcoreMode() && (
+                <div className="hardcore-mode-badge">HARDCORE MODE</div>
+              )}
+            </div>
+            
+            <div className="progress-section">
+              <ProgressBar 
+                current={currentGameProgress?.numAchieved || currentGameAchievements.filter(a => a.isEarned).length}
+                total={currentGameProgress?.numPossibleAchievements || currentGameAchievements.length}
+                label="Achievement Progress"
+                hardcore={true}
+              />
+            </div>
 
-          <div className="stats-section">
-            <div className="stat">
-              <div className="stat-value">{currentGameProgress?.scoreAchieved || currentGameAchievements.filter(a => a.isEarned).reduce((sum, a) => sum + a.points, 0)}</div>
-              <div className="stat-label">Points Earned</div>
-            </div>
-            <div className="stat">
-              <div className="stat-value">{currentGameProgress?.possibleScore || currentGameAchievements.reduce((sum, a) => sum + a.points, 0)}</div>
-              <div className="stat-label">Total Points</div>
-            </div>
-            <div className="stat">
-              <div className="stat-value">{currentGameProgress?.completionPercentage || Math.round((currentGameAchievements.filter(a => a.isEarned).length / Math.max(1, currentGameAchievements.length)) * 100)}%</div>
-              <div className="stat-label">Completion</div>
+            <div className="stats-section">
+              <div className="stat">
+                <div className="stat-value">{currentGameProgress?.scoreAchieved || currentGameAchievements.filter(a => a.isEarned).reduce((sum, a) => sum + a.points, 0)}</div>
+                <div className="stat-label">Points Earned</div>
+              </div>
+              <div className="stat">
+                <div className="stat-value">{currentGameProgress?.possibleScore || currentGameAchievements.reduce((sum, a) => sum + a.points, 0)}</div>
+                <div className="stat-label">Total Points</div>
+              </div>
+              <div className="stat">
+                <div className="stat-value">{currentGameProgress?.completionPercentage || Math.round((currentGameAchievements.filter(a => a.isEarned).length / Math.max(1, currentGameAchievements.length)) * 100)}%</div>
+                <div className="stat-label">Completion</div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 
@@ -341,24 +360,27 @@ export default function OverlayAchievements() {
     const recentEarned = maxAchievements ? allRecentEarned.slice(0, maxAchievements) : allRecentEarned
 
     return (
-      <div className={`overlay-chrome achievement-recent p-4 ${isClean ? 'overlay-clean' : ''}`}>
-        <div className="achievement-overlay-container">
-          <div className="section-header">
-            <div className="section-title">Recent Achievements</div>
-            <div className="section-subtitle">{game.title}</div>
-          </div>
-          
-          <div className="recent-achievements">
-            {recentEarned.length === 0 ? (
-              <div className="text-center text-secondary">No achievements earned yet</div>
-            ) : (
-              recentEarned.map(achievement => (
-                <AchievementBadge key={achievement.id} achievement={achievement} />
-              ))
-            )}
+      <>
+        <div className={`overlay-chrome achievement-recent p-4 ${isClean ? 'overlay-clean' : ''}`}>
+          <div className="achievement-overlay-container">
+            <div className="section-header">
+              <div className="section-title">Recent Achievements</div>
+              <div className="section-subtitle">{game.title}</div>
+            </div>
+            
+            <div className="recent-achievements">
+              {recentEarned.length === 0 ? (
+                <div className="text-center text-secondary">No achievements earned yet</div>
+              ) : (
+                recentEarned.map(achievement => (
+                  <AchievementBadge key={achievement.id} achievement={achievement} />
+                ))
+              )}
+            </div>
           </div>
         </div>
-      </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 
@@ -373,56 +395,59 @@ export default function OverlayAchievements() {
     const percentage = totalCount > 0 ? ((earnedCount / totalCount) * 100).toFixed(2) : '0.00'
 
     return (
-      <div className={`overlay-chrome achievement-tracker ${isClean ? 'overlay-clean' : ''}`}>
-        <div className="tracker-container" style={{
-          backgroundImage: game?.image_url ? `url(${game.image_url})` : 'none',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat'
-        }}>
-          <div className="tracker-overlay">
-            <div className="tracker-header">
-              <h3 className="tracker-title">Game Progress</h3>
-              <div className="tracker-stats">
-                <span className="count-badge">{earnedCount}/{totalCount}</span>
-                <span className="percentage-badge">{percentage}%</span>
+      <>
+        <div className={`overlay-chrome achievement-tracker ${isClean ? 'overlay-clean' : ''}`}>
+          <div className="tracker-container" style={{
+            backgroundImage: game?.image_url ? `url(${game.image_url})` : 'none',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat'
+          }}>
+            <div className="tracker-overlay">
+              <div className="tracker-header">
+                <h3 className="tracker-title">Game Progress</h3>
+                <div className="tracker-stats">
+                  <span className="count-badge">{earnedCount}/{totalCount}</span>
+                  <span className="percentage-badge">{percentage}%</span>
+                </div>
               </div>
-            </div>
 
-            <div className="tracker-progress">
-              <div className="progress-bar-bg">
-                <div 
-                  className="progress-bar-fill" 
-                  style={{ width: `${(earnedCount / Math.max(totalCount, 1)) * 100}%` }}
-                ></div>
+              <div className="tracker-progress">
+                <div className="progress-bar-bg">
+                  <div 
+                    className="progress-bar-fill" 
+                    style={{ width: `${(earnedCount / Math.max(totalCount, 1)) * 100}%` }}
+                  ></div>
+                </div>
               </div>
-            </div>
 
-            {lastAchievement && (
-              <div className="last-achievement-section">
-                <h4 className="last-achievement-title">Last achievement earned</h4>
-                <div className="achievement-item">
-                  <div className="achievement-badge">
-                    <img 
-                      src={`https://media.retroachievements.org/Badge/${lastAchievement.badgeName}.png`}
-                      alt={lastAchievement.title}
-                      width="64"
-                      height="64"
-                    />
-                  </div>
-                  <div className="achievement-details">
-                    <div className="achievement-name">{lastAchievement.title}</div>
-                    <div className="achievement-description">{lastAchievement.description}</div>
-                    <div className="achievement-earned-date">
-                      Earned on {new Date(lastAchievement.dateEarned).toLocaleDateString('en-GB')} at {new Date(lastAchievement.dateEarned).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              {lastAchievement && (
+                <div className="last-achievement-section">
+                  <h4 className="last-achievement-title">Last achievement earned</h4>
+                  <div className="achievement-item">
+                    <div className="achievement-badge">
+                      <img 
+                        src={`https://media.retroachievements.org/Badge/${lastAchievement.badgeName}.png`}
+                        alt={lastAchievement.title}
+                        width="64"
+                        height="64"
+                      />
+                    </div>
+                    <div className="achievement-details">
+                      <div className="achievement-name">{lastAchievement.title}</div>
+                      <div className="achievement-description">{lastAchievement.description}</div>
+                      <div className="achievement-earned-date">
+                        Earned on {new Date(lastAchievement.dateEarned).toLocaleDateString('en-GB')} at {new Date(lastAchievement.dateEarned).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
-      </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 
@@ -437,32 +462,35 @@ export default function OverlayAchievements() {
     const direction = params.get('direction') || 'left' // 'left' | 'right'
 
     return (
-      <div className={`overlay-chrome achievement-ticker ${isClean ? 'overlay-clean' : ''}`}>
-        <div className="ticker-container">
-          <div 
-            className={`ticker-content ${direction}`}
-            style={{
-              '--ticker-speed': `${speed}s`,
-              '--ticker-direction': direction === 'right' ? 'reverse' : 'normal'
-            }}
-          >
-            {recentAchievements.map((achievement, index) => (
-              <div key={`${achievement.id}-${index}`} className="ticker-item">
-                <img 
-                  src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`}
-                  alt={achievement.title}
-                  className="ticker-badge"
-                />
-                <div className="ticker-info">
-                  <span className="ticker-title">{achievement.title}</span>
-                  <span className="ticker-game">{game.title}</span>
-                  <span className="ticker-points">{achievement.points}pts</span>
+      <>
+        <div className={`overlay-chrome achievement-ticker ${isClean ? 'overlay-clean' : ''}`}>
+          <div className="ticker-container">
+            <div 
+              className={`ticker-content ${direction}`}
+              style={{
+                '--ticker-speed': `${speed}s`,
+                '--ticker-direction': direction === 'right' ? 'reverse' : 'normal'
+              }}
+            >
+              {recentAchievements.map((achievement, index) => (
+                <div key={`${achievement.id}-${index}`} className="ticker-item">
+                  <img 
+                    src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`}
+                    alt={achievement.title}
+                    className="ticker-badge"
+                  />
+                  <div className="ticker-info">
+                    <span className="ticker-title">{achievement.title}</span>
+                    <span className="ticker-game">{game.title}</span>
+                    <span className="ticker-points">{achievement.points}pts</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 

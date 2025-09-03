@@ -36,14 +36,10 @@ const initialState = {
     lastFailureTime: null,
     isOpen: false
   },
-  milestoneData: {
-    lastMilestone: 0,
-    milestonesReached: [],
-    streakData: {
-      currentStreak: 0,
-      longestStreak: 0,
-      lastAchievementTime: null
-    }
+  streakData: {
+    currentStreak: 0,
+    longestStreak: 0,
+    lastAchievementTime: null
   }
 }
 
@@ -168,40 +164,12 @@ function achievementReducer(state, action) {
         }
       }
     
-    case 'UPDATE_MILESTONE_DATA':
-      return {
-        ...state,
-        milestoneData: {
-          ...state.milestoneData,
-          ...action.milestoneData
-        }
-      }
-    
-    case 'ADD_MILESTONE_CELEBRATION':
-      return {
-        ...state,
-        milestoneData: {
-          ...state.milestoneData,
-          lastMilestone: action.milestone,
-          milestonesReached: [...state.milestoneData.milestonesReached, {
-            milestone: action.milestone,
-            gameId: action.gameId,
-            timestamp: Date.now(),
-            earnedCount: action.earnedCount,
-            totalCount: action.totalCount
-          }]
-        }
-      }
-    
     case 'UPDATE_STREAK_DATA':
       return {
         ...state,
-        milestoneData: {
-          ...state.milestoneData,
-          streakData: {
-            ...state.milestoneData.streakData,
-            ...action.streakData
-          }
+        streakData: {
+          ...state.streakData,
+          ...action.streakData
         }
       }
     
@@ -309,18 +277,6 @@ export function AchievementProvider({ children }) {
           progress: result.userProgress
         })
         
-        // Check for milestone celebrations
-        const currentMilestone = Math.floor(completionPercentage / 25) * 25
-        if (currentMilestone > 0 && currentMilestone > state.milestoneData.lastMilestone && currentMilestone !== state.milestoneData.lastMilestone) {
-          console.log('AchievementContext: Milestone reached:', currentMilestone + '%')
-          dispatch({
-            type: 'ADD_MILESTONE_CELEBRATION',
-            milestone: currentMilestone,
-            gameId,
-            earnedCount,
-            totalCount
-          })
-        }
         
         dispatch({
           type: 'SET_CURRENT_GAME_ACHIEVEMENTS',
@@ -489,17 +445,17 @@ export function AchievementProvider({ children }) {
     // Update streak data when adding recent achievement
     const now = Date.now()
     const achievementTime = new Date(achievement.date).getTime()
-    const timeSinceLastAchievement = state.milestoneData.streakData.lastAchievementTime 
-      ? achievementTime - state.milestoneData.streakData.lastAchievementTime 
+    const timeSinceLastAchievement = state.streakData.lastAchievementTime 
+      ? achievementTime - state.streakData.lastAchievementTime 
       : Infinity
     
     // Consider achievements within 1 hour as part of a streak
     const streakWindow = 60 * 60 * 1000 // 1 hour in milliseconds
     const newStreak = timeSinceLastAchievement <= streakWindow 
-      ? state.milestoneData.streakData.currentStreak + 1 
+      ? state.streakData.currentStreak + 1 
       : 1
     
-    const longestStreak = Math.max(newStreak, state.milestoneData.streakData.longestStreak)
+    const longestStreak = Math.max(newStreak, state.streakData.longestStreak)
     
     dispatch({
       type: 'UPDATE_STREAK_DATA',
