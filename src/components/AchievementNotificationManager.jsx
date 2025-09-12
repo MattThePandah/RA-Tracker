@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { useAchievements } from '../context/AchievementContext.jsx'
-import AchievementPopup from './AchievementPopup.jsx'
+import Achievement3DPopup from './Achievement3DPopup.jsx'
 import ErrorBoundary, { ComponentErrorFallback } from './ErrorBoundary.jsx'
 import soundManager from '../services/soundManager.js'
 
@@ -138,13 +138,15 @@ const AchievementNotificationManagerInner = () => {
             style={positionConfig.style}
             className="popup-container"
           >
-            <AchievementPopup
+            <Achievement3DPopup
               achievement={popup.achievement}
               onClose={() => removePopup(popup.id)}
               duration={popupDuration}
               position={positionConfig.position}
               showGameInfo={true}
               gameProgress={state.currentGameProgress}
+              style="card"
+              theme="auto"
             />
           </div>
         )

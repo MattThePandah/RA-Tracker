@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useReducer } from
 import * as Storage from '../services/storage.js'
 import * as Bonus from '../utils/bonusDetection.js'
 import useRASync from '../hooks/useRASync.js'
+import { listGames as listServerGames } from '../services/library.js'
 
 const GameContext = createContext(null)
 
@@ -84,9 +85,42 @@ export function GameProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    if (state.settings.raEnabled || !state.games.length) {
-      rasync()
-    }
+    (async () => {
+      try {
+        const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+        // Try new server-backed library first
+        const res = await fetch(`${base}/api/games?limit=1`).catch(() => null)
+        if (res && res.ok) {
+          const all = await listServerGames({ base, limit: 1000 })
+          if (all?.length) {
+            // Merge with any existing local data to preserve status/progress
+            const local = state.games || []
+            const byKey = new Map()
+            const makeKey = (g) => (g?.id ? String(g.id) : `${g?.title || ''}|${g?.console || ''}`)
+            for (const g of local) byKey.set(makeKey(g), g)
+            const merged = all.map(g => {
+              const k = makeKey(g)
+              const lg = byKey.get(k)
+              return lg ? {
+                ...g,
+                status: lg.status || g.status,
+                date_started: lg.date_started || g.date_started || null,
+                date_finished: lg.date_finished || g.date_finished || null,
+                completion_time: lg.completion_time || g.completion_time || null,
+                rating: lg.rating ?? g.rating ?? null,
+                notes: lg.notes ?? g.notes ?? '',
+              } : g
+            })
+            dispatch({ type: 'SET_GAMES', games: merged })
+            return
+          }
+        }
+      } catch {}
+      // Fallback to legacy RA client sync
+      if (state.settings.raEnabled || !state.games.length) {
+        rasync()
+      }
+    })()
   }, [])
 
   // Expose for debugging

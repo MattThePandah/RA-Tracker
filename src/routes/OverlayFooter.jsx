@@ -205,6 +205,35 @@ export default function OverlayFooter() {
     }
   }, [game?.current?.id, currentGameId, loadGameAchievements, showBadges])
 
+  // Achievement polling - periodically refresh achievements to catch newly earned ones
+  React.useEffect(() => {
+    if (!showBadges || !currentGameId || !isConfigured) {
+      console.log('Footer overlay: Skipping achievement polling', { showBadges, currentGameId, isConfigured })
+      return
+    }
+    if (!game?.current || !RA.hasRetroAchievementsSupport(game.current)) {
+      console.log('Footer overlay: No RA support for current game', game?.current?.id)
+      return
+    }
+
+    console.log('Footer overlay: Setting up achievement polling every', achievementPoll, 'ms for game', currentGameId)
+
+    const achievementPollInterval = setInterval(() => {
+      console.log('Footer overlay: Polling achievements for game', currentGameId)
+      // Only poll if not currently loading
+      if (!state.loading?.gameAchievements) {
+        loadGameAchievements(currentGameId, true) // Force refresh to get latest achievement state
+      } else {
+        console.log('Footer overlay: Skipping poll - already loading achievements')
+      }
+    }, achievementPoll)
+
+    return () => {
+      console.log('Footer overlay: Clearing achievement polling interval')
+      clearInterval(achievementPollInterval)
+    }
+  }, [currentGameId, isConfigured, showBadges, achievementPoll, loadGameAchievements, game?.current, state.loading?.gameAchievements])
+
   // Badge carousel rotation
   const upcoming = React.useMemo(() => {
     if (!showBadges) return []

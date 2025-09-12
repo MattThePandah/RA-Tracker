@@ -5,6 +5,7 @@ import App from './App.jsx'
 import Library from './routes/Library.jsx'
 import Select from './routes/Select.jsx'
 import OverlayMain from './routes/OverlayMain.jsx'
+import ModernOverlayMain from './routes/ModernOverlayMain.jsx'
 import OverlayStats from './routes/OverlayStats.jsx'
 import OverlayWheel from './routes/OverlayWheel.jsx'
 import OverlayAchievements from './routes/OverlayAchievements.jsx'
@@ -44,6 +45,7 @@ createRoot(document.getElementById('root')).render(
 
         {/* OBS overlays (standalone, minimal chrome) - no GameProvider to avoid posting 0 stats */}
         <Route path='/overlay/main' element={<AchievementProvider><OverlayMain /></AchievementProvider>} />
+        <Route path='/overlay/modern' element={<AchievementProvider><ModernOverlayMain /></AchievementProvider>} />
         <Route path='/overlay/stats' element={<OverlayStats />} />
         <Route path='/overlay/wheel' element={<OverlayWheel />} />
         <Route path='/overlay/achievements' element={<AchievementProvider><OverlayAchievements /></AchievementProvider>} />

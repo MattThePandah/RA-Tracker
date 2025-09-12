@@ -6,6 +6,12 @@ import axios from 'axios'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import { FLAGS, loadPlatformMapping } from './config.js'
+import * as RA from './adapters/ra.js'
+import * as IGDB from './adapters/igdb.js'
+import { COVERS_DIR, coverPathFor, coverPublicPathFor, cacheCoverFromUrl } from './util/covers.js'
+import { startBuild, startCoverPrefetch, getJob, getIndex } from './library.js'
+import { createUserMetadataEndpoints, mergeWithGameLibrary } from './userMetadata.js'
 
 const app = express()
 app.use(cors())
@@ -160,15 +166,6 @@ app.post('/overlay/current', (req, res) => {
   res.json({ ok: true, updatedAt: overlayState.updatedAt })
 })
 
-// Local disk cover caching so OBS doesn't depend on browser caches
-const COVERS_DIR = process.env.COVERS_DIR || path.join(process.cwd(), 'covers')
-fs.mkdirSync(COVERS_DIR, { recursive: true })
-function hash(str) { return crypto.createHash('sha1').update(String(str)).digest('hex') }
-function coverPathFor(url) { 
-  const ext = url.includes('.jpg') ? '.jpg' : url.includes('.png') ? '.png' : '.jpg'
-  return path.join(COVERS_DIR, `${hash(url)}${ext}`) 
-}
-
 // Serve cached covers statically
 app.use('/covers', express.static(COVERS_DIR))
 
@@ -178,9 +175,7 @@ app.get('/cover', async (req, res) => {
     const src = req.query.src
     if (!src) return res.status(400).send('src required')
     const file = coverPathFor(src)
-    if (fs.existsSync(file)) {
-      return res.sendFile(file)
-    }
+    if (fs.existsSync(file)) return res.sendFile(file)
     const response = await axios.get(src, { responseType: 'arraybuffer' })
     const buf = Buffer.from(response.data, 'binary')
     try { fs.writeFileSync(file, buf) } catch {}
@@ -610,7 +605,7 @@ app.post('/wheel/spin', (req, res) => {
       sampleHash
     }
 
-    res.json(overlaySpin)
+  res.json(overlaySpin)
   } catch (e) {
     console.error('wheel/spin error', e)
     res.status(500).json({ error: 'failed to start spin' })
@@ -648,6 +643,9 @@ app.get('/api/retroachievements/game/:gameId', async (req, res) => {
   }
 })
 
+// Register user metadata endpoints
+createUserMetadataEndpoints(app)
+
 const port = process.env.PORT || 8787
 app.listen(port, () => {
   console.log(`IGDB proxy on :${port}`)
@@ -656,6 +654,18 @@ app.listen(port, () => {
     console.log('[Overlay] Timers file:', TIMERS_FILE)
     console.log('[Overlay] Current file:', CURRENT_FILE)
   } catch {}
+  try {
+    if (FLAGS.LIBRARY_BUILD_ON_START) {
+      console.log('[Startup] Library build on start enabled; starting job...')
+      const jobId = startBuild({ apiKey: process.env.RA_API_KEY || process.env.VITE_RA_API_KEY })
+      console.log('[Startup] Library build job:', jobId)
+    }
+    if (FLAGS.COVER_PREFETCH_ENABLED) {
+      console.log('[Startup] Cover prefetch enabled; starting job with RA fallback...')
+      const jobId = startCoverPrefetch({ limitConcurrency: 3, saveEvery: 50 })
+      console.log('[Startup] Cover prefetch job:', jobId)
+    }
+  } catch (e) { console.warn('[Startup] background jobs failed to start:', e?.message || e) }
 })
 
 // Periodic persistence while running to reduce write frequency (every 15s)
@@ -784,3 +794,96 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled promise rejection:', reason)
   console.error('Promise:', promise)
 })
+
+// -------- v2 APIs (feature-flagged) --------
+
+// Helper: optional gating (kept for admin endpoints). For public v2, always allow.
+function gated(handler) {
+  return (req, res, next) => handler(req, res, next)
+}
+
+// GET /api/consoles (always on for v2 UI)
+app.get('/api/consoles', async (req, res) => {
+  try {
+    const apiKey = req.query.apiKey || process.env.RA_API_KEY
+    const list = await RA.listConsoles({ apiKey, activeOnly: true, gameSystemsOnly: true })
+    const mapping = loadPlatformMapping()
+    const consoles = list.map(c => ({ ...c, igdbPlatformIds: mapping[c.id] || [] }))
+    res.json({ consoles })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_list_consoles' })
+  }
+})
+
+// GET /api/games (paged) — always on for v2 UI
+app.get('/api/games', async (req, res) => {
+  try {
+    const { consoleId, hasAchievements, hasCover, q, offset = 0, limit = 100 } = req.query
+    const idx = getIndex()
+    let games = idx.games || []
+    
+    // Merge with user metadata before filtering
+    games = mergeWithGameLibrary(games)
+    
+    if (consoleId && consoleId !== 'All') games = games.filter(g => g.console?.id === consoleId)
+    if (hasAchievements) games = games.filter(g => g.flags?.hasAchievements)
+    if (hasCover) games = games.filter(g => g.flags?.hasCover)
+    if (q) {
+      const s = String(q).toLowerCase()
+      games = games.filter(g => g.title?.toLowerCase().includes(s))
+    }
+    const off = Math.max(0, Number(offset) || 0)
+    const lim = Math.max(1, Math.min(500, Number(limit) || 100))
+    const page = games.slice(off, off + lim)
+    res.json({ total: games.length, offset: off, limit: lim, games: page })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_list_games' })
+  }
+})
+
+// POST /api/covers/resolve — always on for v2 UI
+app.post('/api/covers/resolve', async (req, res) => {
+  try {
+    const { title, consoleId } = req.body || {}
+    if (!title) return res.status(400).json({ error: 'title_required' })
+    const mapping = loadPlatformMapping()
+    const platforms = consoleId ? (mapping[consoleId] || []) : []
+    const results = await IGDB.searchGames({ q: title, platformIds: platforms })
+    if (!results.length || !results[0].image_id) return res.status(404).json({ error: 'not_found' })
+    const url = IGDB.coverUrlFromImageId(results[0].image_id)
+    const localPath = await cacheCoverFromUrl(url)
+    const release_year = results[0].first_release_date ? new Date(results[0].first_release_date * 1000).getUTCFullYear().toString() : null
+    const publisher = results[0].publisher_name || null
+    res.json({ cover: { localPath, originalUrl: url }, matchedTitle: results[0].name, release_year, publisher })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_resolve_cover' })
+  }
+})
+
+// Jobs: build library and status
+app.post('/api/library/build', gated(async (req, res) => {
+  try {
+    const apiKey = req.body?.apiKey || process.env.RA_API_KEY
+    const consoles = Array.isArray(req.body?.consoles) ? req.body.consoles : undefined
+    const jobId = startBuild({ apiKey, consoles })
+    res.json({ started: true, jobId })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_start_build' })
+  }
+}))
+
+app.get('/api/library/status/:jobId', async (req, res) => {
+  const job = getJob(req.params.jobId)
+  if (!job) return res.status(404).json({ error: 'job_not_found' })
+  res.json(job)
+})
+
+// Start cover prefetch for all games missing covers
+app.post('/api/library/covers', gated(async (req, res) => {
+  try {
+    const jobId = startCoverPrefetch({ limitConcurrency: Number(req.body?.concurrency) || 3, saveEvery: Number(req.body?.saveEvery) || 50 })
+    res.json({ started: true, jobId })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_start_cover_prefetch' })
+  }
+}))
