@@ -1,4 +1,4 @@
-# RetroAchievements Tracker (Starter)
+# RetroAchievements Tracker
 
 Web app for tracking a RetroAchievements completion challenge with two selection UIs and OBS-ready overlays.
 
