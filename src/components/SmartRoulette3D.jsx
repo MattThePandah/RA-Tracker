@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react'
-import Revolution3DWheel from './Revolution3DWheel.jsx'
+import RedesignedWheel from './RedesignedWheel.jsx'
 
 const SmartRoulette3D = ({ games, poolKey, onGameSelected, onSampleUpdate }) => {
   const [sample, setSample] = useState([])
@@ -138,16 +138,13 @@ const SmartRoulette3D = ({ games, poolKey, onGameSelected, onSampleUpdate }) => 
       const target = (Array.isArray(sample) ? sample : [])[targetIdx]
       const ts = serverTs || Date.now()
       setTargetGameId(target?.id ?? null)
-      setSpinSeed({ ts, targetGameId: target?.id ?? null, durationMs, turns })
+      setSpinSeed({ ts, targetIdx, targetGameId: target?.id ?? null, durationMs, turns })
 
       // Simulate spin duration with smooth animation
       setTimeout(() => {
         setSpinning(false)
         const selectedGame = (Array.isArray(sample) ? sample : [])[targetIdx]
-        // Align selected index with filtered list used by 3D wheel (no nulls)
-        const filtered = (Array.isArray(sample) ? sample : []).filter(Boolean)
-        const filteredIdx = selectedGame ? filtered.findIndex(g => g && g.id === selectedGame.id) : null
-        setSelectedIdx(filteredIdx)
+        setSelectedIdx(targetIdx)
 
         if (selectedGame) {
           setWinner(selectedGame)
@@ -240,16 +237,14 @@ const SmartRoulette3D = ({ games, poolKey, onGameSelected, onSampleUpdate }) => 
       </div>
 
       {/* 3D Wheel */}
-      <div className="roulette-wheel-container">
-        <Revolution3DWheel
-          games={sample.filter(Boolean)}
-          spinning={spinning}
-          selectedIndex={selectedIdx}
-          theme={theme}
+      <div className="roulette-wheel-container d-flex justify-content-center">
+        <RedesignedWheel
+          sample={sample}
           spinSeed={spinSeed}
-          targetGameId={targetGameId}
-          onGameSelected={onGameSelected}
-          onSampleUpdate={onSampleUpdate}
+          selectedIndex={selectedIdx}
+          onStop={(idx) => {
+            // Optional: handle stop notification if needed
+          }}
         />
       </div>
 
