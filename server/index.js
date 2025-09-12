@@ -319,11 +319,12 @@ let timerState = {
   currentStartedAt: null, // ms
   perGame: {}, // id -> accumulatedSec
 
-  // PSFest tracking (total time while current timer was running)
-  psfestAccumulatedSec: 0,
+  // Total tracking (accumulates while current timer is running)
+  totalAccumulatedSec: 0,
 
   // Legacy compatibility fields (nullable)
-  psfestStartTime: null,
+  // Legacy compatibility (migrated on read)
+  totalStartTime: null,
   currentGameStartTime: null,
 
   updatedAt: Date.now(),
@@ -393,9 +394,9 @@ if (timerStateLoaded) {
   }
   
   // Validate state integrity
-  if (timerState.psfestAccumulatedSec < 0) {
-    console.warn('Fixing negative PSFest time')
-    timerState.psfestAccumulatedSec = 0
+  if (timerState.totalAccumulatedSec < 0) {
+    console.warn('Fixing negative total time')
+    timerState.totalAccumulatedSec = 0
   }
   
   if (timerState.perGame) {
@@ -412,17 +413,18 @@ app.get('/overlay/timers', (req, res) => {
   const now = Date.now()
 
   // Migrate from legacy fields once if present
-  if ((timerState.psfestStartTime || timerState.currentGameStartTime) && !timerState._migrated) {
+  if ((timerState.totalStartTime || timerState.psfestStartTime || timerState.currentGameStartTime) && !timerState._migrated) {
     // If legacy start times were provided, assume running since those times.
     if (timerState.currentGameStartTime) {
       timerState.running = true
       timerState.currentStartedAt = new Date(timerState.currentGameStartTime).getTime()
     }
-    if (timerState.psfestStartTime) {
+    const legacyStart = timerState.totalStartTime || timerState.psfestStartTime
+    if (legacyStart) {
       // We cannot know the pause intervals; approximate by setting accumulated as time since start if running,
       // otherwise store zero. Future controls will manage accumulation precisely.
-      const since = Math.max(0, Math.floor((now - new Date(timerState.psfestStartTime).getTime()) / 1000))
-      timerState.psfestAccumulatedSec = since
+      const since = Math.max(0, Math.floor((now - new Date(legacyStart).getTime()) / 1000))
+      timerState.totalAccumulatedSec = since
     }
     timerState._migrated = true
   }
@@ -431,19 +433,19 @@ app.get('/overlay/timers', (req, res) => {
   const running = !!timerState.running
   const baseAccum = (timerState.currentGameId && timerState.perGame[timerState.currentGameId]) || 0
   let currentElapsed = baseAccum
-  let psfestElapsed = timerState.psfestAccumulatedSec
+  let totalElapsed = timerState.totalAccumulatedSec
   if (running && timerState.currentStartedAt) {
     const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
     currentElapsed += Math.max(0, deltaSec)
-    psfestElapsed += Math.max(0, deltaSec)
+    totalElapsed += Math.max(0, deltaSec)
   }
 
   const currentGameTime = formatTime(Math.max(0, currentElapsed))
-  const psfestTime = formatTime(Math.max(0, psfestElapsed), true)
+  const totalTime = formatTime(Math.max(0, totalElapsed), true)
 
   res.json({
     currentGameTime,
-    psfestTime,
+    totalTime,
     currentGameId: timerState.currentGameId,
     running,
     updatedAt: now,
@@ -484,13 +486,13 @@ app.post('/overlay/timers', (req, res) => {
       if (deltaSec > 0) {
         const gid = timerState.currentGameId
         timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
-        timerState.psfestAccumulatedSec += deltaSec
+        timerState.totalAccumulatedSec += deltaSec
       }
     }
   }
 
   // Back-compat support (legacy fields)
-  if ('psfestStartTime' in body || 'currentGameStartTime' in body || 'currentGameId' in body) {
+  if ('totalStartTime' in body || 'psfestStartTime' in body || 'currentGameStartTime' in body || 'currentGameId' in body) {
     if (body.currentGameId !== undefined && body.currentGameId !== timerState.currentGameId) {
       // On game change, settle previous game's elapsed and switch focus
       settleCurrent()
@@ -505,9 +507,10 @@ app.post('/overlay/timers', (req, res) => {
       timerState.running = !!body.currentGameStartTime
       timerState.currentStartedAt = body.currentGameStartTime ? new Date(body.currentGameStartTime).getTime() : null
     }
-    if (body.psfestStartTime !== undefined) {
-      // Approximate psfest accumulated; if start provided, set baseline to elapsed since then
-      timerState.psfestAccumulatedSec = body.psfestStartTime ? Math.max(0, Math.floor((now - new Date(body.psfestStartTime).getTime()) / 1000)) : 0
+    const start = body.totalStartTime ?? body.psfestStartTime
+    if (start !== undefined) {
+      // Approximate total accumulated; if start provided, set baseline to elapsed since then
+      timerState.totalAccumulatedSec = start ? Math.max(0, Math.floor((now - new Date(start).getTime()) / 1000)) : 0
     }
   }
 
@@ -528,8 +531,8 @@ app.post('/overlay/timers', (req, res) => {
     if (gid) timerState.perGame[gid] = 0
     if (timerState.running) timerState.currentStartedAt = now
   }
-  if (body.resetPSFest) {
-    timerState.psfestAccumulatedSec = 0
+  if (body.resetTotal) {
+    timerState.totalAccumulatedSec = 0
   }
   if (body.currentGameId !== undefined && body.currentGameId !== timerState.currentGameId) {
     // Explicit game change
@@ -716,7 +719,7 @@ const gracefulShutdown = (signal) => {
       if (deltaSec > 0) {
         const gid = timerState.currentGameId
         timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
-        timerState.psfestAccumulatedSec += deltaSec
+        timerState.totalAccumulatedSec += deltaSec
         console.log(`Checkpointing ${deltaSec} seconds for game ${gid}`)
       }
       timerState.currentStartedAt = now
@@ -774,7 +777,7 @@ process.on('uncaughtException', (error) => {
       if (deltaSec > 0) {
         const gid = timerState.currentGameId
         timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
-        timerState.psfestAccumulatedSec += deltaSec
+        timerState.totalAccumulatedSec += deltaSec
       }
       timerState.currentStartedAt = now
       timerState.updatedAt = now

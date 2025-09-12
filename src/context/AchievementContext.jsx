@@ -4,7 +4,7 @@ import * as Storage from '../services/storage.js'
 
 const AchievementContext = createContext()
 
-const LS_ACHIEVEMENT_SETTINGS = 'psfest.achievementSettings'
+const LS_ACHIEVEMENT_SETTINGS = 'tracker.achievementSettings'
 
 const initialState = {
   currentGameAchievements: [],
@@ -184,7 +184,15 @@ export function AchievementProvider({ children }) {
   // Load settings on mount
   useEffect(() => {
     try {
-      const savedRaw = localStorage.getItem(LS_ACHIEVEMENT_SETTINGS)
+      let savedRaw = localStorage.getItem(LS_ACHIEVEMENT_SETTINGS)
+      if (!savedRaw) {
+        const legacy = localStorage.getItem('psfest.achievementSettings')
+        if (legacy) {
+          localStorage.setItem(LS_ACHIEVEMENT_SETTINGS, legacy)
+          localStorage.removeItem('psfest.achievementSettings')
+          savedRaw = legacy
+        }
+      }
       let settings = savedRaw ? JSON.parse(savedRaw) : {}
       
       // If no saved achievement settings, try to get RA credentials from env or existing game settings

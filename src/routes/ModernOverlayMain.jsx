@@ -207,7 +207,7 @@ export default function ModernOverlayMain() {
         const data = await response.json()
         setTimers({
           currentGame: data.currentGameTime || '00:00:00',
-          totalTime: data.psfestTime || '000:00:00'
+          totalTime: (data.totalTime || data.psfestTime) || '000:00:00'
         })
       }
     } catch (error) {

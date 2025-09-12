@@ -1,8 +1,8 @@
 import mock from '../mock/games.ps.json'
 
-const LS_GAMES = 'psfest.games'
-const LS_SETTINGS = 'psfest.settings'
-const LS_CURRENT = 'psfest.currentGameId'
+const LS_GAMES = 'tracker.games'
+const LS_SETTINGS = 'tracker.settings'
+const LS_CURRENT = 'tracker.currentGameId'
 
 async function postOverlayState(partial) {
   let retries = 3
@@ -145,12 +145,49 @@ export function bootstrap() {
 
 export function getGames() {
   try {
-    const raw = localStorage.getItem(LS_GAMES)
+    let raw = localStorage.getItem(LS_GAMES)
+    if (!raw) {
+      // Migrate legacy key if present
+      const legacy = localStorage.getItem('psfest.games')
+      if (legacy) {
+        localStorage.setItem(LS_GAMES, legacy)
+        localStorage.removeItem('psfest.games')
+        raw = legacy
+      }
+    }
     return raw ? JSON.parse(raw) : []
   } catch { return [] }
 }
 export function saveGames(games) {
-  localStorage.setItem(LS_GAMES, JSON.stringify(games))
+  function thinGame(g) {
+    return {
+      id: g.id,
+      title: g.title,
+      console: g.console,
+      status: g.status,
+      image_url: g.image_url || null,
+      date_started: g.date_started || null,
+      date_finished: g.date_finished || null,
+      completion_time: g.completion_time || null,
+      rating: g.rating ?? null,
+      notes: g.notes ?? '',
+      release_year: g.release_year || null,
+      publisher: g.publisher || null,
+    }
+  }
+
+  try {
+    localStorage.setItem(LS_GAMES, JSON.stringify(games))
+  } catch (e) {
+    try {
+      const slim = games.map(thinGame)
+      localStorage.setItem(LS_GAMES, JSON.stringify(slim))
+      console.warn('Storage: saved slimmed games to avoid quota limits')
+    } catch (e2) {
+      console.warn('Storage: failed to persist games due to quota; skipping save')
+      try { localStorage.setItem('tracker.tooLarge', '1') } catch {}
+    }
+  }
   
   // Dispatch custom event for same-window updates (overlay)
   window.dispatchEvent(new CustomEvent('gameDataUpdated', { detail: { type: 'games', games } }))
@@ -166,13 +203,21 @@ export function saveGames(games) {
 
 export function getSettings() {
   try {
-    const raw = localStorage.getItem(LS_SETTINGS)
+    let raw = localStorage.getItem(LS_SETTINGS)
+    if (!raw) {
+      const legacy = localStorage.getItem('psfest.settings')
+      if (legacy) {
+        localStorage.setItem(LS_SETTINGS, legacy)
+        localStorage.removeItem('psfest.settings')
+        raw = legacy
+      }
+    }
     return raw ? JSON.parse(raw) : {
       raEnabled: import.meta.env.VITE_RA_ENABLED === 'true',
       igdbEnabled: import.meta.env.VITE_IGDB_ENABLED === 'true',
       hideBonusGames: true,
       pollMs: 5000,
-      psfestStartTime: null,
+      totalStartTime: null,
     }
   } catch { return {} }
 }
@@ -181,7 +226,15 @@ export function saveSettings(settings) {
 }
 
 export function getCurrentGameId() {
-  return localStorage.getItem(LS_CURRENT) || null
+  const cur = localStorage.getItem(LS_CURRENT)
+  if (cur) return cur
+  const legacy = localStorage.getItem('psfest.currentGameId')
+  if (legacy) {
+    localStorage.setItem(LS_CURRENT, legacy)
+    localStorage.removeItem('psfest.currentGameId')
+    return legacy
+  }
+  return null
 }
 export function setCurrentGameId(id) {
   if (id) localStorage.setItem(LS_CURRENT, id)
@@ -325,13 +378,13 @@ export async function resetCurrentTimer() {
   } catch {}
 }
 
-export async function resetPSFestTimer() {
+export async function resetTotalTimer() {
   try {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
     await fetch(`${base}/overlay/timers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resetPSFest: true })
+      body: JSON.stringify({ resetTotal: true })
     })
   } catch {}
 }
@@ -376,7 +429,7 @@ export async function getTimerData() {
       currentTime: Math.max(0, j.currentTime || 0),
       totalTime: Math.max(0, j.totalTime || 0),
       currentFormatted: j.currentFormatted || j.currentGameTime || '0:00:00',
-      totalFormatted: j.totalFormatted || j.psfestTime || '0:00:00',
+      totalFormatted: j.totalFormatted || j.totalTime || '0:00:00',
       currentGameId: j.currentGameId || null,
       lastUpdate: j.lastUpdate || Date.now()
     }

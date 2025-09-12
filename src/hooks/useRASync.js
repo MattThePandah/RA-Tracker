@@ -7,7 +7,15 @@ export default function useRASync({ state, dispatch }) {
   const sync = useCallback(async () => {
     try {
       const settings = state.settings || {}
-      const credRaw = typeof window !== 'undefined' ? localStorage.getItem('psfest.achievementSettings') : null
+      let credRaw = typeof window !== 'undefined' ? localStorage.getItem('tracker.achievementSettings') : null
+      if (!credRaw && typeof window !== 'undefined') {
+        const legacy = localStorage.getItem('psfest.achievementSettings')
+        if (legacy) {
+          localStorage.setItem('tracker.achievementSettings', legacy)
+          localStorage.removeItem('psfest.achievementSettings')
+          credRaw = legacy
+        }
+      }
       const creds = credRaw ? JSON.parse(credRaw) : {}
       const username = creds.raUsername || import.meta.env.VITE_RA_USERNAME
       const apiKey = creds.raApiKey || import.meta.env.VITE_RA_API_KEY

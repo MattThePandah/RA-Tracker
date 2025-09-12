@@ -2,7 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { useGame } from '../context/GameContext.jsx'
 import { useAchievements } from '../context/AchievementContext.jsx'
-import { startCurrentTimer, pauseCurrentTimer, resetCurrentTimer, resetPSFestTimer, getTimerStatus, getTimerData, validateAndRecoverTimerState } from '../services/storage.js'
+import { startCurrentTimer, pauseCurrentTimer, resetCurrentTimer, resetTotalTimer, getTimerStatus, getTimerData, validateAndRecoverTimerState } from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
 
 // Proxy cover helper (uses disk cache via server if available)
@@ -258,7 +258,7 @@ export default function Current() {
               </div>
               <div className="col-6">
                 <div className="h4 text-info mb-1">{timerData.totalFormatted}</div>
-                <div className="small text-secondary">Total PSFest Time</div>
+                <div className="small text-secondary">Total Event Time</div>
               </div>
             </div>
           </div>
@@ -270,7 +270,7 @@ export default function Current() {
               <button className="btn btn-sm btn-outline-success" onClick={startCurrentTimer}>Start Timer</button>
             )}
             <button className="btn btn-sm btn-outline-light" onClick={resetCurrentTimer}>Reset Current Timer</button>
-            <button className="btn btn-sm btn-outline-danger" onClick={resetPSFestTimer}>Reset PSFest Total</button>
+            <button className="btn btn-sm btn-outline-danger" onClick={resetTotalTimer}>Reset Event Total</button>
           </div>
         </div>
       </div>

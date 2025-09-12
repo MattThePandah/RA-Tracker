@@ -12,7 +12,7 @@ export default function ImportExport() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'psfest-games.json'
+    a.download = 'games.json'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -34,18 +34,8 @@ export default function ImportExport() {
     reader.readAsText(f)
   }
 
-  const loadGamesWithCovers = async () => {
-    try {
-      const response = await fetch('/games.with-covers.json')
-      if (!response.ok) throw new Error('Failed to fetch games.with-covers.json')
-      const games = await response.json()
-      if (!Array.isArray(games)) throw new Error('Invalid games data')
-      dispatch({ type: 'SET_GAMES', games })
-      alert(`Loaded ${games.length} games with cover URLs.`)
-    } catch (err) {
-      alert('Failed to load games with covers: ' + err.message)
-    }
-  }
+  // Tip: To import a file, prepare a JSON array like:
+  // [ { "id": "game:ra:1234", "title": "Game Title", "console": "PlayStation", "status": "Not Started" } ]
 
   return (
     <div className="p-3">
@@ -59,11 +49,8 @@ export default function ImportExport() {
                 <button className="btn btn-outline-primary" onClick={onExport}>Export JSON</button>
                 <input type="file" accept="application/json" ref={fileRef} onChange={onImport} className="form-control w-auto" />
               </div>
-              <button className="btn btn-success" onClick={loadGamesWithCovers}>
-                Load Games with Covers
-              </button>
               <small className="text-muted">
-                This will load games.with-covers.json which includes cover image URLs.
+                Tip: Use the “Export JSON” button to see the expected shape. You can also build your own <code>games.json</code> and import it here.
               </small>
             </div>
           </div>

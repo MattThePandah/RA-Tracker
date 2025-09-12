@@ -187,7 +187,7 @@ export default function OverlayMain() {
   const [cover, setCover] = React.useState(null)
   const [prevImageUrl, setPrevImageUrl] = React.useState(null)
   const [currentGameTime, setCurrentGameTime] = React.useState('00:00:00')
-  const [psfestTime, setPsfestTime] = React.useState('000:00:00')
+  const [totalTime, setTotalTime] = React.useState('000:00:00')
   const [lastUpdate, setLastUpdate] = React.useState('')
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
   const [raShowcaseUntil, setRaShowcaseUntil] = React.useState(0)
@@ -327,9 +327,9 @@ export default function OverlayMain() {
         const res = await fetch(`${base}/overlay/timers`)
         if (res.ok) {
           const t = await res.json()
-          if (t?.currentGameTime && t?.psfestTime) {
+          if (t?.currentGameTime && (t?.totalTime || t?.psfestTime)) {
             setCurrentGameTime(t.currentGameTime)
-            setPsfestTime(t.psfestTime)
+            setTotalTime(t.totalTime || t.psfestTime)
             setLastUpdate(new Date().toLocaleTimeString())
             return
           }
@@ -346,18 +346,12 @@ export default function OverlayMain() {
         } else {
           setCurrentGameTime('00:00:00')
         }
-        const settings = Storage.getSettings()
-        if (settings.psfestStartTime) {
-          const psfestStartTime = new Date(settings.psfestStartTime).getTime()
-          const psfestElapsed = Math.floor((now - psfestStartTime) / 1000)
-          setPsfestTime(formatTime(Math.max(0, psfestElapsed), true))
-        } else {
-          setPsfestTime('000:00:00')
-        }
+        // No offline fallback for total time
+        setTotalTime('000:00:00')
         setLastUpdate(new Date().toLocaleTimeString())
       } catch {
         setCurrentGameTime('00:00:00')
-        setPsfestTime('000:00:00')
+        setTotalTime('000:00:00')
       }
     }
 
@@ -452,12 +446,12 @@ export default function OverlayMain() {
               <div className="ref-divider" />
               
                 <div className="ref-bottom">
-                  <div className="psfest-left">
-                    <span className="psfest-game">Game {gameNumber}{showTotal && stats.total ? ` of ${stats.total}` : ''}</span>
+                  <div className="event-left">
+                    <span className="event-game">Game {gameNumber}{showTotal && stats.total ? ` of ${stats.total}` : ''}</span>
                   </div>
                   <div className="timer-block pink">
                     <div className="t-label">Total Time</div>
-                    <div className="t-time">{psfestTime}</div>
+                    <div className="t-time">{totalTime}</div>
                   </div>
               </div>
 
@@ -471,7 +465,7 @@ export default function OverlayMain() {
                     {effMode !== 'compact' && (
                       <div className="achievement-progress">
                         <div className="achievement-count">
-                          <span className="psfest-achievements" title={`${achievementPercent}% complete`}>
+                          <span className="event-achievements" title={`${achievementPercent}% complete`}>
                             {achievementCount}/{totalAchievements} Achievements
                           </span>
                         </div>
@@ -719,9 +713,9 @@ export default function OverlayMain() {
             <div className="timer-label">Current Game</div>
             <div className="timer-value">{currentGameTime}</div>
           </div>
-          <div className="timer-card psfest-total">
-            <div className="timer-label">PSFest Total</div>
-            <div className="timer-value">{psfestTime}</div>
+          <div className="timer-card event-total">
+            <div className="timer-label">Event Total</div>
+            <div className="timer-value">{totalTime}</div>
           </div>
           {/* Debug indicator - only show when not clean mode */}
           {!isClean && (

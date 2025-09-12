@@ -77,9 +77,9 @@ export default function Select() {
 
   return (
     <div className="p-3">
-      <h2 className="h4">🎮 Next-Gen Game Selection</h2>
+      <h2 className="h4">🎮 Game Selection</h2>
       <div className="text-secondary mb-3">
-        Filter your game library, then use the revolutionary 3D wheel to pick randomly from {eligible.length.toLocaleString()} eligible games.
+        Filter your game library and pick randomly from {eligible.length.toLocaleString()} eligible games.
       </div>
 
       {/* Filter Panel */}

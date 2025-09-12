@@ -3311,13 +3311,13 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
   z-index: 2;
 }
 
-.psfest-left { 
+.event-left { 
   display: flex; 
   align-items: center; 
   gap: 12px; 
 }
 
-.psfest-badge:hover {
+.event-badge:hover {
   transform: translateY(-1px);
   box-shadow: 
     0 8px 16px rgba(0,0,0,0.4),
@@ -3329,7 +3329,7 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
   );
 }
 
-.psfest-game { 
+.event-game { 
   color: var(--brand); 
   font-weight: 800; 
   font-size: 2.5rem; 
@@ -4700,10 +4700,10 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
   border-radius: 16px;
   z-index: -1;
 }
-.timer-card.psfest-total {
+.timer-card.event-total {
   border-color: rgba(var(--accent-rgb),0.3);
 }
-.timer-card.psfest-total::after {
+.timer-card.event-total::after {
   content: '';
   position: absolute;
   inset: -1px;
@@ -4732,7 +4732,7 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
 .timer-card.current-game .timer-value {
   color: var(--brand);
 }
-.timer-card.psfest-total .timer-value {
+.timer-card.event-total .timer-value {
   color: var(--accent);
 }
 
@@ -4807,7 +4807,7 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
   color: var(--brand);
 }
 
-.timer-card.slim-timer.psfest-total .timer-value {
+.timer-card.slim-timer.event-total .timer-value {
   color: var(--accent);
 }
 
@@ -5042,7 +5042,7 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
 }
 .footer-spacer { flex: 1; }
 .footer-time { font-size: 14px; font-weight: 800; color: #fff; white-space: nowrap; opacity: 0.95; font-variant-numeric: tabular-nums; }
-.footer-psfest { min-width: 220px; }
+.footer-event { min-width: 220px; }
 
 /* Current game chip */
 .current-chip {
@@ -5367,16 +5367,8 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
     0 0 18px rgba(var(--accent-rgb),0.2);
 }
 .time--solid { color: #ffffff; }
-.time--psfest {
-  background: linear-gradient(90deg, var(--brand), var(--accent));
-}
-.time--psfest .time-text {
-  background: inherit;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-}
+.time--gradient { background: linear-gradient(90deg, var(--brand), var(--accent)); }
+.time--gradient .time-text { background: inherit; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; }
 .time-colon.blink { animation: blink 1s steps(1, end) infinite; opacity: 0.85; }
 @keyframes blink { 50% { opacity: 0.25; } }
 .time-ampm { font-size: 0.8em; opacity: 0.9; margin-left: 2px; }
@@ -5470,7 +5462,7 @@ body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarel
   min-width: fit-content;
 }
 
-.psfest-achievements {
+.event-achievements {
   color: var(--brand);
   font-size: 2rem;
   font-weight: 800;

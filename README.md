@@ -1,4 +1,4 @@
-# PSFest RetroAchievements Tracker (Starter)
+# RetroAchievements Tracker (Starter)
 
 Web app for tracking a RetroAchievements completion challenge with two selection UIs and OBS-ready overlays.
 
@@ -69,7 +69,7 @@ Troubleshooting covers:
 - **Footer ticker**: `http://localhost:5173/overlay/footer?clean=1&poll=5000`
 
 ### Timer Features
-- **Integrated timers**: Current game timer + PSFest total timer built into main overlay
+- **Integrated timers**: Current game timer + Event total timer built into main overlay
 - **Automatic tracking**: Timers start/stop automatically based on game status
 - **Persistent**: Survives browser refreshes and server restarts
 - **No external tools needed**: Replaces LiveSplit for basic timing needs
@@ -78,7 +78,7 @@ Troubleshooting covers:
 
 ### Timer System
 - **Current Game Timer**: Automatically tracks time spent on current game
-- **PSFest Global Timer**: Tracks total streaming/event time
+- **Event Global Timer**: Tracks total streaming/event time
 - **Auto-start/stop**: Timers respond to game status changes
 - **Server persistence**: Timer data survives crashes and restarts
 
@@ -107,3 +107,74 @@ Troubleshooting covers:
 - IGDB cover fetch now uses `image_id` + `t_cover_big_2x` and stores release year
 - One-click **Precache All Covers** with progress and concurrency limit
 
+## Deprecation Notice: v1
+
+The `v1/` folder is deprecated and no longer maintained. It remains for historical reference only and may contain legacy code paths that are not compatible with current builds. Do not use v1 in new setups.
+
+## Configuration
+
+- Root `.env` (copied from `.env.example`):
+  - `VITE_APP_NAME`: Optional display name.
+  - `VITE_RA_USERNAME`, `VITE_RA_API_KEY`: Optional client usage. Prefer setting them in-app Settings.
+  - `VITE_RA_ENABLED`: Enable client-side RA sync (true/false).
+  - `VITE_IGDB_PROXY_URL`: Server URL for IGDB token and cover proxy, default `http://localhost:8787`.
+  - `VITE_IGDB_ENABLED`: Toggle client IGDB helpers.
+  - `VITE_V2_ENABLED`, `VITE_ALL_CONSOLES_ENABLED`: Enable newer server-backed library UI.
+
+- Server `server/.env` (copied from `server/.env.example`):
+  - `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`: Required for IGDB app token.
+  - `RA_USERNAME`, `RA_API_KEY` (optional): Enables server-side RA jobs/fallbacks.
+  - Flags: `ALL_CONSOLES_ENABLED`, `CONSOLES_ALLOWLIST`, `COVER_PREFETCH_ENABLED`, `LIBRARY_BUILD_ON_START`.
+  - Limits: `IGDB_RPS`, `IGDB_MAX_CONCURRENCY`, `IGDB_MAX_RETRIES`, `RA_RPS`, `RA_MAX_CONCURRENCY`, `RA_MAX_RETRIES`.
+  - Logging: `COVERS_VERBOSE`, `COVERS_LOG_EVERY`.
+
+## Building and Running
+
+- Install: `npm install`
+- Frontend only: `npm run dev`
+- Server only: `npm run server` (needs `server/.env`)
+- Frontend + Server: `npm run dev-all`
+
+## Adding Games
+
+There are two supported ways to populate your library:
+
+- Sync from RetroAchievements (recommended)
+  1) Open the app → Settings.
+  2) Enable RA Sync and enter your RA username + API Key.
+  3) Click “Sync RA Games”. This pulls platforms and games (achievements-only by default). Optionally enable IGDB in Settings to cache covers and release years.
+
+- Import a `games.json` file (manual)
+  1) Create a file named `games.json` with an array of games matching this minimal shape:
+     [
+       { "id": "game:ra:1234", "title": "Game Title", "console": "PlayStation", "status": "Not Started" }
+     ]
+     Optional fields: `image_url`, `release_year`, `publisher`, `date_started`, `date_finished`, `completion_time`, `rating`, `notes`.
+  2) In the app, go to Import/Export → select your `games.json` → Import.
+  3) To add covers, enable IGDB in Settings and use “Precache All Covers”.
+
+Note: The repo no longer includes sample `games.json` files. This avoids shipping stale data and keeps the repo clean.
+
+## Security and Public Repo Readiness
+
+- No secrets are needed in the client bundle. Keep keys in `.env` files, which are already `.gitignore`d.
+- The legacy `v1/data/settings.json` file previously contained credentials. It is now sanitized and added to `.gitignore`. If any keys there were real, rotate them immediately.
+- Before making this repo public:
+  - Rotate any Twitch/IGDB and RetroAchievements keys that may have been exposed.
+  - Consider rewriting Git history to purge old secrets (e.g., using `git filter-repo` or BFG Repo-Cleaner).
+  - Optionally run a secret scan (e.g., `gitleaks detect`).
+
+### Suggested Secret Scan
+
+You can run a local scan with gitleaks:
+
+```
+gitleaks detect --no-banner --redact
+```
+
+## Troubleshooting
+
+- Covers not loading: ensure `npm run server` is running and `VITE_IGDB_PROXY_URL` points to it.
+- RA sync disabled: set RA credentials in Settings or `.env`, and enable RA in Settings.
+- Large libraries: server-backed endpoints are more efficient; set `VITE_V2_ENABLED=true` and use `npm run dev`.
+- LocalStorage quota exceeded: the app now falls back to saving a slimmed game list when the browser quota is hit. For very large libraries, prefer the server-backed UI (`VITE_V2_ENABLED=true`) to avoid client storage limits.

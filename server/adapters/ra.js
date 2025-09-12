@@ -23,7 +23,7 @@ export async function listConsoles({ apiKey, activeOnly = true, gameSystemsOnly 
   }
 }
 
-export async function listGamesForConsole({ apiKey, consoleId, onlyWithAchievements = true }) {
+export async function listGamesForConsole({ apiKey, consoleId, onlyWithAchievements = true, excludeNonGames = true }) {
   if (!apiKey || !consoleId) return []
   const id = String(consoleId).startsWith('ra:') ? String(consoleId).slice(3) : String(consoleId)
   const params = new URLSearchParams()
@@ -33,7 +33,24 @@ export async function listGamesForConsole({ apiKey, consoleId, onlyWithAchieveme
   const url = `${RA_BASE}/API_GetGameList.php?${params.toString()}`
   try {
     const { data } = await axios.get(url, { timeout: 60000 })
-    const arr = Array.isArray(data) ? data : []
+    let arr = Array.isArray(data) ? data : []
+
+    // Heuristic filter to drop RA event hubs or non-game entries
+    if (excludeNonGames) {
+      const looksLikeEvent = (g) => {
+        const name = String(g.ConsoleName || g.consoleName || '').toLowerCase()
+        const title = String(g.Title || g.GameTitle || g.title || '').toLowerCase()
+        if (name.includes('event')) return true
+        if (title.includes('achievement of the week')) return true
+        if (title.includes('aotw')) return true
+        if (title.includes('[event]')) return true
+        if (title.includes('(event)')) return true
+        if (title.includes('devquest')) return true
+        return false
+      }
+      arr = arr.filter(g => !looksLikeEvent(g))
+    }
+
     return arr.map(g => ({
       id: `game:ra:${g.ID || g.GameID || g.id}`,
       title: g.Title || g.GameTitle || g.title,

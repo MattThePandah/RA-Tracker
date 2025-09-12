@@ -178,7 +178,7 @@ const SmartRoulette3D = ({ games, poolKey, onGameSelected, onSampleUpdate }) => 
       {/* Header Controls */}
       <div className="roulette-header">
         <div className="roulette-info">
-          <h3 className="roulette-title">🎮 Next-Gen Game Selector</h3>
+          <h3 className="roulette-title">🎮 Game Selector</h3>
           <div className="roulette-stats">
             <span className="stat-chip">
               <i className="bi bi-collection"></i>

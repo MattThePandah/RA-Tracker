@@ -30,7 +30,8 @@ export function startBuild({ apiKey, consoles = FLAGS.CONSOLES_ALLOWLIST }) {
     try {
       let targetConsoles = consoles
       if (!Array.isArray(targetConsoles) || !targetConsoles.length) {
-        const lc = await listConsoles({ apiKey })
+        // Only include actual game systems from RA, not meta/event hubs
+        const lc = await listConsoles({ apiKey, activeOnly: true, gameSystemsOnly: true })
         targetConsoles = lc.map(c => c.id)
       }
 
@@ -38,7 +39,7 @@ export function startBuild({ apiKey, consoles = FLAGS.CONSOLES_ALLOWLIST }) {
 
       for (const cid of targetConsoles) {
         state.progress.lastConsole = cid
-        const games = await listGamesForConsole({ apiKey, consoleId: cid, onlyWithAchievements: true })
+        const games = await listGamesForConsole({ apiKey, consoleId: cid, onlyWithAchievements: true, excludeNonGames: true })
         idx.games.push(...games)
         state.progress.done += 1
         state.stats.games = idx.games.length

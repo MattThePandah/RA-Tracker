@@ -27,14 +27,14 @@ export default function OverlayFooter() {
   const poll = parseInt(params.get('poll') || '5000', 10)
   const isClean = params.get('clean') === '1'
   const barHeight = Math.max(40, Math.min(200, parseInt(params.get('barheight') || '70', 10)))
-  const title = params.get('title') || 'PSFest'
+  const title = params.get('title') || import.meta.env.VITE_APP_NAME || 'Event'
   const widthParam = params.get('width') ? Math.max(180, Math.min(600, parseInt(params.get('width'), 10) || 0)) : null
   const timeMode = (params.get('time') || 'datetime').toLowerCase() // 'datetime' | 'time'
   const timeFmt = (params.get('timefmt') || '24').toLowerCase() // '24' | '12'
   const showSeconds = params.get('seconds') !== '0'
   const showDate = timeMode !== 'time'
   const dateFmt = (params.get('datefmt') || 'short').toLowerCase() // 'short' | 'long'
-  const timeStyle = (params.get('timestyle') || 'glow').toLowerCase() // 'glow' | 'neon' | 'solid' | 'psfest'
+  const timeStyle = (params.get('timestyle') || 'glow').toLowerCase() // 'glow' | 'neon' | 'solid'
   const showTimers = params.get('showtimers') === '1'
   const showCurrent = params.get('showcurrent') === '1'
   const currentCover = params.get('cgcover') !== '0'
@@ -60,7 +60,7 @@ export default function OverlayFooter() {
   }, [isClean])
 
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
-  const [timers, setTimers] = React.useState({ currentGameTime: '00:00:00', psfestTime: '000:00:00' })
+  const [timers, setTimers] = React.useState({ currentGameTime: '00:00:00', totalTime: '000:00:00' })
   const [current, setCurrent] = React.useState(null)
   
   // Badge carousel state
@@ -134,8 +134,8 @@ export default function OverlayFooter() {
         const res = await fetch(`${base}/overlay/timers`)
         if (res.ok) {
           const t = await res.json()
-          if (t?.currentGameTime && t?.psfestTime) {
-            setTimers({ currentGameTime: t.currentGameTime, psfestTime: t.psfestTime })
+          if (t?.currentGameTime && (t?.totalTime || t?.psfestTime)) {
+            setTimers({ currentGameTime: t.currentGameTime, totalTime: t.totalTime || t.psfestTime })
           }
         }
       } catch {}
@@ -295,7 +295,7 @@ export default function OverlayFooter() {
             </div>
           )}
 
-          {/* Spacer pushes time + PSFest cluster to the right */}
+          {/* Spacer pushes time + total cluster to the right */}
           <div className="footer-spacer" />
 
           {/* Optional: Current Game chip (left of timer/time cluster) */}
@@ -322,19 +322,15 @@ export default function OverlayFooter() {
                 <span className="timer-label">Current</span>
                 <span className="timer-value">{timers.currentGameTime}</span>
               </div>
-              <div className={`timer-chip ${isTight ? 'tight' : ''}`} title="PSFest Total">
-                <span className="timer-label">PSFest</span>
-                <span className="timer-value">{timers.psfestTime}</span>
+              <div className={`timer-chip ${isTight ? 'tight' : ''}`} title="Event Total">
+                <span className="timer-label">Event</span>
+                <span className="timer-value">{timers.totalTime}</span>
               </div>
             </div>
           )}
 
-          {/* Time just to the left of PSFest */}
-          {timeStyle === 'psfest' ? (
-            <div className={`footer-time time--psfest`} title="Date & Time">
-              <span className="time-text">{timeStr}{showDate ? ` • ${dateStr}` : ''}</span>
-            </div>
-          ) : (
+          {/* Time just to the left of total */}
+          {
             <div className={`footer-time ${timeStyle === 'neon' ? 'time--neon' : timeStyle === 'glow' ? 'time--glow' : 'time--solid'}`} title="Date & Time">
               {renderTime(now, { timeFmt, showSeconds })}
               {showDate && (
@@ -344,10 +340,10 @@ export default function OverlayFooter() {
                 <span className="time-date">{dateStr}</span>
               )}
             </div>
-          )}
+          }
 
-          {/* PSFest compact at far right */}
-          <div className={`stats-compact-card footer-psfest ${isTight ? 'tight' : ''}`} style={{ ...(widthParam ? { width: widthParam } : {}) }}>
+          {/* Event compact at far right */}
+          <div className={`stats-compact-card footer-event ${isTight ? 'tight' : ''}`} style={{ ...(widthParam ? { width: widthParam } : {}) }}>
             <div className="d-flex align-items-center justify-content-between" style={{ gap: 8, marginBottom: 6 }}>
               <div className="stats-compact-title">{title}</div>
               <div className="percent-badge">{stats.percent}%</div>

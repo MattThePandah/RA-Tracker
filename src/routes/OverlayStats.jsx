@@ -17,7 +17,7 @@ export default function OverlayStats() {
   const isClean = params.get('clean') === '1'
   const styleParam = (params.get('style') || '').toLowerCase()
   const isCompact = params.get('compact') === '1' || styleParam === 'compact' || styleParam === 'bar'
-  const title = params.get('title') || 'PSFest'
+  const title = params.get('title') || (import.meta.env.VITE_APP_NAME || 'Event')
   const widthParam = params.get('width') ? Math.max(180, Math.min(600, parseInt(params.get('width'), 10) || 0)) : null
 
   // Apply clean overlay styling to document body
@@ -114,7 +114,7 @@ export default function OverlayStats() {
           </div>
         </div>
         <div className="flex-grow-1">
-          <div className="stats-title" style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>PSFest Progress</div>
+          <div className="stats-title" style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>Event Progress</div>
           <div className="stats-subtitle mb-2" style={{ color: 'rgba(255,255,255,0.8)' }}>
             {stats.completed.toLocaleString()} of {stats.total.toLocaleString()} games completed
           </div>
