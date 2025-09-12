@@ -111,6 +111,13 @@ Troubleshooting covers:
 
 The `v1/` folder is deprecated and no longer maintained. It remains for historical reference only and may contain legacy code paths that are not compatible with current builds. Do not use v1 in new setups.
 
+## License
+
+- License: Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0)
+- Summary: You may use, modify, and share this project for non‑commercial purposes, provided you give appropriate credit and link to the license. Commercial use is not permitted without prior permission.
+- Attribution example: “Based on RetroAchievements Tracker — CC BY‑NC 4.0.”
+- Full text: see the `LICENSE` file in the repo.
+
 ## Configuration
 
 - Root `.env` (copied from `.env.example`):
