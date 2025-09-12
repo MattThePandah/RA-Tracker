@@ -1,5 +1,7 @@
 import React from 'react'
 import * as Storage from '../services/storage.js'
+import { useAchievements } from '../context/AchievementContext.jsx'
+import * as RA from '../services/retroachievements.js'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -20,22 +22,29 @@ function useClock() {
 }
 
 export default function OverlayFooter() {
+  const { state, loadGameAchievements, isConfigured } = useAchievements()
   const params = new URLSearchParams(location.search)
   const poll = parseInt(params.get('poll') || '5000', 10)
   const isClean = params.get('clean') === '1'
   const barHeight = Math.max(40, Math.min(200, parseInt(params.get('barheight') || '70', 10)))
-  const title = params.get('title') || 'PSFest'
+  const title = params.get('title') || import.meta.env.VITE_APP_NAME || 'Event'
   const widthParam = params.get('width') ? Math.max(180, Math.min(600, parseInt(params.get('width'), 10) || 0)) : null
   const timeMode = (params.get('time') || 'datetime').toLowerCase() // 'datetime' | 'time'
   const timeFmt = (params.get('timefmt') || '24').toLowerCase() // '24' | '12'
   const showSeconds = params.get('seconds') !== '0'
   const showDate = timeMode !== 'time'
   const dateFmt = (params.get('datefmt') || 'short').toLowerCase() // 'short' | 'long'
-  const timeStyle = (params.get('timestyle') || 'glow').toLowerCase() // 'glow' | 'neon' | 'solid' | 'psfest'
+  const timeStyle = (params.get('timestyle') || 'glow').toLowerCase() // 'glow' | 'neon' | 'solid'
   const showTimers = params.get('showtimers') === '1'
   const showCurrent = params.get('showcurrent') === '1'
   const currentCover = params.get('cgcover') !== '0'
   const containerWidth = params.get('containerwidth') ? Math.max(600, Math.min(3840, parseInt(params.get('containerwidth'), 10) || 0)) : null
+  
+  // Badge carousel integration parameters
+  const showBadges = params.get('showbadges') === '1'
+  const badgeCount = Math.max(1, Math.min(8, parseInt(params.get('badgecount') || '4', 10)))
+  const rotateMs = parseInt(params.get('badgerotate') || '8000', 10)
+  const achievementPoll = parseInt(params.get('rapoll') || '60000', 10)
   const now = useClock()
   const timeStr = formatTimeString(now, { timeFmt, showSeconds })
   const dateStr = formatDate(now, dateFmt)
@@ -51,8 +60,13 @@ export default function OverlayFooter() {
   }, [isClean])
 
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
-  const [timers, setTimers] = React.useState({ currentGameTime: '00:00:00', psfestTime: '000:00:00' })
+  const [timers, setTimers] = React.useState({ currentGameTime: '00:00:00', totalTime: '000:00:00' })
   const [current, setCurrent] = React.useState(null)
+  
+  // Badge carousel state
+  const [game, setGame] = React.useState(null)
+  const [badgeIndex, setBadgeIndex] = React.useState(0)
+  const [isTransitioning, setIsTransitioning] = React.useState(false)
 
   React.useEffect(() => {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
@@ -120,8 +134,8 @@ export default function OverlayFooter() {
         const res = await fetch(`${base}/overlay/timers`)
         if (res.ok) {
           const t = await res.json()
-          if (t?.currentGameTime && t?.psfestTime) {
-            setTimers({ currentGameTime: t.currentGameTime, psfestTime: t.psfestTime })
+          if (t?.currentGameTime && (t?.totalTime || t?.psfestTime)) {
+            setTimers({ currentGameTime: t.currentGameTime, totalTime: t.totalTime || t.psfestTime })
           }
         }
       } catch {}
@@ -131,11 +145,157 @@ export default function OverlayFooter() {
     return () => clearInterval(id)
   }, [showTimers])
 
+  // Badge carousel game loading
+  React.useEffect(() => {
+    if (!showBadges) return
+    
+    const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+    const tryFetch = async () => {
+      let g = null
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000)
+        
+        const r = await fetch(`${base}/overlay/current`, {
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+        
+        if (r.ok) {
+          g = await r.json()
+        }
+        
+        if (!g?.current) {
+          const id = Storage.getCurrentGameId()
+          if (id) {
+            const games = Storage.getGames()
+            const found = games.find(x => x.id === id)
+            if (found) {
+              g = { current: found }
+            }
+          }
+        }
+      } catch (error) {
+        const id = Storage.getCurrentGameId()
+        if (id) {
+          const games = Storage.getGames()
+          const found = games.find(x => x.id === id)
+          if (found) {
+            g = { current: found }
+          }
+        }
+      }
+      setGame(g)
+    }
+    tryFetch()
+  }, [tick, showBadges])
+
+  // Load achievements when game changes
+  const [currentGameId, setCurrentGameId] = React.useState(null)
+  
+  React.useEffect(() => {
+    if (!showBadges) return
+    
+    const newGameId = game?.current?.id || null
+    if (newGameId !== currentGameId) {
+      setCurrentGameId(newGameId)
+      if (newGameId && RA.hasRetroAchievementsSupport(game.current)) {
+        loadGameAchievements(newGameId, true)
+      }
+    }
+  }, [game?.current?.id, currentGameId, loadGameAchievements, showBadges])
+
+  // Achievement polling - periodically refresh achievements to catch newly earned ones
+  React.useEffect(() => {
+    if (!showBadges || !currentGameId || !isConfigured) {
+      console.log('Footer overlay: Skipping achievement polling', { showBadges, currentGameId, isConfigured })
+      return
+    }
+    if (!game?.current || !RA.hasRetroAchievementsSupport(game.current)) {
+      console.log('Footer overlay: No RA support for current game', game?.current?.id)
+      return
+    }
+
+    console.log('Footer overlay: Setting up achievement polling every', achievementPoll, 'ms for game', currentGameId)
+
+    const achievementPollInterval = setInterval(() => {
+      console.log('Footer overlay: Polling achievements for game', currentGameId)
+      // Only poll if not currently loading
+      if (!state.loading?.gameAchievements) {
+        loadGameAchievements(currentGameId, true) // Force refresh to get latest achievement state
+      } else {
+        console.log('Footer overlay: Skipping poll - already loading achievements')
+      }
+    }, achievementPoll)
+
+    return () => {
+      console.log('Footer overlay: Clearing achievement polling interval')
+      clearInterval(achievementPollInterval)
+    }
+  }, [currentGameId, isConfigured, showBadges, achievementPoll, loadGameAchievements, game?.current, state.loading?.gameAchievements])
+
+  // Badge carousel rotation
+  const upcoming = React.useMemo(() => {
+    if (!showBadges) return []
+    return state.currentGameAchievements
+      .filter(a => !a.isEarned)
+      .sort((a, b) => b.points - a.points)
+  }, [state.currentGameAchievements, showBadges])
+
+  React.useEffect(() => {
+    if (!showBadges || upcoming.length <= badgeCount) return
+    
+    const id = setInterval(() => {
+      setIsTransitioning(true)
+      setTimeout(() => {
+        setBadgeIndex(i => {
+          const nextIndex = i + badgeCount
+          return nextIndex >= upcoming.length ? 0 : nextIndex
+        })
+        setIsTransitioning(false)
+      }, 300)
+    }, rotateMs)
+    return () => clearInterval(id)
+  }, [upcoming.length, rotateMs, badgeCount, showBadges])
+  
+  const visibleBadges = React.useMemo(() => {
+    if (!showBadges) return []
+    const remainingFromIndex = upcoming.length - badgeIndex
+    const count = Math.min(badgeCount, remainingFromIndex)
+    return upcoming.slice(badgeIndex, badgeIndex + count)
+  }, [upcoming, badgeIndex, badgeCount, showBadges])
+
   return (
     <div className={`overlay-chrome ${isClean ? 'overlay-clean' : ''}`} style={{ width: '100vw', height: '100vh' }}>
       <div className="overlay-footer-bar" style={{ height: `${barHeight}px` }}>
         <div className="footer-inner" style={{ ...(containerWidth ? { maxWidth: containerWidth, margin: '0 auto' } : {}) }}>
-          {/* Spacer pushes time + PSFest cluster to the right */}
+          {/* Badge carousel at far left */}
+          {showBadges && game?.current && isConfigured && RA.hasRetroAchievementsSupport(game.current) && visibleBadges.length > 0 && (
+            <div className="footer-badges-section">
+              <div className="footer-badges-label">
+                <i className="bi bi-trophy"></i>
+                <span>Upcoming Achievements</span>
+              </div>
+              <div className={`footer-inline-badges ${isTransitioning ? 'transitioning' : ''}`}>
+              {visibleBadges.map((achievement, i) => (
+                <div className="footer-inline-badge" key={`${achievement.id}-${badgeIndex}-${i}`} style={{'--delay': `${i * 0.1}s`}}>
+                  <div className="inline-badge-image">
+                    <img src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`} alt={achievement.title} />
+                    <div className="badge-lock-overlay">
+                      <i className="bi bi-lock-fill"></i>
+                    </div>
+                  </div>
+                  <div className="inline-badge-info">
+                    <div className="inline-badge-title">{achievement.title}</div>
+                    <div className="inline-badge-desc">{achievement.description}</div>
+                  </div>
+                </div>
+              ))}
+              </div>
+            </div>
+          )}
+
+          {/* Spacer pushes time + total cluster to the right */}
           <div className="footer-spacer" />
 
           {/* Optional: Current Game chip (left of timer/time cluster) */}
@@ -162,19 +322,15 @@ export default function OverlayFooter() {
                 <span className="timer-label">Current</span>
                 <span className="timer-value">{timers.currentGameTime}</span>
               </div>
-              <div className={`timer-chip ${isTight ? 'tight' : ''}`} title="PSFest Total">
-                <span className="timer-label">PSFest</span>
-                <span className="timer-value">{timers.psfestTime}</span>
+              <div className={`timer-chip ${isTight ? 'tight' : ''}`} title="Event Total">
+                <span className="timer-label">Event</span>
+                <span className="timer-value">{timers.totalTime}</span>
               </div>
             </div>
           )}
 
-          {/* Time just to the left of PSFest */}
-          {timeStyle === 'psfest' ? (
-            <div className={`footer-time time--psfest`} title="Date & Time">
-              <span className="time-text">{timeStr}{showDate ? ` • ${dateStr}` : ''}</span>
-            </div>
-          ) : (
+          {/* Time just to the left of total */}
+          {
             <div className={`footer-time ${timeStyle === 'neon' ? 'time--neon' : timeStyle === 'glow' ? 'time--glow' : 'time--solid'}`} title="Date & Time">
               {renderTime(now, { timeFmt, showSeconds })}
               {showDate && (
@@ -184,10 +340,10 @@ export default function OverlayFooter() {
                 <span className="time-date">{dateStr}</span>
               )}
             </div>
-          )}
+          }
 
-          {/* PSFest compact at far right */}
-          <div className={`stats-compact-card footer-psfest ${isTight ? 'tight' : ''}`} style={{ ...(widthParam ? { width: widthParam } : {}) }}>
+          {/* Event compact at far right */}
+          <div className={`stats-compact-card footer-event ${isTight ? 'tight' : ''}`} style={{ ...(widthParam ? { width: widthParam } : {}) }}>
             <div className="d-flex align-items-center justify-content-between" style={{ gap: 8, marginBottom: 6 }}>
               <div className="stats-compact-title">{title}</div>
               <div className="percent-badge">{stats.percent}%</div>

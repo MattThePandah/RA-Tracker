@@ -2,7 +2,7 @@ import React from 'react'
 import { Link } from 'react-router-dom'
 import { useGame } from '../context/GameContext.jsx'
 import { useAchievements } from '../context/AchievementContext.jsx'
-import { startCurrentTimer, pauseCurrentTimer, resetCurrentTimer, resetPSFestTimer, getTimerStatus, getTimerData } from '../services/storage.js'
+import { startCurrentTimer, pauseCurrentTimer, resetCurrentTimer, resetTotalTimer, getTimerStatus, getTimerData, validateAndRecoverTimerState } from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
 
 // Proxy cover helper (uses disk cache via server if available)
@@ -49,17 +49,43 @@ export default function Current() {
     })
   }, [game?.id])
 
-  // Poll timer data for UI
+  // Poll timer data for UI with validation
   React.useEffect(() => {
     let id
+    let validationInterval
+    let lastValidationTime = 0
+    
     const tick = async () => {
-      const data = await getTimerData()
-      setRunning(!!data.running)
-      setTimerData(data)
+      try {
+        const data = await getTimerData()
+        setRunning(!!data.running)
+        setTimerData(data)
+        
+        // Validate timer state every 30 seconds
+        const now = Date.now()
+        if (now - lastValidationTime > 30000) {
+          lastValidationTime = now
+          validateAndRecoverTimerState().catch(error => {
+            console.warn('Current: Timer validation failed:', error)
+          })
+        }
+      } catch (error) {
+        console.warn('Current: Failed to fetch timer data:', error)
+        // Keep previous state on error
+      }
     }
+    
     tick()
     id = setInterval(tick, 1000) // Update every second for live timer
-    return () => clearInterval(id)
+    
+    // Initial validation when component mounts
+    validateAndRecoverTimerState().catch(error => {
+      console.warn('Current: Initial timer validation failed:', error)
+    })
+    
+    return () => {
+      clearInterval(id)
+    }
   }, [])
 
   // Load achievements when current game changes
@@ -78,15 +104,101 @@ export default function Current() {
     dispatch({ type: 'UPDATE_GAME', game: updated })
   }
 
-  const onField = (k, v) => {
-    setForm(prev => ({ ...prev, [k]: v }))
-    const mapped = (key, val) => (val === '' ? null : val)
-    const patch = { [k]: mapped(k, v) }
+  const onField = async (k, v) => {
+    // Normalize date fields: keep date-only in form state; store ISO midnight in data
+    let formVal = v
+    let storeVal = (v === '' ? null : v)
+    if (k === 'date_started' || k === 'date_finished') {
+      formVal = v
+      storeVal = v ? v + 'T00:00:00.000Z' : null
+    }
+    setForm(prev => ({ ...prev, [k]: formVal }))
+    const patch = { [k]: storeVal }
+    
     if (k === 'status') {
       const now = new Date().toISOString()
       if (v === 'In Progress' && !game.date_started) patch.date_started = now
       if (v === 'Completed' && !game.date_finished) patch.date_finished = now
+      
+      // Auto-start timer when status changes to "In Progress"
+      if (v === 'In Progress' && game.status !== 'In Progress') {
+        console.log('Current: Auto-starting timer for In Progress game')
+        let startSuccess = false
+        try {
+          startSuccess = await startCurrentTimer()
+          if (startSuccess) {
+            setRunning(true)
+            console.log('Current: Timer auto-start successful')
+            
+            // Validate the timer started correctly after a brief delay
+            setTimeout(async () => {
+              try {
+                const timerData = await getTimerData()
+                if (!timerData.running) {
+                  console.warn('Current: Timer failed to start properly, retrying...')
+                  const retrySuccess = await startCurrentTimer()
+                  if (retrySuccess) {
+                    setRunning(true)
+                  }
+                }
+              } catch (error) {
+                console.warn('Current: Timer validation after start failed:', error)
+              }
+            }, 2000)
+          } else {
+            throw new Error('Timer start returned false')
+          }
+        } catch (error) {
+          console.error('Current: Failed to auto-start timer:', error)
+          
+          // Try once more after a delay
+          setTimeout(async () => {
+            console.log('Current: Retrying timer auto-start...')
+            try {
+              const retrySuccess = await startCurrentTimer()
+              if (retrySuccess) {
+                setRunning(true)
+                console.log('Current: Timer auto-start retry successful')
+              } else {
+                console.error('Current: Timer auto-start retry failed')
+              }
+            } catch (retryError) {
+              console.error('Current: Timer auto-start retry error:', retryError)
+            }
+          }, 5000)
+        }
+      }
+      
+      // Auto-pause timer when status changes away from "In Progress"  
+      if (game.status === 'In Progress' && v !== 'In Progress') {
+        console.log('Current: Auto-pausing timer as game is no longer In Progress')
+        try {
+          const pauseSuccess = await pauseCurrentTimer()
+          if (pauseSuccess) {
+            setRunning(false)
+            console.log('Current: Timer auto-pause successful')
+          } else {
+            throw new Error('Timer pause returned false')
+          }
+        } catch (error) {
+          console.error('Current: Failed to auto-pause timer:', error)
+          
+          // Try once more
+          setTimeout(async () => {
+            try {
+              const retrySuccess = await pauseCurrentTimer()
+              if (retrySuccess) {
+                setRunning(false)
+                console.log('Current: Timer auto-pause retry successful')
+              }
+            } catch (retryError) {
+              console.error('Current: Timer auto-pause retry error:', retryError)
+            }
+          }, 2000)
+        }
+      }
     }
+    
     update(patch)
   }
 
@@ -121,8 +233,18 @@ export default function Current() {
             {game.is_bonus && <span className="badge bg-warning text-dark">🎁 Bonus</span>}
           </div>
           <div className="d-flex gap-2 flex-wrap align-items-center">
-            <button className="btn btn-sm btn-warning" onClick={()=>update({ status: 'In Progress', date_started: game.date_started || new Date().toISOString() })}>Set In Progress</button>
-            <button className="btn btn-sm btn-success" onClick={()=>update({ status: 'Completed', date_finished: game.date_finished || new Date().toISOString() })}>Mark Completed</button>
+            <button 
+              className="btn btn-sm btn-warning" 
+              onClick={() => onField('status', 'In Progress')}
+            >
+              Set In Progress
+            </button>
+            <button 
+              className="btn btn-sm btn-success" 
+              onClick={() => onField('status', 'Completed')}
+            >
+              Mark Completed
+            </button>
             <button className="btn btn-sm btn-outline-light" onClick={()=>dispatch({ type: 'SET_CURRENT', id: null })}>Clear Current</button>
             <span className="text-secondary ms-2" style={{fontSize: '0.9rem'}}>Timer: {running ? 'Running' : 'Paused'}</span>
           </div>
@@ -136,7 +258,7 @@ export default function Current() {
               </div>
               <div className="col-6">
                 <div className="h4 text-info mb-1">{timerData.totalFormatted}</div>
-                <div className="small text-secondary">Total PSFest Time</div>
+                <div className="small text-secondary">Total Event Time</div>
               </div>
             </div>
           </div>
@@ -148,7 +270,7 @@ export default function Current() {
               <button className="btn btn-sm btn-outline-success" onClick={startCurrentTimer}>Start Timer</button>
             )}
             <button className="btn btn-sm btn-outline-light" onClick={resetCurrentTimer}>Reset Current Timer</button>
-            <button className="btn btn-sm btn-outline-danger" onClick={resetPSFestTimer}>Reset PSFest Total</button>
+            <button className="btn btn-sm btn-outline-danger" onClick={resetTotalTimer}>Reset Event Total</button>
           </div>
         </div>
       </div>
@@ -296,11 +418,11 @@ export default function Current() {
           <div className="col-md-6">
             <div className="mb-3">
               <label className="form-label text-light">Date Started</label>
-              <input type="date" className="form-control" value={form.date_started} onChange={e=>onField('date_started', e.target.value + 'T00:00:00.000Z')} />
+              <input type="date" className="form-control" value={form.date_started} onChange={e=>onField('date_started', e.target.value)} />
             </div>
             <div className="mb-3">
               <label className="form-label text-light">Date Finished</label>
-              <input type="date" className="form-control" value={form.date_finished} onChange={e=>onField('date_finished', e.target.value + 'T00:00:00.000Z')} />
+              <input type="date" className="form-control" value={form.date_finished} onChange={e=>onField('date_finished', e.target.value)} />
             </div>
             <div className="mb-3">
               <label className="form-label text-light">Notes</label>

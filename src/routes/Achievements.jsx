@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useGame } from '../context/GameContext.jsx'
 import { useAchievements } from '../context/AchievementContext.jsx'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import * as RA from '../services/retroachievements.js'
 
 const AchievementCard = ({ achievement, gameTitle, gameIcon, consoleName, onClick }) => {
@@ -148,6 +148,8 @@ export default function Achievements() {
   const [filterStatus, setFilterStatus] = useState('all') // 'all' | 'earned' | 'locked'
   const [sortBy, setSortBy] = useState('order') // 'order' | 'points' | 'earned' | 'name'
   const [loading, setLoading] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [gameQuery, setGameQuery] = useState(() => searchParams.get('g') || '')
 
   // Get RetroAchievements games
   const raGames = useMemo(() => {
@@ -220,6 +222,17 @@ export default function Achievements() {
     }
   }, [location.search, viewMode, state.currentGameId, selectedGame, raGames.length, isConfigured])
 
+  // Keep URL 'g' param in sync with gameQuery (shallow replace)
+  useEffect(() => {
+    const q = (gameQuery || '').trim()
+    const current = searchParams.get('g') || ''
+    if (q !== current) {
+      const next = new URLSearchParams(searchParams)
+      if (q) next.set('g', q); else next.delete('g')
+      setSearchParams(next, { replace: true })
+    }
+  }, [gameQuery])
+
   // Handle game selection for current game achievements
   const handleGameSelect = async (game) => {
     // Don't allow manual selection while forcing URL selection
@@ -279,7 +292,7 @@ export default function Achievements() {
     } else if (filterStatus === 'locked') {
       achievements = achievements.filter(a => !a.isEarned)
     }
-    
+
     // Sort achievements
     achievements = [...achievements].sort((a, b) => {
       switch (sortBy) {
@@ -389,13 +402,31 @@ export default function Achievements() {
           {viewMode === 'current' && (
             <div className="card bg-panel p-3">
               <h5 className="h6 mb-3">Select Game</h5>
+              <div className="mb-2">
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  placeholder="Search games..."
+                  value={gameQuery}
+                  onChange={e => setGameQuery(e.target.value)}
+                />
+              </div>
               <div className="game-list">
                 {raGames.length === 0 ? (
                   <div className="text-secondary small">
                     No RetroAchievements games found. Sync games from Settings.
                   </div>
                 ) : (
-                  raGames.map(game => (
+                  raGames
+                    .filter(g => {
+                      const q = (gameQuery || '').trim().toLowerCase()
+                      if (!q) return true
+                      return (
+                        String(g.title || '').toLowerCase().includes(q) ||
+                        String(g.console || '').toLowerCase().includes(q)
+                      )
+                    })
+                    .map(game => (
                     <div 
                       key={game.id} 
                       className={`game-selector-item ${selectedGame?.id === game.id ? 'active' : ''}`}

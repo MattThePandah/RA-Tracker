@@ -135,7 +135,23 @@ export default function Settings() {
       }
       const merged = Array.from(map.values())
       dispatch({ type: 'SET_GAMES', games: merged })
-      alert(`Synced ${games.length} games from RetroAchievements.`)
+      
+      // Auto-publish stats to overlay after sync
+      try {
+        const total = merged.length
+        const completed = merged.filter(g => g.status === 'Completed').length
+        const base = import.meta.env.VITE_IGDB_PROXY_URL
+        if (base) {
+          await fetch(`${base}/overlay/stats`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ total, completed })
+          })
+        }
+      } catch (e) {
+        console.warn('Failed to auto-publish stats to overlay:', e)
+      }
+      
+      alert(`Synced ${merged.length} games from RetroAchievements.`)
     } catch (e) {
       alert('RA sync failed: ' + (e?.message || e))
     } finally {
@@ -158,13 +174,13 @@ export default function Settings() {
     setPrecacheState({ running: false, done: clone.length, total: clone.length, last: 'Complete' })
   }
 
-  const resetPSFestTimer = async () => {
-    const ok = typeof window !== 'undefined' && window.confirm ? window.confirm('Reset PSFest timer? This will clear all accumulated time.') : true
+  const resetTotalTimer = async () => {
+    const ok = typeof window !== 'undefined' && window.confirm ? window.confirm('Reset total event timer? This will clear all accumulated time.') : true
     if (!ok) return
     try {
-      await Storage.resetPSFestTimer()
-      alert('PSFest total reset.')
-    } catch { alert('Failed to reset PSFest timer (server).') }
+      await Storage.resetTotalTimer()
+      alert('Event total reset.')
+    } catch { alert('Failed to reset total timer (server).') }
   }
 
   return (
@@ -189,7 +205,7 @@ export default function Settings() {
               </div>
             </div>
             <button disabled={!raEnabled || loading} className="btn btn-primary mt-3" onClick={syncRA}>
-              {loading ? 'Syncing...' : 'Sync PS1 / PS2 / PSP'}
+              {loading ? 'Syncing...' : 'Sync RA Games'}
             </button>
             <div className="text-secondary small mt-2">
               Console IDs are resolved live via RA <code>API_GetConsoleIDs.php</code> and default to common IDs if resolution fails.
@@ -237,12 +253,12 @@ export default function Settings() {
 
         <div className="col-12">
           <div className="card bg-panel p-3">
-            <h3 className="h6">🎯 PSFest Timer</h3>
+            <h3 className="h6">🎯 Event Timer</h3>
             <div className="text-secondary small mb-3">
-              PSFest now follows the Current Game timer. Use Current tab to Start/Pause. Reset the total here.
+              The event total follows the Current Game timer. Use Current tab to Start/Pause. Reset the total here.
             </div>
             <div className="d-flex gap-2">
-              <button className="btn btn-outline-danger" onClick={resetPSFestTimer}>Reset PSFest Total</button>
+              <button className="btn btn-outline-danger" onClick={resetTotalTimer}>Reset Event Total</button>
             </div>
           </div>
         </div>

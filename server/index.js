@@ -6,6 +6,12 @@ import axios from 'axios'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import { FLAGS, loadPlatformMapping } from './config.js'
+import * as RA from './adapters/ra.js'
+import * as IGDB from './adapters/igdb.js'
+import { COVERS_DIR, coverPathFor, coverPublicPathFor, cacheCoverFromUrl } from './util/covers.js'
+import { startBuild, startCoverPrefetch, getJob, getIndex } from './library.js'
+import { createUserMetadataEndpoints, mergeWithGameLibrary } from './userMetadata.js'
 
 const app = express()
 app.use(cors())
@@ -160,15 +166,6 @@ app.post('/overlay/current', (req, res) => {
   res.json({ ok: true, updatedAt: overlayState.updatedAt })
 })
 
-// Local disk cover caching so OBS doesn't depend on browser caches
-const COVERS_DIR = process.env.COVERS_DIR || path.join(process.cwd(), 'covers')
-fs.mkdirSync(COVERS_DIR, { recursive: true })
-function hash(str) { return crypto.createHash('sha1').update(String(str)).digest('hex') }
-function coverPathFor(url) { 
-  const ext = url.includes('.jpg') ? '.jpg' : url.includes('.png') ? '.png' : '.jpg'
-  return path.join(COVERS_DIR, `${hash(url)}${ext}`) 
-}
-
 // Serve cached covers statically
 app.use('/covers', express.static(COVERS_DIR))
 
@@ -178,9 +175,7 @@ app.get('/cover', async (req, res) => {
     const src = req.query.src
     if (!src) return res.status(400).send('src required')
     const file = coverPathFor(src)
-    if (fs.existsSync(file)) {
-      return res.sendFile(file)
-    }
+    if (fs.existsSync(file)) return res.sendFile(file)
     const response = await axios.get(src, { responseType: 'arraybuffer' })
     const buf = Buffer.from(response.data, 'binary')
     try { fs.writeFileSync(file, buf) } catch {}
@@ -324,49 +319,112 @@ let timerState = {
   currentStartedAt: null, // ms
   perGame: {}, // id -> accumulatedSec
 
-  // PSFest tracking (total time while current timer was running)
-  psfestAccumulatedSec: 0,
+  // Total tracking (accumulates while current timer is running)
+  totalAccumulatedSec: 0,
 
   // Legacy compatibility fields (nullable)
-  psfestStartTime: null,
+  // Legacy compatibility (migrated on read)
+  totalStartTime: null,
   currentGameStartTime: null,
 
   updatedAt: Date.now(),
 }
 
-// Load persisted timer state if available
+// Load persisted timer state if available with backup recovery
+let timerStateLoaded = false
 try {
   const persistedTimers = loadJSON(TIMERS_FILE, null)
   if (persistedTimers && typeof persistedTimers === 'object') {
     timerState = { ...timerState, ...persistedTimers }
-    // Migrate legacy single current accumulator to perGame map
-    if (!timerState.perGame) timerState.perGame = {}
-    if (typeof persistedTimers.currentAccumulatedSec === 'number' && persistedTimers.currentGameId) {
-      timerState.perGame[persistedTimers.currentGameId] = (timerState.perGame[persistedTimers.currentGameId] || 0) + persistedTimers.currentAccumulatedSec
-      delete timerState.currentAccumulatedSec
-    }
-    // If we were running before restart, resume from now to avoid counting downtime twice
-    if (timerState.running) {
-      timerState.currentStartedAt = Date.now()
-    }
+    timerStateLoaded = true
+    console.log('Timer state loaded from primary file')
   }
-} catch {}
+} catch (primaryError) {
+  console.warn('Failed to load primary timer state:', primaryError.message)
+  
+  // Try to load from backup
+  try {
+    const backupFile = TIMERS_FILE.replace('.json', '.backup.json')
+    const backupTimers = loadJSON(backupFile, null)
+    if (backupTimers && typeof backupTimers === 'object' && backupTimers.isBackup) {
+      timerState = { ...timerState, ...backupTimers }
+      timerStateLoaded = true
+      console.log('Timer state recovered from backup file')
+      
+      // Save backup as primary to fix corruption
+      try {
+        delete backupTimers.isBackup
+        delete backupTimers.backupTimestamp
+        saveJSON(TIMERS_FILE, backupTimers)
+        console.log('Primary timer state restored from backup')
+      } catch (restoreError) {
+        console.warn('Failed to restore primary timer state:', restoreError.message)
+      }
+    }
+  } catch (backupError) {
+    console.warn('Failed to load backup timer state:', backupError.message)
+  }
+}
+
+// If we loaded timer state, migrate and validate it
+if (timerStateLoaded) {
+  // Migrate legacy single current accumulator to perGame map
+  if (!timerState.perGame) timerState.perGame = {}
+  if (typeof timerState.currentAccumulatedSec === 'number' && timerState.currentGameId) {
+    timerState.perGame[timerState.currentGameId] = (timerState.perGame[timerState.currentGameId] || 0) + timerState.currentAccumulatedSec
+    delete timerState.currentAccumulatedSec
+  }
+  
+  // Detect potential crash recovery scenario
+  const now = Date.now()
+  const timeSinceLastUpdate = now - (timerState.updatedAt || 0)
+  
+  if (timerState.running && timeSinceLastUpdate > 300_000) { // More than 5 minutes
+    console.log('Detected potential crash recovery scenario - timer was running for', Math.floor(timeSinceLastUpdate / 60000), 'minutes')
+    
+    // Don't count the downtime - resume from now
+    timerState.currentStartedAt = now
+    
+    // Log crash recovery stats
+    const gameProgress = timerState.currentGameId ? (timerState.perGame[timerState.currentGameId] || 0) : 0
+    console.log('Crash recovery - resuming timer for game:', timerState.currentGameId, 'with', gameProgress, 'seconds accumulated')
+  } else if (timerState.running) {
+    // Normal restart - resume from now
+    timerState.currentStartedAt = now
+  }
+  
+  // Validate state integrity
+  if (timerState.totalAccumulatedSec < 0) {
+    console.warn('Fixing negative total time')
+    timerState.totalAccumulatedSec = 0
+  }
+  
+  if (timerState.perGame) {
+    Object.keys(timerState.perGame).forEach(gameId => {
+      if (timerState.perGame[gameId] < 0) {
+        console.warn('Fixing negative game time for', gameId)
+        timerState.perGame[gameId] = 0
+      }
+    })
+  }
+}
 
 app.get('/overlay/timers', (req, res) => {
   const now = Date.now()
 
   // Migrate from legacy fields once if present
-  if ((timerState.psfestStartTime || timerState.currentGameStartTime) && !timerState._migrated) {
+  if ((timerState.totalStartTime || timerState.psfestStartTime || timerState.currentGameStartTime) && !timerState._migrated) {
     // If legacy start times were provided, assume running since those times.
     if (timerState.currentGameStartTime) {
       timerState.running = true
       timerState.currentStartedAt = new Date(timerState.currentGameStartTime).getTime()
     }
-    if (timerState.psfestStartTime) {
+    const legacyStart = timerState.totalStartTime || timerState.psfestStartTime
+    if (legacyStart) {
       // We cannot know the pause intervals; approximate by setting accumulated as time since start if running,
       // otherwise store zero. Future controls will manage accumulation precisely.
-      const since = Math.max(0, Math.floor((now - new Date(timerState.psfestStartTime).getTime()) / 1000))
-      timerState.psfestAccumulatedSec = since
+      const since = Math.max(0, Math.floor((now - new Date(legacyStart).getTime()) / 1000))
+      timerState.totalAccumulatedSec = since
     }
     timerState._migrated = true
   }
@@ -375,23 +433,47 @@ app.get('/overlay/timers', (req, res) => {
   const running = !!timerState.running
   const baseAccum = (timerState.currentGameId && timerState.perGame[timerState.currentGameId]) || 0
   let currentElapsed = baseAccum
-  let psfestElapsed = timerState.psfestAccumulatedSec
+  let totalElapsed = timerState.totalAccumulatedSec
   if (running && timerState.currentStartedAt) {
     const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
     currentElapsed += Math.max(0, deltaSec)
-    psfestElapsed += Math.max(0, deltaSec)
+    totalElapsed += Math.max(0, deltaSec)
   }
 
   const currentGameTime = formatTime(Math.max(0, currentElapsed))
-  const psfestTime = formatTime(Math.max(0, psfestElapsed), true)
+  const totalTime = formatTime(Math.max(0, totalElapsed), true)
 
   res.json({
     currentGameTime,
-    psfestTime,
+    totalTime,
     currentGameId: timerState.currentGameId,
     running,
     updatedAt: now,
   })
+})
+
+// Per-game fixed time (seconds accumulated) with formatted string
+app.get('/overlay/timers/game/:id', (req, res) => {
+  try {
+    const id = req.params.id
+    const now = Date.now()
+    let seconds = 0
+
+    if (timerState && timerState.perGame) {
+      seconds = Math.max(0, Number(timerState.perGame[id] || 0))
+    }
+
+    // If this game is currently running, include live delta
+    if (timerState && timerState.running && timerState.currentGameId === id && timerState.currentStartedAt) {
+      const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
+      if (deltaSec > 0) seconds += deltaSec
+    }
+
+    const formatted = formatTime(seconds)
+    res.json({ id, seconds, formatted, updatedAt: now })
+  } catch (error) {
+    res.status(500).json({ error: 'failed_to_compute_fixed_time' })
+  }
 })
 
 app.post('/overlay/timers', (req, res) => {
@@ -404,13 +486,13 @@ app.post('/overlay/timers', (req, res) => {
       if (deltaSec > 0) {
         const gid = timerState.currentGameId
         timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
-        timerState.psfestAccumulatedSec += deltaSec
+        timerState.totalAccumulatedSec += deltaSec
       }
     }
   }
 
   // Back-compat support (legacy fields)
-  if ('psfestStartTime' in body || 'currentGameStartTime' in body || 'currentGameId' in body) {
+  if ('totalStartTime' in body || 'psfestStartTime' in body || 'currentGameStartTime' in body || 'currentGameId' in body) {
     if (body.currentGameId !== undefined && body.currentGameId !== timerState.currentGameId) {
       // On game change, settle previous game's elapsed and switch focus
       settleCurrent()
@@ -425,9 +507,10 @@ app.post('/overlay/timers', (req, res) => {
       timerState.running = !!body.currentGameStartTime
       timerState.currentStartedAt = body.currentGameStartTime ? new Date(body.currentGameStartTime).getTime() : null
     }
-    if (body.psfestStartTime !== undefined) {
-      // Approximate psfest accumulated; if start provided, set baseline to elapsed since then
-      timerState.psfestAccumulatedSec = body.psfestStartTime ? Math.max(0, Math.floor((now - new Date(body.psfestStartTime).getTime()) / 1000)) : 0
+    const start = body.totalStartTime ?? body.psfestStartTime
+    if (start !== undefined) {
+      // Approximate total accumulated; if start provided, set baseline to elapsed since then
+      timerState.totalAccumulatedSec = start ? Math.max(0, Math.floor((now - new Date(start).getTime()) / 1000)) : 0
     }
   }
 
@@ -448,8 +531,8 @@ app.post('/overlay/timers', (req, res) => {
     if (gid) timerState.perGame[gid] = 0
     if (timerState.running) timerState.currentStartedAt = now
   }
-  if (body.resetPSFest) {
-    timerState.psfestAccumulatedSec = 0
+  if (body.resetTotal) {
+    timerState.totalAccumulatedSec = 0
   }
   if (body.currentGameId !== undefined && body.currentGameId !== timerState.currentGameId) {
     // Explicit game change
@@ -525,7 +608,7 @@ app.post('/wheel/spin', (req, res) => {
       sampleHash
     }
 
-    res.json(overlaySpin)
+  res.json(overlaySpin)
   } catch (e) {
     console.error('wheel/spin error', e)
     res.status(500).json({ error: 'failed to start spin' })
@@ -563,6 +646,9 @@ app.get('/api/retroachievements/game/:gameId', async (req, res) => {
   }
 })
 
+// Register user metadata endpoints
+createUserMetadataEndpoints(app)
+
 const port = process.env.PORT || 8787
 app.listen(port, () => {
   console.log(`IGDB proxy on :${port}`)
@@ -571,9 +657,22 @@ app.listen(port, () => {
     console.log('[Overlay] Timers file:', TIMERS_FILE)
     console.log('[Overlay] Current file:', CURRENT_FILE)
   } catch {}
+  try {
+    if (FLAGS.LIBRARY_BUILD_ON_START) {
+      console.log('[Startup] Library build on start enabled; starting job...')
+      const jobId = startBuild({ apiKey: process.env.RA_API_KEY || process.env.VITE_RA_API_KEY })
+      console.log('[Startup] Library build job:', jobId)
+    }
+    if (FLAGS.COVER_PREFETCH_ENABLED) {
+      console.log('[Startup] Cover prefetch enabled; starting job with RA fallback...')
+      const jobId = startCoverPrefetch({ limitConcurrency: 3, saveEvery: 50 })
+      console.log('[Startup] Cover prefetch job:', jobId)
+    }
+  } catch (e) { console.warn('[Startup] background jobs failed to start:', e?.message || e) }
 })
 
 // Periodic persistence while running to reduce write frequency (every 15s)
+// Also create backup saves for crash recovery
 setInterval(() => {
   const now = Date.now()
   if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
@@ -584,30 +683,210 @@ setInterval(() => {
       timerState.psfestAccumulatedSec += deltaSec
       timerState.currentStartedAt = now
       timerState.updatedAt = now
-      saveJSON(TIMERS_FILE, timerState)
+      
+      // Save primary state
+      try {
+        saveJSON(TIMERS_FILE, timerState)
+      } catch (error) {
+        console.error('Timer persistence failed:', error)
+      }
+      
+      // Create backup with timestamp for crash recovery
+      try {
+        const backupState = {
+          ...timerState,
+          backupTimestamp: now,
+          isBackup: true
+        }
+        saveJSON(TIMERS_FILE.replace('.json', '.backup.json'), backupState)
+      } catch (error) {
+        console.warn('Timer backup failed:', error)
+      }
     }
   }
 }, 15_000)
 
-// Graceful shutdown: checkpoint timers
-for (const sig of ['SIGINT', 'SIGTERM']) {
+// Graceful shutdown: checkpoint timers with enhanced error handling
+const gracefulShutdown = (signal) => {
+  console.log(`Received ${signal}, performing graceful shutdown...`)
+  
   try {
-    process.on(sig, () => {
+    const now = Date.now()
+    
+    // Checkpoint any running timer state
+    if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
+      const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
+      if (deltaSec > 0) {
+        const gid = timerState.currentGameId
+        timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
+        timerState.totalAccumulatedSec += deltaSec
+        console.log(`Checkpointing ${deltaSec} seconds for game ${gid}`)
+      }
+      timerState.currentStartedAt = now
+      timerState.updatedAt = now
+    }
+    
+    // Save state with retry logic
+    let saveAttempts = 3
+    while (saveAttempts > 0) {
       try {
-        const now = Date.now()
-        if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
-          const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
-          if (deltaSec > 0) {
-            const gid = timerState.currentGameId
-            timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
-            timerState.psfestAccumulatedSec += deltaSec
-          }
-          timerState.currentStartedAt = now
-          timerState.updatedAt = now
-        }
         saveJSON(TIMERS_FILE, timerState)
-      } catch {}
-      process.exit(0)
-    })
-  } catch {}
+        console.log('Timer state saved successfully on shutdown')
+        break
+      } catch (error) {
+        saveAttempts--
+        console.error(`Timer save failed (${saveAttempts} attempts left):`, error.message)
+        if (saveAttempts === 0) {
+          // Try backup save as last resort
+          try {
+            const backupFile = TIMERS_FILE.replace('.json', '.emergency.json')
+            saveJSON(backupFile, { ...timerState, isEmergencyBackup: true, shutdownTime: now })
+            console.log('Emergency backup saved')
+          } catch (backupError) {
+            console.error('Emergency backup failed:', backupError.message)
+          }
+        }
+      }
+    }
+    
+  } catch (error) {
+    console.error('Graceful shutdown error:', error.message)
+  } finally {
+    console.log('Graceful shutdown complete')
+    process.exit(0)
+  }
 }
+
+// Handle multiple shutdown signals
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGQUIT']) {
+  try {
+    process.on(sig, () => gracefulShutdown(sig))
+  } catch (error) {
+    console.warn(`Failed to register ${sig} handler:`, error.message)
+  }
+}
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error)
+  try {
+    // Emergency save before crash
+    const now = Date.now()
+    if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
+      const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
+      if (deltaSec > 0) {
+        const gid = timerState.currentGameId
+        timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
+        timerState.totalAccumulatedSec += deltaSec
+      }
+      timerState.currentStartedAt = now
+      timerState.updatedAt = now
+    }
+    
+    const crashFile = TIMERS_FILE.replace('.json', '.crash.json')
+    saveJSON(crashFile, { ...timerState, isCrashBackup: true, crashTime: now, crashError: error.message })
+    console.log('Crash backup saved')
+  } catch (crashError) {
+    console.error('Crash backup failed:', crashError.message)
+  }
+  process.exit(1)
+})
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled promise rejection:', reason)
+  console.error('Promise:', promise)
+})
+
+// -------- v2 APIs (feature-flagged) --------
+
+// Helper: optional gating (kept for admin endpoints). For public v2, always allow.
+function gated(handler) {
+  return (req, res, next) => handler(req, res, next)
+}
+
+// GET /api/consoles (always on for v2 UI)
+app.get('/api/consoles', async (req, res) => {
+  try {
+    const apiKey = req.query.apiKey || process.env.RA_API_KEY
+    const list = await RA.listConsoles({ apiKey, activeOnly: true, gameSystemsOnly: true })
+    const mapping = loadPlatformMapping()
+    const consoles = list.map(c => ({ ...c, igdbPlatformIds: mapping[c.id] || [] }))
+    res.json({ consoles })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_list_consoles' })
+  }
+})
+
+// GET /api/games (paged) — always on for v2 UI
+app.get('/api/games', async (req, res) => {
+  try {
+    const { consoleId, hasAchievements, hasCover, q, offset = 0, limit = 100 } = req.query
+    const idx = getIndex()
+    let games = idx.games || []
+    
+    // Merge with user metadata before filtering
+    games = mergeWithGameLibrary(games)
+    
+    if (consoleId && consoleId !== 'All') games = games.filter(g => g.console?.id === consoleId)
+    if (hasAchievements) games = games.filter(g => g.flags?.hasAchievements)
+    if (hasCover) games = games.filter(g => g.flags?.hasCover)
+    if (q) {
+      const s = String(q).toLowerCase()
+      games = games.filter(g => g.title?.toLowerCase().includes(s))
+    }
+    const off = Math.max(0, Number(offset) || 0)
+    const lim = Math.max(1, Math.min(500, Number(limit) || 100))
+    const page = games.slice(off, off + lim)
+    res.json({ total: games.length, offset: off, limit: lim, games: page })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_list_games' })
+  }
+})
+
+// POST /api/covers/resolve — always on for v2 UI
+app.post('/api/covers/resolve', async (req, res) => {
+  try {
+    const { title, consoleId } = req.body || {}
+    if (!title) return res.status(400).json({ error: 'title_required' })
+    const mapping = loadPlatformMapping()
+    const platforms = consoleId ? (mapping[consoleId] || []) : []
+    const results = await IGDB.searchGames({ q: title, platformIds: platforms })
+    if (!results.length || !results[0].image_id) return res.status(404).json({ error: 'not_found' })
+    const url = IGDB.coverUrlFromImageId(results[0].image_id)
+    const localPath = await cacheCoverFromUrl(url)
+    const release_year = results[0].first_release_date ? new Date(results[0].first_release_date * 1000).getUTCFullYear().toString() : null
+    const publisher = results[0].publisher_name || null
+    res.json({ cover: { localPath, originalUrl: url }, matchedTitle: results[0].name, release_year, publisher })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_resolve_cover' })
+  }
+})
+
+// Jobs: build library and status
+app.post('/api/library/build', gated(async (req, res) => {
+  try {
+    const apiKey = req.body?.apiKey || process.env.RA_API_KEY
+    const consoles = Array.isArray(req.body?.consoles) ? req.body.consoles : undefined
+    const jobId = startBuild({ apiKey, consoles })
+    res.json({ started: true, jobId })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_start_build' })
+  }
+}))
+
+app.get('/api/library/status/:jobId', async (req, res) => {
+  const job = getJob(req.params.jobId)
+  if (!job) return res.status(404).json({ error: 'job_not_found' })
+  res.json(job)
+})
+
+// Start cover prefetch for all games missing covers
+app.post('/api/library/covers', gated(async (req, res) => {
+  try {
+    const jobId = startCoverPrefetch({ limitConcurrency: Number(req.body?.concurrency) || 3, saveEvery: Number(req.body?.saveEvery) || 50 })
+    res.json({ started: true, jobId })
+  } catch (e) {
+    res.status(500).json({ error: 'failed_to_start_cover_prefetch' })
+  }
+}))

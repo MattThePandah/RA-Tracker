@@ -18,6 +18,14 @@ dist/
 server/.env
 server/.env.local
 
+# Legacy v1 data file (contains user credentials) — do not commit
+v1/data/settings.json
+
+# Sample data files (user-provided)
+games.json
+games.with-covers.json
+old-games.json
+
 # Server data/cache (persisted at runtime)
 server/data/
 server/server/data/
@@ -55,3 +63,4 @@ tmp/
 # Project-specific helpers (not needed in repo)
 .claude/
 .claude/settings.local.json
+.code/*

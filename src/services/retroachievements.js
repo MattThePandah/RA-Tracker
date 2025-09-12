@@ -96,7 +96,20 @@ export async function getGameInfoAndUserProgress({ apiKey, username, gameId, inc
   params.set('apiKey', apiKey)
   
   try {
-    const { data } = await axios.get(`${url}?${params.toString()}`)
+    // Add timeout and retry logic
+    const config = {
+      timeout: 15000, // 15 second timeout
+      headers: {
+        'User-Agent': 'RetroAchievements-Tracker/1.0'
+      }
+    }
+    
+    const { data } = await axios.get(`${url}?${params.toString()}`, config)
+    
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid response format from RetroAchievements API')
+    }
+    
     return {
       gameInfo: {
         id: data.ID,
@@ -261,14 +274,21 @@ export async function getRecentAchievements({ apiKey, username, count = 50 }) {
 // Helper function to extract game ID from internal game ID format (ra-consoleId-gameId)
 export function extractGameIdFromInternalId(internalId) {
   if (!internalId || typeof internalId !== 'string') return null
-  const parts = internalId.split('-')
-  if (parts.length >= 3 && parts[0] === 'ra') {
-    return parseInt(parts[2])
+  // Accept both legacy 'ra-<consoleId>-<gameId>' and new 'game:ra:<gameId>' formats
+  if (internalId.startsWith('ra-')) {
+    const parts = internalId.split('-')
+    if (parts.length >= 3) return parseInt(parts[2])
+    return null
+  }
+  if (internalId.startsWith('game:ra:')) {
+    const n = parseInt(internalId.slice('game:ra:'.length), 10)
+    return Number.isFinite(n) ? n : null
   }
   return null
 }
 
 // Helper function to check if a game has RetroAchievements support
 export function hasRetroAchievementsSupport(game) {
-  return game?.id?.startsWith('ra-') || false
+  const id = game?.id || ''
+  return typeof id === 'string' && (id.startsWith('ra-') || id.startsWith('game:ra:'))
 }

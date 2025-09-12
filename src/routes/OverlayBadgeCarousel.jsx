@@ -1,7 +1,9 @@
 import React from 'react'
 import { useAchievements } from '../context/AchievementContext.jsx'
+import AchievementNotificationManager from '../components/AchievementNotificationManager.jsx'
 import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
+import ErrorBoundary, { OverlayErrorFallback } from '../components/ErrorBoundary.jsx'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -12,13 +14,14 @@ function usePoll(ms) {
   return tick
 }
 
-export default function OverlayBadgeCarousel() {
+function OverlayBadgeCarouselInner() {
   const { state, loadGameAchievements, isConfigured } = useAchievements()
   const params = new URLSearchParams(location.search)
   const poll = parseInt(params.get('poll') || '5000', 10)
   const achievementPoll = parseInt(params.get('rapoll') || '60000', 10) // Default 60 seconds for achievements
   const rotateMs = parseInt(params.get('rotate') || '8000', 10) // Longer rotation for readability
   const isClean = params.get('clean') === '1'
+  const isHorizontal = params.get('horizontal') === '1'
   
   // Stream-friendly: compact layout for corner positioning  
   const showCount = Math.max(parseInt(params.get('show') || '3', 10), 1)
@@ -34,16 +37,49 @@ export default function OverlayBadgeCarousel() {
     const tryFetch = async () => {
       let g = null
       try {
-        const r = await fetch(`${base}/overlay/current`)
-        if (r.ok) g = await r.json()
-        if (!g) {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+        
+        const r = await fetch(`${base}/overlay/current`, {
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+        
+        if (r.ok) {
+          g = await r.json()
+        } else {
+          console.warn('Badge carousel: Server returned', r.status, r.statusText)
+        }
+        
+        // Fallback to localStorage if server fails
+        if (!g?.current) {
           const id = Storage.getCurrentGameId()
           if (id) {
             const games = Storage.getGames()
-            g = games.find(x => x.id === id)
+            const found = games.find(x => x.id === id)
+            if (found) {
+              g = { current: found }
+              console.log('Badge carousel: Using localStorage fallback for game', found.title)
+            }
           }
         }
-      } catch {}
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          console.warn('Badge carousel: Game fetch timeout')
+        } else {
+          console.warn('Badge carousel: Game fetch error:', error.message)
+        }
+        
+        // Always fallback to localStorage on error
+        const id = Storage.getCurrentGameId()
+        if (id) {
+          const games = Storage.getGames()
+          const found = games.find(x => x.id === id)
+          if (found) {
+            g = { current: found }
+          }
+        }
+      }
       setGame(g)
     }
     tryFetch()
@@ -113,19 +149,51 @@ export default function OverlayBadgeCarousel() {
     const pollInterval = recentActivityDetected ? 15000 : achievementPoll // 15 seconds vs 60 seconds
     console.log('Badge carousel: Setting up achievement polling every', pollInterval, 'ms', recentActivityDetected ? '(frequent - recent activity)' : '(normal)')
     
-    const achievementPollInterval = setInterval(() => {
-      console.log('Badge carousel: Polling achievements for game', currentGameId)
-      // Only poll if not currently loading and we have a game
-      if (currentGameId && !state.loading?.gameAchievements) {
-        loadGameAchievements(currentGameId, true) // Force refresh to get latest achievement state
+    let isActive = true // Flag to prevent race conditions
+    let lastPollPromise = null // Track in-flight requests
+    
+    const pollAchievements = async () => {
+      if (!isActive || !currentGameId) return
+      
+      // Wait for previous poll to complete to avoid concurrent requests
+      if (lastPollPromise) {
+        try {
+          await lastPollPromise
+        } catch (error) {
+          // Previous request failed, continue with new one
+        }
       }
-    }, pollInterval)
+      
+      // Don't start new poll if component unmounted or game changed
+      if (!isActive || currentGameId !== game?.current?.id) return
+      
+      console.log('Badge carousel: Polling achievements for game', currentGameId)
+      
+      // Only poll if not currently loading
+      if (!state.loading?.gameAchievements) {
+        lastPollPromise = loadGameAchievements(currentGameId, true)
+        try {
+          await lastPollPromise
+        } catch (error) {
+          console.error('Badge carousel: Error loading achievements:', error)
+          // Context handles retries with exponential backoff
+        } finally {
+          lastPollPromise = null
+        }
+      }
+    }
+    
+    const achievementPollInterval = setInterval(pollAchievements, pollInterval)
+    
+    // Initial poll
+    pollAchievements()
     
     return () => {
       console.log('Badge carousel: Clearing achievement polling interval')
+      isActive = false
       clearInterval(achievementPollInterval)
     }
-  }, [currentGameId, isConfigured, achievementPoll, recentActivityDetected]) // Include recentActivityDetected
+  }, [currentGameId, isConfigured, achievementPoll, recentActivityDetected]) // Removed unstable dependencies
 
   const upcoming = React.useMemo(() => {
     return state.currentGameAchievements
@@ -171,51 +239,83 @@ export default function OverlayBadgeCarousel() {
     return upcoming.slice(index, index + count)
   }, [upcoming, index, showCount])
 
-  const containerClass = `overlay-chrome badge-carousel-overlay position-${position} ${isClean ? 'overlay-clean' : ''} ${isTransitioning ? 'transitioning' : ''}`
+  const containerClass = `overlay-chrome badge-carousel-overlay position-${position} ${isClean ? 'overlay-clean' : ''} ${isTransitioning ? 'transitioning' : ''} ${isHorizontal ? 'horizontal' : ''}`
   const currentGame = game?.current
   const pageCount = Math.ceil(upcoming.length / showCount)
   const currentPage = Math.floor(index / showCount) + 1
 
   if (!currentGame) {
-    return <div className={containerClass}>No game selected</div>
+    return (
+      <>
+        <div className={containerClass}>No game selected</div>
+        <AchievementNotificationManager />
+      </>
+    )
   }
   if (!isConfigured || !RA.hasRetroAchievementsSupport(currentGame)) {
-    return <div className={containerClass}>RetroAchievements not configured</div>
+    return (
+      <>
+        <div className={containerClass}>RetroAchievements not configured</div>
+        <AchievementNotificationManager />
+      </>
+    )
   }
   if (state.loading.gameAchievements) {
-    return <div className={containerClass}>Loading achievements…</div>
+    return (
+      <>
+        <div className={containerClass}>Loading achievements…</div>
+        <AchievementNotificationManager />
+      </>
+    )
   }
   if (upcoming.length === 0) {
-    return <div className={containerClass}>All achievements earned!</div>
+    return (
+      <>
+        <div className={containerClass}>All achievements earned!</div>
+        <AchievementNotificationManager />
+      </>
+    )
   }
 
   return (
-    <div className={containerClass}>
-      <div className="badge-header">
-        <div className="badge-heading">Locked Achievements</div>
-        {pageCount > 1 && (
-          <div className="badge-counter">{currentPage}/{pageCount}</div>
-        )}
-        {lastUpdateTime > 0 && (
-          <div style={{fontSize: '10px', opacity: 0.6, marginTop: '2px'}}>
-            Updated: {new Date(lastUpdateTime).toLocaleTimeString()}
-          </div>
-        )}
-      </div>
-      <div className="badge-list">
-        {visible.map((achievement, i) => (
-          <div className="badge-item" key={`${achievement.id}-${index}-${i}`} style={{'--delay': `${i * 0.1}s`}}>
-            <div className="badge-image">
-              <img src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`} alt={achievement.title} />
+    <>
+      <div className={containerClass}>
+        <div className="badge-header">
+          <div className="badge-heading">Locked Achievements</div>
+          {pageCount > 1 && (
+            <div className="badge-counter">{currentPage}/{pageCount}</div>
+          )}
+          {lastUpdateTime > 0 && (
+            <div style={{fontSize: '10px', opacity: 0.6, marginTop: '2px'}}>
+              Updated: {new Date(lastUpdateTime).toLocaleTimeString()}
             </div>
-            <div className="badge-info">
-              <div className="badge-title">{achievement.title}</div>
-              <div className="badge-desc">{achievement.description}</div>
+          )}
+        </div>
+        <div className="badge-list">
+          {visible.map((achievement, i) => (
+            <div className="badge-item" key={`${achievement.id}-${index}-${i}`} style={{'--delay': `${i * 0.1}s`}}>
+              <div className="badge-image">
+                <img src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`} alt={achievement.title} />
+              </div>
+              <div className="badge-info">
+                <div className="badge-title">{achievement.title}</div>
+                <div className="badge-desc">{achievement.description}</div>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-    </div>
+      <AchievementNotificationManager />
+    </>
+  )
+}
+
+// Wrap with error boundary for better reliability
+export default function OverlayBadgeCarousel() {
+  return (
+    <ErrorBoundary fallback={OverlayErrorFallback}>
+      <OverlayBadgeCarouselInner />
+    </ErrorBoundary>
   )
 }
 

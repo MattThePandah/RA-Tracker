@@ -1,8 +1,10 @@
 import React, { useState, useCallback, useEffect } from 'react'
 import { useAchievements } from '../context/AchievementContext.jsx'
-import AchievementPopup from './AchievementPopup.jsx'
+import Achievement3DPopup from './Achievement3DPopup.jsx'
+import ErrorBoundary, { ComponentErrorFallback } from './ErrorBoundary.jsx'
+import soundManager from '../services/soundManager.js'
 
-const AchievementNotificationManager = () => {
+const AchievementNotificationManagerInner = () => {
   const { state } = useAchievements()
   const [activePopups, setActivePopups] = useState([])
   const [lastCheckedTimestamp, setLastCheckedTimestamp] = useState(Date.now())
@@ -10,6 +12,16 @@ const AchievementNotificationManager = () => {
   // Configuration from achievement settings
   const popupDuration = state.settings.popupDuration || 5000
   const enablePopups = state.settings.enablePopups !== false
+
+  // Initialize sound manager once at mount
+  useEffect(() => {
+    if (!soundManager.initialized) {
+      soundManager.initialize()
+    }
+    if (!soundManager.soundsLoaded) {
+      soundManager.loadSounds()
+    }
+  }, [])
 
   // Check for new achievements from recent achievements list
   useEffect(() => {
@@ -24,16 +36,24 @@ const AchievementNotificationManager = () => {
     })
 
     if (newAchievements.length > 0) {
-      // Add new popups for each achievement
+      // For multiple achievements unlocked at once, show them with better spacing
+      const staggerDelay = newAchievements.length > 3 ? 300 : 500 // Faster stagger for many achievements
+      
       newAchievements.forEach((achievement, index) => {
-        // Stagger popup appearances slightly
+        // Stagger popup appearances
         setTimeout(() => {
           addPopup(achievement)
-        }, index * 500)
+        }, index * staggerDelay)
       })
 
       // Update last checked timestamp
       setLastCheckedTimestamp(Date.now())
+      
+      // Log multiple achievement unlock for debugging
+      if (newAchievements.length > 1) {
+        console.log(`AchievementNotificationManager: Multiple achievements unlocked (${newAchievements.length})`, 
+          newAchievements.map(a => a.title))
+      }
     }
   }, [state.recentAchievements, enablePopups, lastCheckedTimestamp])
 
@@ -70,10 +90,12 @@ const AchievementNotificationManager = () => {
     return () => clearInterval(cleanup)
   }, [popupDuration])
 
+
   // Calculate positions to stack multiple popups
   const getPopupPosition = (index, total) => {
     const basePosition = 'top-right'
-    const spacing = 120 // pixels between popups
+    // Reduce spacing when many popups are shown simultaneously
+    const spacing = total > 4 ? 100 : 120 // Tighter spacing for many popups
     
     // For top positions, stack downward
     if (basePosition.includes('top')) {
@@ -81,7 +103,9 @@ const AchievementNotificationManager = () => {
         position: basePosition,
         style: {
           transform: `translateY(${index * spacing}px)`,
-          zIndex: 1000 - index
+          zIndex: 1000 - index,
+          // Add slight offset for visual variety with many popups
+          ...(total > 2 ? { marginRight: `${(index % 3) * 5}px` } : {})
         }
       }
     }
@@ -91,18 +115,21 @@ const AchievementNotificationManager = () => {
       position: basePosition,
       style: {
         transform: `translateY(-${index * spacing}px)`,
-        zIndex: 1000 - index
+        zIndex: 1000 - index,
+        ...(total > 2 ? { marginRight: `${(index % 3) * 5}px` } : {})
       }
     }
   }
 
+  // Show nothing if no popups
   if (!enablePopups || activePopups.length === 0) {
     return null
   }
 
   return (
     <div className="achievement-notification-manager">
-      {activePopups.map((popup, index) => {
+      {/* Achievement popups */}
+      {enablePopups && activePopups.map((popup, index) => {
         const positionConfig = getPopupPosition(index, activePopups.length)
         
         return (
@@ -111,12 +138,15 @@ const AchievementNotificationManager = () => {
             style={positionConfig.style}
             className="popup-container"
           >
-            <AchievementPopup
+            <Achievement3DPopup
               achievement={popup.achievement}
               onClose={() => removePopup(popup.id)}
               duration={popupDuration}
               position={positionConfig.position}
               showGameInfo={true}
+              gameProgress={state.currentGameProgress}
+              style="card"
+              theme="auto"
             />
           </div>
         )
@@ -124,5 +154,12 @@ const AchievementNotificationManager = () => {
     </div>
   )
 }
+
+// Wrap with error boundary for better reliability
+const AchievementNotificationManager = () => (
+  <ErrorBoundary fallback={props => <ComponentErrorFallback {...props} componentName="Achievement Notifications" />}>
+    <AchievementNotificationManagerInner />
+  </ErrorBoundary>
+)
 
 export default AchievementNotificationManager

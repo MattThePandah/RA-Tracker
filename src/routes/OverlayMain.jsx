@@ -1,5 +1,6 @@
 import React from 'react'
 import { useAchievements } from '../context/AchievementContext.jsx'
+import AchievementNotificationManager from '../components/AchievementNotificationManager.jsx'
 import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
 import * as Cache from '../services/cache.js'
@@ -186,13 +187,12 @@ export default function OverlayMain() {
   const [cover, setCover] = React.useState(null)
   const [prevImageUrl, setPrevImageUrl] = React.useState(null)
   const [currentGameTime, setCurrentGameTime] = React.useState('00:00:00')
-  const [psfestTime, setPsfestTime] = React.useState('000:00:00')
+  const [totalTime, setTotalTime] = React.useState('000:00:00')
   const [lastUpdate, setLastUpdate] = React.useState('')
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
   const [raShowcaseUntil, setRaShowcaseUntil] = React.useState(0)
   const [announceUntil, setAnnounceUntil] = React.useState(0)
   const autoTestTriggeredForGame = React.useRef(null)
-  const [recentActivityDetected, setRecentActivityDetected] = React.useState(false)
 
   // Track earned achievements to trigger auto showcase
   const earnedCount = React.useMemo(() => (state.currentGameAchievements || []).filter(a => a.isEarned).length, [state.currentGameAchievements])
@@ -295,34 +295,13 @@ export default function OverlayMain() {
     }
   }, [game?.id, isConfigured, showAchievements])
 
-  // Detect recent achievement activity for smart polling
-  React.useEffect(() => {
-    if ((state.currentGameAchievements || []).length === 0) return
-    
-    const now = Date.now()
-    const latestEarnedTime = Math.max(...(state.currentGameAchievements || [])
-      .filter(a => a.isEarned && a.dateEarned)
-      .map(a => new Date(a.dateEarned).getTime()), 0)
-    
-    // If we have a recent achievement (within last 5 minutes), enable frequent checking
-    const recentThreshold = now - (5 * 60 * 1000) // 5 minutes
-    const hasRecentActivity = latestEarnedTime > recentThreshold
-    
-    if (hasRecentActivity !== recentActivityDetected) {
-      console.log('Main overlay: Recent activity detected:', hasRecentActivity, latestEarnedTime > 0 ? 'Latest earned: ' + new Date(latestEarnedTime).toLocaleTimeString() : '')
-      setRecentActivityDetected(hasRecentActivity)
-    }
-  }, [state.currentGameAchievements, recentActivityDetected])
-
-  // Smart polling: frequent when recent activity, normal otherwise
+  // Simple reliable achievement polling - polls every 60 seconds (or custom rapoll parameter)
   React.useEffect(() => {
     if (!game?.id || !RA.hasRetroAchievementsSupport(game) || !isConfigured || !showAchievements) {
       return
     }
     
-    // Use shorter intervals if recent activity detected
-    const pollInterval = recentActivityDetected ? 15000 : achievementPoll // 15 seconds vs 60 seconds
-    console.log('Main overlay: Setting up achievement polling every', pollInterval, 'ms', recentActivityDetected ? '(frequent - recent activity)' : '(normal)')
+    console.log('Main overlay: Setting up achievement polling every', achievementPoll, 'ms')
     
     const achievementPollInterval = setInterval(() => {
       console.log('Main overlay: Polling achievements for game', game.id)
@@ -330,13 +309,13 @@ export default function OverlayMain() {
       if (game?.id && !state.loading?.gameAchievements) {
         loadGameAchievements(game.id, true) // Force refresh to get latest achievement state
       }
-    }, pollInterval)
+    }, achievementPoll)
     
     return () => {
       console.log('Main overlay: Clearing achievement polling interval')
       clearInterval(achievementPollInterval)
     }
-  }, [game?.id, isConfigured, showAchievements, achievementPoll, recentActivityDetected]) // Include recentActivityDetected
+  }, [game?.id, isConfigured, showAchievements, achievementPoll])
 
   // Timer updates: prefer server-calculated timers for OBS reliability.
   React.useEffect(() => {
@@ -348,9 +327,9 @@ export default function OverlayMain() {
         const res = await fetch(`${base}/overlay/timers`)
         if (res.ok) {
           const t = await res.json()
-          if (t?.currentGameTime && t?.psfestTime) {
+          if (t?.currentGameTime && (t?.totalTime || t?.psfestTime)) {
             setCurrentGameTime(t.currentGameTime)
-            setPsfestTime(t.psfestTime)
+            setTotalTime(t.totalTime || t.psfestTime)
             setLastUpdate(new Date().toLocaleTimeString())
             return
           }
@@ -367,18 +346,12 @@ export default function OverlayMain() {
         } else {
           setCurrentGameTime('00:00:00')
         }
-        const settings = Storage.getSettings()
-        if (settings.psfestStartTime) {
-          const psfestStartTime = new Date(settings.psfestStartTime).getTime()
-          const psfestElapsed = Math.floor((now - psfestStartTime) / 1000)
-          setPsfestTime(formatTime(Math.max(0, psfestElapsed), true))
-        } else {
-          setPsfestTime('000:00:00')
-        }
+        // No offline fallback for total time
+        setTotalTime('000:00:00')
         setLastUpdate(new Date().toLocaleTimeString())
       } catch {
         setCurrentGameTime('00:00:00')
-        setPsfestTime('000:00:00')
+        setTotalTime('000:00:00')
       }
     }
 
@@ -439,47 +412,48 @@ export default function OverlayMain() {
     }
 
     return (
-      <div className={`overlay-chrome ${isClean ? 'overlay-clean' : ''}`} style={{ ...(timerPx>0?{'--timer-font-size': `${timerPx}px`}:{}) }}>
-        <div className="ref-container" style={{ maxWidth, margin: '0 auto' }}>
-          <div className="overlay-card ref-card">
-            <div className="ref-top">
-              <div className="ref-left">
-                {showCover && (
-                  <div className="cover-container" style={{width: coverW, height: coverH}}>
-                    {cover ? (
-                      <img className="cover-image" src={cover} alt="" />
-                    ) : (
-                      <div className="cover-placeholder"><i className="bi bi-controller"></i></div>
-                    )}
+      <>
+        <div className={`overlay-chrome ${isClean ? 'overlay-clean' : ''}`} style={{ ...(timerPx>0?{'--timer-font-size': `${timerPx}px`}:{}) }}>
+          <div className="ref-container" style={{ maxWidth, margin: '0 auto' }}>
+            <div className="overlay-card ref-card">
+              <div className="ref-top">
+                <div className="ref-left">
+                  {showCover && (
+                    <div className="cover-container" style={{width: coverW, height: coverH}}>
+                      {cover ? (
+                        <img className="cover-image" src={cover} alt="" />
+                      ) : (
+                        <div className="cover-placeholder"><i className="bi bi-controller"></i></div>
+                      )}
+                    </div>
+                  )}
+                  <div className="ref-title-block">
+                    <div className={`ref-title ${titleLines === 2 ? 'title-wrap-2' : 'title-wrap-1'}`}>{game.title}</div>
+                    <div className="ref-sub">
+                      {game.console}
+                      {showYear && game.release_year ? ` • ${game.release_year}` : ''}
+                      {showPublisher && game.publisher ? ` • ${game.publisher}` : ''}
+                    </div>
                   </div>
-                )}
-                <div className="ref-title-block">
-                  <div className={`ref-title ${titleLines === 2 ? 'title-wrap-2' : 'title-wrap-1'}`}>{game.title}</div>
-                  <div className="ref-sub">
-                    {game.console}
-                    {showYear && game.release_year ? ` • ${game.release_year}` : ''}
-                    {showPublisher && game.publisher ? ` • ${game.publisher}` : ''}
+                </div>
+                <div className="ref-right">
+                  <div className="timer-block blue">
+                    <div className="t-label">Current Game</div>
+                    <div className="t-time">{currentGameTime}</div>
                   </div>
                 </div>
               </div>
-              <div className="ref-right">
-                <div className="timer-block blue">
-                  <div className="t-label">Current Game</div>
-                  <div className="t-time">{currentGameTime}</div>
-                </div>
+              <div className="ref-divider" />
+              
+                <div className="ref-bottom">
+                  <div className="event-left">
+                    <span className="event-game">Game {gameNumber}{showTotal && stats.total ? ` of ${stats.total}` : ''}</span>
+                  </div>
+                  <div className="timer-block pink">
+                    <div className="t-label">Total Time</div>
+                    <div className="t-time">{totalTime}</div>
+                  </div>
               </div>
-            </div>
-            <div className="ref-divider" />
-            
-              <div className="ref-bottom">
-                <div className="psfest-left">
-                  <span className="psfest-game">Game {gameNumber}{showTotal && stats.total ? ` of ${stats.total}` : ''}</span>
-                </div>
-                <div className="timer-block pink">
-                  <div className="t-label">Total Time</div>
-                  <div className="t-time">{psfestTime}</div>
-                </div>
-            </div>
 
             {/* Split with another gradient divider, then show an expanded achievements section */}
             {showAchievements && hasRASupport && isConfigured && totalAchievements > 0 && (
@@ -491,7 +465,7 @@ export default function OverlayMain() {
                     {effMode !== 'compact' && (
                       <div className="achievement-progress">
                         <div className="achievement-count">
-                          <span className="psfest-achievements" title={`${achievementPercent}% complete`}>
+                          <span className="event-achievements" title={`${achievementPercent}% complete`}>
                             {achievementCount}/{totalAchievements} Achievements
                           </span>
                         </div>
@@ -499,12 +473,6 @@ export default function OverlayMain() {
                           <div className="achievement-fill" style={{width: `${achievementPercent}%`}} />
                           <div className="achievement-percent">{achievementPercent}%</div>
                         </div>
-                        {showHardcore && (
-                          <div className="hardcore-count" title="Hardcore achievements earned">
-                            <i className="bi bi-lightning-charge-fill hardcore-icon"></i>
-                            <span className="hardcore-text">{hardcoreCount} HC</span>
-                          </div>
-                        )}
                       </div>
                     )}
 
@@ -657,36 +625,39 @@ export default function OverlayMain() {
                 </div>
               </>
             )}
+            </div>
           </div>
         </div>
-      </div>
+        <AchievementNotificationManager />
+      </>
     )
   }
 
   return (
-    <div className={`overlay-chrome p-4 d-flex align-items-center justify-content-center ${isClean ? 'overlay-clean' : ''}`} style={{width:'100vw', height:'100vh', ...(timerPx>0?{'--timer-font-size': `${timerPx}px`}:{})}}>
-      <div className="main-overlay-container" style={{maxWidth: '900px', width: '100%'}}>
-        {/* Main Game Card */}
-        <div className="overlay-card modern p-4 d-flex gap-4 align-items-center mb-4">
-          {showCover && (
-            <div className="cover-container" style={{width: 240, height: 320}}>
-              {cover ? (
-                <img className="cover-image" src={cover} alt="" />
-              ) : (
-                <div className="cover-placeholder">
-                  <i className="bi bi-controller"></i>
-                  <span>No Cover</span>
-                </div>
-              )}
-            </div>
-          )}
-          <div className="game-info flex-grow-1 d-flex flex-column">
-            <div className="game-title title-wrap-2" style={{fontSize: '2.5rem', fontWeight: '700', marginBottom: '1rem'}}>{game.title}</div>
-            <div className="game-meta" style={{fontSize: '1.5rem', fontWeight: '500'}}>
-              {game.console}
-              {showYear && game.release_year ? ` • ${game.release_year}` : ''}
-              {showPublisher && game.publisher ? ` • ${game.publisher}` : ''}
-            </div>
+    <>
+      <div className={`overlay-chrome p-4 d-flex align-items-center justify-content-center ${isClean ? 'overlay-clean' : ''}`} style={{width:'100vw', height:'100vh', ...(timerPx>0?{'--timer-font-size': `${timerPx}px`}:{})}}>
+        <div className="main-overlay-container" style={{maxWidth: '900px', width: '100%'}}>
+          {/* Main Game Card */}
+          <div className="overlay-card modern p-4 d-flex gap-4 align-items-center mb-4">
+            {showCover && (
+              <div className="cover-container" style={{width: 240, height: 320}}>
+                {cover ? (
+                  <img className="cover-image" src={cover} alt="" />
+                ) : (
+                  <div className="cover-placeholder">
+                    <i className="bi bi-controller"></i>
+                    <span>No Cover</span>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="game-info flex-grow-1 d-flex flex-column">
+              <div className="game-title title-wrap-2" style={{fontSize: '2.5rem', fontWeight: '700', marginBottom: '1rem'}}>{game.title}</div>
+              <div className="game-meta" style={{fontSize: '1.5rem', fontWeight: '500'}}>
+                {game.console}
+                {showYear && game.release_year ? ` • ${game.release_year}` : ''}
+                {showPublisher && game.publisher ? ` • ${game.publisher}` : ''}
+              </div>
 
             {/* Inline Achievements inside main card */}
             {(() => {
@@ -742,9 +713,9 @@ export default function OverlayMain() {
             <div className="timer-label">Current Game</div>
             <div className="timer-value">{currentGameTime}</div>
           </div>
-          <div className="timer-card psfest-total">
-            <div className="timer-label">PSFest Total</div>
-            <div className="timer-value">{psfestTime}</div>
+          <div className="timer-card event-total">
+            <div className="timer-label">Event Total</div>
+            <div className="timer-value">{totalTime}</div>
           </div>
           {/* Debug indicator - only show when not clean mode */}
           {!isClean && (
@@ -754,6 +725,8 @@ export default function OverlayMain() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+      <AchievementNotificationManager />
+    </>
   )
 }

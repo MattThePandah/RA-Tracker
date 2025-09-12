@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { useGame } from '../context/GameContext.jsx'
 import * as Bonus from '../utils/bonusDetection.js'
 import { collectGenres, detectGenres } from '../utils/genreDetection.js'
-import SmartRoulette from '../components/SmartRoulette.jsx'
+import SmartRoulette3D from '../components/SmartRoulette3D.jsx'
 
 // Use proxy image for viewer contexts (works in OBS too). Fallback to direct URL.
 const proxyImage = (url) => {
@@ -77,9 +77,9 @@ export default function Select() {
 
   return (
     <div className="p-3">
-      <h2 className="h4">Smart Game Selection</h2>
+      <h2 className="h4">🎮 Game Selection</h2>
       <div className="text-secondary mb-3">
-        Filter your game pool, then use the roulette to pick randomly from {eligible.length.toLocaleString()} eligible games.
+        Filter your game library and pick randomly from {eligible.length.toLocaleString()} eligible games.
       </div>
 
       {/* Filter Panel */}
@@ -168,15 +168,15 @@ export default function Select() {
         </div>
       </div>
 
-      {/* Smart Roulette */}
+      {/* Revolutionary 3D Smart Roulette */}
       <div className="card bg-panel border border-secondary rounded-4 p-4 mb-4">
-        <SmartRoulette 
+        <SmartRoulette3D 
           games={eligible} 
           poolKey={poolKey}
           onGameSelected={onGameSelected}
           onSampleUpdate={(data) => {
             // Could update UI with sample info if needed
-            console.log('Sample updated:', data)
+            console.log('3D Wheel sample updated:', data)
           }}
         />
       </div>

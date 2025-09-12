@@ -10,6 +10,7 @@ function GameCard({ game, onQuick, onOpenDetail }) {
   React.useEffect(() => {
     let mounted = true
     ;(async () => {
+      if (game.cover?.localPath) { setUrl(game.cover.localPath); return }
       if (game.image_url) {
         // First try to get from IndexedDB cache
         const blob = await Cache.getCover(game.image_url)
@@ -281,3 +282,5 @@ export default function Library() {
     </div>
   )
 }
+
+

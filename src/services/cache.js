@@ -36,5 +36,5 @@ export async function exportAll() {
     zip.file(path, blob)
   }
   const blob = await zip.generateAsync({ type: 'blob' })
-  saveAs(blob, 'psfest-covers.zip')
+  saveAs(blob, 'covers.zip')
 }
