@@ -15,27 +15,53 @@ import Settings from './routes/Settings.jsx'
 import ImportExport from './routes/ImportExport.jsx'
 import Current from './routes/Current.jsx'
 import Achievements from './routes/Achievements.jsx'
+import Studio from './routes/Studio.jsx'
+import Suggestions from './routes/Suggestions.jsx'
+import PublicSite from './routes/PublicSite.jsx'
+import Dashboard from './routes/Dashboard.jsx'
+import Pulse from './routes/Pulse.jsx'
+import Overlays from './routes/Overlays.jsx'
+import Public from './routes/Public.jsx'
+import PublicGame from './routes/PublicGame.jsx'
 import { GameProvider } from './context/GameContext.jsx'
 import { AchievementProvider } from './context/AchievementContext.jsx'
+import { AdminProvider } from './context/AdminContext.jsx'
+import AdminGate from './components/AdminGate.jsx'
 import './styles.css'
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
-        {/* Main App wrapped with providers */}
+        <Route index element={<Public />} />
+
+        {/* Public-facing UI */}
+        <Route path='/public' element={<Public />} />
+        <Route path='/game/:gameId' element={<PublicGame />} />
+
+        {/* Admin app wrapped with providers */}
         <Route
-          path='/'
+          path='/admin'
           element={
-            <GameProvider>
-              <AchievementProvider>
-                <App />
-              </AchievementProvider>
-            </GameProvider>
+            <AdminProvider>
+              <AdminGate>
+                <GameProvider>
+                  <AchievementProvider>
+                    <App />
+                  </AchievementProvider>
+                </GameProvider>
+              </AdminGate>
+            </AdminProvider>
           }
         >
-          <Route index element={<Navigate to='/current' replace />} />
+          <Route index element={<Navigate to='dashboard' replace />} />
+          <Route path='dashboard' element={<Dashboard />} />
+          <Route path='pulse' element={<Pulse />} />
           <Route path='current' element={<Current />} />
+          <Route path='studio' element={<Studio />} />
+          <Route path='overlays' element={<Overlays />} />
+          <Route path='suggestions' element={<Suggestions />} />
+          <Route path='public-site' element={<PublicSite />} />
           <Route path='library' element={<Library />} />
           <Route path='achievements' element={<Achievements />} />
           <Route path='select' element={<Select />} />

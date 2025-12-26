@@ -4,13 +4,7 @@ import { useGame } from '../context/GameContext.jsx'
 import { useAchievements } from '../context/AchievementContext.jsx'
 import { startCurrentTimer, pauseCurrentTimer, resetCurrentTimer, resetTotalTimer, getTimerStatus, getTimerData, validateAndRecoverTimerState } from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
-
-// Proxy cover helper (uses disk cache via server if available)
-const proxyImage = (url) => {
-  const base = import.meta.env.VITE_IGDB_PROXY_URL
-  if (!url) return null
-  return base ? `${base}/cover?src=${encodeURIComponent(url)}` : url
-}
+import { buildCoverUrl } from '../utils/coverUrl.js'
 
 export default function Current() {
   const { state, dispatch } = useGame()
@@ -219,7 +213,7 @@ export default function Current() {
       <div className="overlay-card rebrand rounded-4 p-3 d-flex gap-3 align-items-center mb-3">
         <div className="ratio ratio-4x3" style={{width: 260}}>
           {game.image_url ? (
-            <img className="rounded-3 w-100 h-100 object-fit-cover" src={proxyImage(game.image_url)} alt="" />
+            <img className="rounded-3 w-100 h-100 object-fit-cover" src={buildCoverUrl(game.image_url)} alt="" />
           ) : (
             <div className="rounded-3 w-100 h-100 d-flex align-items-center justify-content-center text-secondary bg-dark">No cover</div>
           )}
@@ -245,6 +239,7 @@ export default function Current() {
             >
               Mark Completed
             </button>
+            <Link className="btn btn-sm btn-outline-primary" to="/admin/studio">Open Studio</Link>
             <button className="btn btn-sm btn-outline-light" onClick={()=>dispatch({ type: 'SET_CURRENT', id: null })}>Clear Current</button>
             <span className="text-secondary ms-2" style={{fontSize: '0.9rem'}}>Timer: {running ? 'Running' : 'Paused'}</span>
           </div>
@@ -378,7 +373,7 @@ export default function Current() {
               {/* Link to full achievement gallery */}
               <div className="text-center mt-3">
                 <Link 
-                  to="/achievements?current=true" 
+                  to="/admin/achievements?current=true" 
                   className="btn btn-outline-primary btn-sm"
                 >
                   View All Achievements

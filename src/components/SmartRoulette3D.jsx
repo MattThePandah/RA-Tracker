@@ -1,4 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react'
+import { adminFetch } from '../utils/adminFetch.js'
+import { buildCoverUrl } from '../utils/coverUrl.js'
 import RedesignedWheel from './RedesignedWheel.jsx'
 
 const SmartRoulette3D = ({ games, poolKey, onGameSelected, onSampleUpdate }) => {
@@ -61,7 +63,7 @@ const SmartRoulette3D = ({ games, poolKey, onGameSelected, onSampleUpdate }) => 
       const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
       if (base) {
         try {
-          await fetch(`${base}/overlay/wheel-state`, {
+          await adminFetch(`${base}/overlay/wheel-state`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sample: newSample, poolSize: src.length })
@@ -100,7 +102,7 @@ const SmartRoulette3D = ({ games, poolKey, onGameSelected, onSampleUpdate }) => 
       let serverTs = null
       
       try {
-        const response = await fetch(`${base}/wheel/spin`, {
+        const response = await adminFetch(`${base}/wheel/spin`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -262,7 +264,7 @@ const SmartRoulette3D = ({ games, poolKey, onGameSelected, onSampleUpdate }) => 
               <div className="winner-game">
                 <div className="winner-cover">
                   {winner.image_url ? (
-                    <img src={winner.image_url} alt={winner.title} />
+                    <img src={buildCoverUrl(winner.image_url)} alt={winner.title} />
                   ) : (
                     <div className="cover-placeholder">
                       <i className="bi bi-controller"></i>

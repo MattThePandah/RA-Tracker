@@ -1,9 +1,38 @@
 import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useGame } from '../context/GameContext.jsx'
 import { useAchievements } from '../context/AchievementContext.jsx'
-import * as RA from '../services/retroachievements.js'
 import * as IGDB from '../services/igdb.js'
 import * as Storage from '../services/storage.js'
+
+const getCsrfToken = () => {
+  try { return localStorage.getItem('ra.csrf') || '' } catch { return '' }
+}
+const withAdminHeaders = (headers = {}) => {
+  const csrf = getCsrfToken()
+  return csrf ? { ...headers, 'x-csrf-token': csrf } : headers
+}
+
+const defaultNotificationSettings = {
+  enabled: false,
+  channels: {
+    discord: true,
+    streamerbot: false
+  },
+  events: {
+    gameStarted: true,
+    gameCompleted: true,
+    suggestionReceived: true,
+    streamStarted: false
+  }
+}
+
+const mergeNotificationSettings = (incoming = {}) => ({
+  ...defaultNotificationSettings,
+  ...incoming,
+  channels: { ...defaultNotificationSettings.channels, ...(incoming.channels || {}) },
+  events: { ...defaultNotificationSettings.events, ...(incoming.events || {}) }
+})
 
 export default function Settings() {
   const { state, dispatch } = useGame()
@@ -25,8 +54,9 @@ export default function Settings() {
   const [igdbEnabled, setIgdbEnabled] = useState(state.settings.igdbEnabled)
   const [hideBonusGames, setHideBonusGames] = useState(state.settings.hideBonusGames)
   const [pollMs, setPollMs] = useState(state.settings.pollMs || 5000)
-  const [loading, setLoading] = useState(false)
   const [precacheState, setPrecacheState] = useState({ running: false, done: 0, total: 0, last: '' })
+  const [notificationSettings, setNotificationSettings] = useState(defaultNotificationSettings)
+  const [notificationStatus, setNotificationStatus] = useState({ loading: false, message: '', error: '' })
   
   // Achievement settings
   const [achievementSettings, setAchievementSettings] = useState({
@@ -56,6 +86,23 @@ export default function Settings() {
     }
   }, [username, apiKey, achievementState.settings.raUsername, achievementState.settings.raApiKey, updateSettings])
 
+  React.useEffect(() => {
+    let active = true
+    const loadNotificationSettings = async () => {
+      try {
+        const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+        const res = await fetch(`${base}/api/user/settings`, { credentials: 'include' })
+        if (!res.ok) return
+        const data = await res.json()
+        if (active && data?.notifications) {
+          setNotificationSettings(mergeNotificationSettings(data.notifications))
+        }
+      } catch {}
+    }
+    loadNotificationSettings()
+    return () => { active = false }
+  }, [])
+
   // Seed overlay idle wheel with a small 16-slot sample based on current settings
   const seedOverlayWheel = React.useCallback(async (opts = {}) => {
     try {
@@ -79,8 +126,9 @@ export default function Settings() {
       while (sample.length < 16) sample.push(null)
       await fetch(`${base}/overlay/wheel-state`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sample, poolSize: pool.length })
+        headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ sample, poolSize: pool.length }),
+        credentials: 'include'
       })
     } catch {/* ignore */}
   }, [state.games, hideBonusGames])
@@ -99,6 +147,26 @@ export default function Settings() {
     alert('Saved settings. Overlay wheel updated.')
   }
 
+  const saveNotifications = async () => {
+    setNotificationStatus({ loading: true, message: '', error: '' })
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      const res = await fetch(`${base}/api/user/settings`, {
+        method: 'POST',
+        headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ notifications: notificationSettings }),
+        credentials: 'include'
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to save notification settings')
+      }
+      setNotificationStatus({ loading: false, message: 'Notification settings saved.', error: '' })
+    } catch (error) {
+      setNotificationStatus({ loading: false, message: '', error: error.message || 'Failed to save notification settings.' })
+    }
+  }
+
   const updateAchievementSetting = (key, value) => {
     setAchievementSettings(prev => ({ ...prev, [key]: value }))
   }
@@ -114,49 +182,6 @@ export default function Settings() {
       console.log('[Settings] Clear All In-Progress dispatched. After state visible?', !!after)
     }, 0)
     alert(`Requested reset. Found ${before} game(s) In Progress before reset.`)
-  }
-
-  const syncRA = async () => {
-    if (!raEnabled) return alert('Enable RA first')
-    if (!apiKey) return alert('Enter your RA API key')
-    setLoading(true)
-    try {
-      const ids = await RA.resolveDefaultPSConsoleIds({ apiKey })
-      const games = await RA.fetchGamesForConsoles({
-        username, apiKey, consoleIds: [ids['PlayStation'], ids['PlayStation 2'], ids['PlayStation Portable']],
-        withHashes: false, onlyWithAchievements: true
-      })
-      // Merge with existing by title+console (basic, preserves your status/notes)
-      const byKey = (g) => `${g.title}|${g.console}`
-      const map = new Map(state.games.map(g => [byKey(g), g]))
-      for (const g of games) {
-        const key = byKey(g)
-        if (!map.has(key)) map.set(key, g)
-      }
-      const merged = Array.from(map.values())
-      dispatch({ type: 'SET_GAMES', games: merged })
-      
-      // Auto-publish stats to overlay after sync
-      try {
-        const total = merged.length
-        const completed = merged.filter(g => g.status === 'Completed').length
-        const base = import.meta.env.VITE_IGDB_PROXY_URL
-        if (base) {
-          await fetch(`${base}/overlay/stats`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ total, completed })
-          })
-        }
-      } catch (e) {
-        console.warn('Failed to auto-publish stats to overlay:', e)
-      }
-      
-      alert(`Synced ${merged.length} games from RetroAchievements.`)
-    } catch (e) {
-      alert('RA sync failed: ' + (e?.message || e))
-    } finally {
-      setLoading(false)
-    }
   }
 
   const precache = async () => {
@@ -204,11 +229,8 @@ export default function Settings() {
                 <input className="form-control" value={apiKey} onChange={e=>setApiKey(e.target.value)} />
               </div>
             </div>
-            <button disabled={!raEnabled || loading} className="btn btn-primary mt-3" onClick={syncRA}>
-              {loading ? 'Syncing...' : 'Sync RA Games'}
-            </button>
             <div className="text-secondary small mt-2">
-              Console IDs are resolved live via RA <code>API_GetConsoleIDs.php</code> and default to common IDs if resolution fails.
+              The catalog is refreshed automatically on server boot and nightly. Toggle <code>LIBRARY_BUILD_ON_START</code> and <code>LIBRARY_REFRESH_NIGHTLY</code> in <code>server/.env</code> to control timing.
             </div>
           </div>
         </div>
@@ -339,11 +361,137 @@ export default function Settings() {
             
             <div className="mt-3 p-3 bg-dark rounded">
               <h6 className="small mb-2">📺 Overlay URLs</h6>
-              <div className="small text-secondary">
-                <div><strong>Achievement Progress:</strong> <code>http://localhost:5173/overlay/achievements?style=progress&poll=5000</code></div>
-                <div><strong>Achievement Grid:</strong> <code>http://localhost:5173/overlay/achievements?style=grid&compact=1</code></div>
-                <div><strong>Recent Achievements:</strong> <code>http://localhost:5173/overlay/achievements?style=recent&max=10</code></div>
+              <div className="mb-2">
+                <Link className="btn btn-sm btn-outline-light" to="/admin/overlays">Open Overlay Studio</Link>
               </div>
+              <div className="small text-secondary">
+                <div><strong>Achievement Progress:</strong> <code>http://localhost:5173/overlay/achievements?style=progress&poll=5000&token=YOUR_TOKEN</code></div>
+                <div><strong>Achievement Grid:</strong> <code>http://localhost:5173/overlay/achievements?style=grid&compact=1&token=YOUR_TOKEN</code></div>
+                <div><strong>Recent Achievements:</strong> <code>http://localhost:5173/overlay/achievements?style=recent&max=10&token=YOUR_TOKEN</code></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="col-12">
+          <div className="card bg-panel p-3">
+            <h3 className="h6">Stream Alerts</h3>
+            <div className="text-secondary small mb-3">
+              Toggle external alerts for Discord and StreamerBot. Requires <code>DISCORD_WEBHOOK_URL</code> and/or
+              <code>STREAMERBOT_ENABLED=true</code> in the server environment.
+            </div>
+
+            <div className="row g-3">
+              <div className="col-md-6">
+                <div className="form-check form-switch mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={notificationSettings.enabled}
+                    onChange={e => setNotificationSettings(prev => ({ ...prev, enabled: e.target.checked }))}
+                    id="notifyEnabled"
+                  />
+                  <label className="form-check-label" htmlFor="notifyEnabled">Enable Stream Alerts</label>
+                </div>
+
+                <div className="form-check form-switch mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={notificationSettings.channels.discord}
+                    onChange={e => setNotificationSettings(prev => ({
+                      ...prev,
+                      channels: { ...prev.channels, discord: e.target.checked }
+                    }))}
+                    id="notifyDiscord"
+                  />
+                  <label className="form-check-label" htmlFor="notifyDiscord">Discord webhooks</label>
+                </div>
+
+                <div className="form-check form-switch mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={notificationSettings.channels.streamerbot}
+                    onChange={e => setNotificationSettings(prev => ({
+                      ...prev,
+                      channels: { ...prev.channels, streamerbot: e.target.checked }
+                    }))}
+                    id="notifyStreamerbot"
+                  />
+                  <label className="form-check-label" htmlFor="notifyStreamerbot">StreamerBot actions</label>
+                </div>
+              </div>
+
+              <div className="col-md-6">
+                <div className="form-check form-switch mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={notificationSettings.events.gameStarted}
+                    onChange={e => setNotificationSettings(prev => ({
+                      ...prev,
+                      events: { ...prev.events, gameStarted: e.target.checked }
+                    }))}
+                    id="notifyGameStarted"
+                  />
+                  <label className="form-check-label" htmlFor="notifyGameStarted">Notify when a game starts</label>
+                </div>
+
+                <div className="form-check form-switch mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={notificationSettings.events.gameCompleted}
+                    onChange={e => setNotificationSettings(prev => ({
+                      ...prev,
+                      events: { ...prev.events, gameCompleted: e.target.checked }
+                    }))}
+                    id="notifyGameCompleted"
+                  />
+                  <label className="form-check-label" htmlFor="notifyGameCompleted">Notify when a game completes</label>
+                </div>
+
+                <div className="form-check form-switch mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={notificationSettings.events.suggestionReceived}
+                    onChange={e => setNotificationSettings(prev => ({
+                      ...prev,
+                      events: { ...prev.events, suggestionReceived: e.target.checked }
+                    }))}
+                    id="notifySuggestion"
+                  />
+                  <label className="form-check-label" htmlFor="notifySuggestion">Notify on new suggestions</label>
+                </div>
+
+                <div className="form-check form-switch mb-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={notificationSettings.events.streamStarted}
+                    onChange={e => setNotificationSettings(prev => ({
+                      ...prev,
+                      events: { ...prev.events, streamStarted: e.target.checked }
+                    }))}
+                    id="notifyStreamStarted"
+                  />
+                  <label className="form-check-label" htmlFor="notifyStreamStarted">Notify when a stream goes live</label>
+                </div>
+              </div>
+            </div>
+
+            <div className="d-flex flex-wrap gap-2 mt-3 align-items-center">
+              <button
+                className="btn btn-outline-info"
+                onClick={saveNotifications}
+                disabled={notificationStatus.loading}
+              >
+                {notificationStatus.loading ? 'Saving...' : 'Save Notification Settings'}
+              </button>
+              {notificationStatus.message && <div className="text-success small">{notificationStatus.message}</div>}
+              {notificationStatus.error && <div className="text-danger small">{notificationStatus.error}</div>}
             </div>
           </div>
         </div>
@@ -361,8 +509,9 @@ export default function Settings() {
                   const base = import.meta.env.VITE_IGDB_PROXY_URL
                   if (!base) return alert('Proxy not configured (VITE_IGDB_PROXY_URL).')
                   fetch(`${base}/overlay/stats`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ total, completed })
+                    method: 'POST', headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ total, completed }),
+                    credentials: 'include'
                   }).then(() => alert('Published stats to overlay.'))
                 } catch (e) { alert('Failed to publish stats: ' + (e?.message||e)) }
               }}>Publish Stats to Overlay</button>

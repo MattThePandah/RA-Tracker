@@ -4,7 +4,7 @@ import axios from 'axios'
 import { listConsoles, listGamesForConsole } from './adapters/ra.js'
 import { loadPlatformMapping, getRAAuth, LIMITS, FLAGS } from './config.js'
 import * as IGDB from './adapters/igdb.js'
-import { cacheCoverFromUrl } from './util/covers.js'
+import { cacheCoverFromUrl, COVERS_DIR } from './util/covers.js'
 import { RateLimiter } from './util/rateLimiter.js'
 
 const DATA_DIR = path.join(process.cwd(), 'server', 'data')
@@ -28,6 +28,7 @@ export function startBuild({ apiKey, consoles = FLAGS.CONSOLES_ALLOWLIST }) {
 
   ;(async () => {
     try {
+      const startedAt = Date.now()
       let targetConsoles = consoles
       if (!Array.isArray(targetConsoles) || !targetConsoles.length) {
         // Only include actual game systems from RA, not meta/event hubs
@@ -35,22 +36,29 @@ export function startBuild({ apiKey, consoles = FLAGS.CONSOLES_ALLOWLIST }) {
         targetConsoles = lc.map(c => c.id)
       }
 
+      state.progress.total = targetConsoles.length
+      console.log(`[Library] Build started (${jobId}) consoles=${targetConsoles.length}`)
       const idx = { games: [], meta: { consoles: targetConsoles, updatedAt: Date.now() } }
 
       for (const cid of targetConsoles) {
         state.progress.lastConsole = cid
+        console.log(`[Library] Fetching console ${cid} (${state.progress.done + 1}/${state.progress.total})`)
         const games = await listGamesForConsole({ apiKey, consoleId: cid, onlyWithAchievements: true, excludeNonGames: true })
         idx.games.push(...games)
         state.progress.done += 1
         state.stats.games = idx.games.length
         saveIndex(idx)
         fs.writeFileSync(CHECKPOINT_FILE, JSON.stringify({ lastConsole: cid, ts: Date.now() }, null, 2))
+        console.log(`[Library] Console ${cid} done: +${games.length} games (total=${state.stats.games})`)
       }
 
       state.state = 'completed'
+      const seconds = ((Date.now() - startedAt) / 1000).toFixed(1)
+      console.log(`[Library] Build completed (${jobId}) in ${seconds}s with ${state.stats.games} games`)
     } catch (e) {
       state.state = 'failed'
       state.error = e?.message || String(e)
+      console.warn(`[Library] Build failed (${jobId}):`, state.error)
     } finally {
       state.progress.total = state.progress.done
       state.completedAt = Date.now()
@@ -63,7 +71,7 @@ export function startBuild({ apiKey, consoles = FLAGS.CONSOLES_ALLOWLIST }) {
 export function getJob(jobId) { return jobs.get(jobId) || null }
 
 // Cover prefetch job: resolve IGDB cover per game and cache locally
-export function startCoverPrefetch({ limitConcurrency = 3, saveEvery = 50 }) {
+export function startCoverPrefetch({ limitConcurrency = 3, saveEvery = 50, consoleIds = [] }) {
   const jobId = `covers_${Date.now()}`
   const state = { id: jobId, state: 'running', progress: { done: 0, total: 0, lastTitle: null }, stats: { resolved: 0, skipped: 0, failed: 0 } }
   jobs.set(jobId, state)
@@ -72,13 +80,26 @@ export function startCoverPrefetch({ limitConcurrency = 3, saveEvery = 50 }) {
     const verbose = FLAGS.COVERS_VERBOSE
     const logEvery = Math.max(1, Number(FLAGS.COVERS_LOG_EVERY || 100))
     const t0 = Date.now()
-    console.log(`[Covers] Prefetch starting (concurrency=${limitConcurrency}) with IGDB primary and RA fallback...`)
+    console.log(`[Covers] Prefetch starting (${jobId}) (concurrency=${limitConcurrency}) with IGDB primary and RA fallback...`)
+    console.log(`[Covers] Cache directory: ${COVERS_DIR}`)
     const mapping = loadPlatformMapping()
     const idx = loadIndex()
     const games = idx.games || []
-    const queue = games.filter(g => !g.flags?.hasCover)
+    let queue = games.filter(g => !g.flags?.hasCover)
+    if (Array.isArray(consoleIds) && consoleIds.length) {
+      const set = new Set(consoleIds.map(value => String(value)))
+      queue = queue.filter(g => {
+        const id = g.console?.id ? String(g.console.id) : ''
+        const name = g.console?.name ? String(g.console.name) : ''
+        return set.has(id) || set.has(name)
+      })
+      console.log(`[Covers] Targeted consoles: ${consoleIds.join(', ')}`)
+    }
     state.progress.total = queue.length
     console.log(`[Covers] Queue size: ${state.progress.total}`)
+    if (!queue.length) {
+      console.log('[Covers] Queue empty. Library may not be built yet or all covers are already cached.')
+    }
 
     const { apiKey, username } = getRAAuth()
     const raBase = 'https://retroachievements.org/API'
@@ -96,9 +117,10 @@ export function startCoverPrefetch({ limitConcurrency = 3, saveEvery = 50 }) {
 
     function raImageUrl(pathStr) {
       if (!pathStr) return null
-      const s = String(pathStr)
+      const s = String(pathStr).trim()
       if (s.startsWith('http')) return s
-      const p = s.startsWith('Images') ? s : `Images/${s}`
+      const cleaned = s.replace(/^\/+/, '')
+      const p = cleaned.toLowerCase().startsWith('images/') ? cleaned : `Images/${cleaned}`
       return `https://media.retroachievements.org/${p}`
     }
 
@@ -114,7 +136,11 @@ export function startCoverPrefetch({ limitConcurrency = 3, saveEvery = 50 }) {
         if (first) {
           const url = IGDB.coverUrlFromImageId(first.image_id)
           if (verbose) console.log(`[Covers] IGDB hit -> downloading ${url}`)
-          const localPath = await cacheCoverFromUrl(url)
+          const localPath = await cacheCoverFromUrl(url, {
+            origin: 'igdb',
+            gameId: g.id,
+            consoleId: g.console?.id || null
+          })
           g.flags = { ...(g.flags||{}), hasCover: true }
           g.cover = { localPath, originalUrl: url }
           if (!g.releaseYear && first.first_release_date) g.releaseYear = new Date(first.first_release_date * 1000).getUTCFullYear().toString()
@@ -158,10 +184,14 @@ export function startCoverPrefetch({ limitConcurrency = 3, saveEvery = 50 }) {
                 }
               }
               const data = await raGet()
-              const raCover = raImageUrl(data.ImageBoxArt) || raImageUrl(data.ImageTitle) || raImageUrl(data.ImageIcon) || raImageUrl(data.ImageInGame)
+              const raCover = raImageUrl(data.ImageBoxArt)
               if (raCover) {
                 if (verbose) console.log(`[Covers] RA fallback -> downloading ${raCover}`)
-                const localPath = await cacheCoverFromUrl(raCover)
+                const localPath = await cacheCoverFromUrl(raCover, {
+                  origin: 'ra',
+                  gameId: g.id,
+                  consoleId: g.console?.id || null
+                })
                 g.flags = { ...(g.flags||{}), hasCover: true }
                 g.cover = { localPath, originalUrl: raCover }
                 if (!g.releaseYear && data.Released) g.releaseYear = String(data.Released)
@@ -199,7 +229,12 @@ export function startCoverPrefetch({ limitConcurrency = 3, saveEvery = 50 }) {
         if (state.progress.done % saveEvery === 0) saveIndex(idx)
       }
     })
+    const heartbeat = setInterval(() => {
+      if (state.state !== 'running') return
+      console.log(`[Covers] Heartbeat ${state.progress.done}/${state.progress.total} (resolved=${state.stats.resolved} skipped=${state.stats.skipped} failed=${state.stats.failed})`)
+    }, 30000)
     await Promise.all(workers)
+    clearInterval(heartbeat)
     saveIndex(idx)
     state.state = 'completed'
     state.completedAt = Date.now()

@@ -49,7 +49,7 @@ export function savePlatformMapping(obj) {
 }
 
 export function getRAAuth() {
-  const apiKey = process.env.RA_API_KEY || process.env.VITE_RA_API_KEY || ''
-  const username = process.env.RA_USERNAME || process.env.VITE_RA_USERNAME || ''
+  const apiKey = (process.env.RA_API_KEY || process.env.VITE_RA_API_KEY || '').trim()
+  const username = (process.env.RA_USERNAME || process.env.VITE_RA_USERNAME || '').trim()
   return { apiKey, username }
 }

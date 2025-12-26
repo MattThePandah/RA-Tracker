@@ -1,4 +1,9 @@
 import React from 'react'
+import { buildCoverUrl } from '../utils/coverUrl.js'
+import { buildOverlayUrl } from '../utils/overlayApi.js'
+import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
+import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 function useInterval(cb, ms) {
   React.useEffect(() => {
@@ -18,6 +23,12 @@ function colorFor(i) {
 }
 
 export default function OverlayWheel() {
+  const { settings } = useOverlaySettings()
+  const params = new URLSearchParams(location.search)
+  const globalConfig = settings.global || {}
+  const wheelConfig = settings.wheel || {}
+  const isClean = getBoolParam(params, 'clean', globalConfig.clean ?? false)
+  const theme = getStringParam(params, 'theme', globalConfig.theme || 'bamboo') || 'bamboo'
   const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
   const canvasRef = React.useRef(null)
   const ctxRef = React.useRef(null)
@@ -36,16 +47,13 @@ export default function OverlayWheel() {
   const spinHashRef = React.useRef('')
   const winnerTimeoutRef = React.useRef(null)
 
+  useOverlayTheme(theme, isClean, globalConfig)
+
   // Read overlay options from query (?strip=0&title=...)
   React.useEffect(() => {
-    const p = new URLSearchParams(location.search)
-    if (p.get('strip') === '0') setShowStrip(false)
-    if (p.get('title')) setTitle(p.get('title'))
-    if (p.get('clean') === '1') {
-      document.body.classList.add('overlay-clean')
-      return () => document.body.classList.remove('overlay-clean')
-    }
-  }, [])
+    setShowStrip(getBoolParam(params, 'strip', wheelConfig.showStrip ?? true))
+    setTitle(getStringParam(params, 'title', wheelConfig.title || 'Game Roulette') || 'Game Roulette')
+  }, [params, wheelConfig.showStrip, wheelConfig.title])
 
   const draw = React.useCallback(() => {
     const canvas = canvasRef.current
@@ -210,7 +218,7 @@ export default function OverlayWheel() {
   const fetchSpin = React.useCallback(async () => {
     try {
       if (!base) return
-      const res = await fetch(`${base}/overlay/spin`)
+      const res = await fetch(buildOverlayUrl('/overlay/spin', base))
       if (res.ok) {
         const json = await res.json()
         if (json.ts && json.ts !== lastSpinTs.current) {
@@ -219,7 +227,7 @@ export default function OverlayWheel() {
           startSpin(json)
         }
         // Always check idle wheel-state for updates when not spinning
-        const r2 = await fetch(`${base}/overlay/wheel-state`)
+        const r2 = await fetch(buildOverlayUrl('/overlay/wheel-state', base))
         if (r2.ok) {
           const j2 = await r2.json()
           console.log('Fetched wheel-state:', { sampleSize: j2.sample?.length, poolSize: j2.poolSize, spinning, winner: !!winner })
@@ -260,7 +268,8 @@ export default function OverlayWheel() {
     } catch {}
   }, [base, spinning, winner, startSpin, draw])
 
-  useInterval(fetchSpin, 250)
+  const pollMs = getNumberParam(params, 'poll', settings.wheel?.pollMs ?? 250, { min: 100, max: 2000 })
+  useInterval(fetchSpin, pollMs)
 
   return (
     <div className="overlay-chrome d-flex align-items-center justify-content-center position-relative" style={{width:'100vw', height:'100vh'}}>
@@ -305,7 +314,7 @@ export default function OverlayWheel() {
           <div className="winner-content">
             <div className="winner-cover">
               {winner.image_url ? (
-                <img src={base ? `${base}/cover?src=${encodeURIComponent(winner.image_url)}` : winner.image_url} alt="" />
+                <img src={buildCoverUrl(winner.image_url)} alt="" />
               ) : (
                 <div className="cover-placeholder">
                   <i className="bi bi-controller"></i>
@@ -331,7 +340,7 @@ export default function OverlayWheel() {
             {sample.slice(0, 12).map((g, i) => (
               <div key={i} className={`strip-cover ${g ? '' : 'empty'}`}>
                 {g && g.image_url && (
-                  <img src={base ? `${base}/cover?src=${encodeURIComponent(g.image_url)}` : g.image_url} alt="" />
+                  <img src={buildCoverUrl(g.image_url)} alt="" />
                 )}
               </div>
             ))}

@@ -3,13 +3,7 @@ import { useGame } from '../context/GameContext.jsx'
 import * as Bonus from '../utils/bonusDetection.js'
 import { collectGenres, detectGenres } from '../utils/genreDetection.js'
 import SmartRoulette3D from '../components/SmartRoulette3D.jsx'
-
-// Use proxy image for viewer contexts (works in OBS too). Fallback to direct URL.
-const proxyImage = (url) => {
-  const base = import.meta.env.VITE_IGDB_PROXY_URL
-  if (!url) return null
-  return base ? `${base}/cover?src=${encodeURIComponent(url)}` : url
-}
+import { buildCoverUrl } from '../utils/coverUrl.js'
 
 export default function Select() {
   const { state, dispatch } = useGame()
@@ -191,7 +185,7 @@ function SelectedPanel({ game }) {
   const [cover, setCover] = useState(null)
 
   React.useEffect(() => {
-    setCover(game?.image_url ? proxyImage(game.image_url) : null)
+    setCover(game?.image_url ? buildCoverUrl(game.image_url) : null)
   }, [game?.image_url])
 
   return (

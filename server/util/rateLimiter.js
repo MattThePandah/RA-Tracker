@@ -1,6 +1,7 @@
 export class RateLimiter {
   constructor({ rps = 1, maxConcurrent = 1, name = 'limiter' } = {}) {
-    this.interval = Math.max(1, Math.floor(1000 / Math.max(1, rps)))
+    const safeRps = Math.max(0.1, Number(rps) || 1)
+    this.interval = Math.max(1, Math.round(1000 / safeRps))
     this.maxConcurrent = Math.max(1, maxConcurrent)
     this.name = name
     this.queue = []

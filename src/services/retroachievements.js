@@ -2,6 +2,16 @@ import axios from 'axios'
 
 const RA_BASE = 'https://retroachievements.org/API'
 
+function raImageUrl(pathStr) {
+  if (!pathStr) return null
+  const s = String(pathStr).trim()
+  if (!s) return null
+  if (s.startsWith('http://') || s.startsWith('https://')) return s
+  const cleaned = s.replace(/^\/+/, '')
+  const p = cleaned.toLowerCase().startsWith('images/') ? cleaned : `Images/${cleaned}`
+  return `https://media.retroachievements.org/${p}`
+}
+
 export async function getConsoleIds({ apiKey, activeOnly=true, gameSystemsOnly=true }={}) {
   if (!apiKey) return []
   const params = new URLSearchParams()
@@ -41,7 +51,7 @@ export async function fetchGamesForConsoles({ username, apiKey, consoleIds = [],
             title,
             console: consoleName,
             status: 'Not Started',
-            image_url: null,
+            image_url: raImageUrl(g.ImageBoxArt) || null,
             date_started: null,
             date_finished: null,
             completion_time: null,
@@ -101,7 +111,8 @@ export async function getGameInfoAndUserProgress({ apiKey, username, gameId, inc
       timeout: 15000, // 15 second timeout
       headers: {
         'User-Agent': 'RetroAchievements-Tracker/1.0'
-      }
+      },
+      withCredentials: true
     }
     
     const { data } = await axios.get(`${url}?${params.toString()}`, config)

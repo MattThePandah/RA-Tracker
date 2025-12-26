@@ -3,6 +3,11 @@ import { useAchievements } from '../context/AchievementContext.jsx'
 import AchievementNotificationManager from '../components/AchievementNotificationManager.jsx'
 import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
+import { buildOverlayUrl } from '../utils/overlayApi.js'
+import { buildCoverUrl } from '../utils/coverUrl.js'
+import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
+import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -33,14 +38,14 @@ function useStorageListener() {
   return lastUpdate
 }
 
-const AchievementBadge = ({ achievement, compact = false }) => {
+const AchievementBadge = ({ achievement, compact = false, showHardcore = true }) => {
   const badgeUrl = `https://media.retroachievements.org/Badge/${achievement.badgeName}.png`
   
   if (compact) {
     return (
       <div className={`achievement-badge compact ${achievement.isEarned ? 'earned' : 'locked'}`}>
         <img src={badgeUrl} alt={achievement.title} title={`${achievement.title} - ${achievement.description} (${achievement.points} pts)`} />
-        {achievement.isEarnedHardcore && <div className="hardcore-indicator">H</div>}
+        {showHardcore && achievement.isEarnedHardcore && <div className="hardcore-indicator">H</div>}
       </div>
     )
   }
@@ -49,7 +54,7 @@ const AchievementBadge = ({ achievement, compact = false }) => {
     <div className={`achievement-badge ${achievement.isEarned ? 'earned' : 'locked'}`}>
       <div className="badge-image">
         <img src={badgeUrl} alt={achievement.title} />
-        {achievement.isEarnedHardcore && <div className="hardcore-indicator">HARDCORE</div>}
+        {showHardcore && achievement.isEarnedHardcore && <div className="hardcore-indicator">HARDCORE</div>}
       </div>
       <div className="badge-info">
         <div className="achievement-title">{achievement.title}</div>
@@ -94,14 +99,17 @@ export default function OverlayAchievements() {
     isInHardcoreMode
   } = useAchievements()
 
+  const { settings } = useOverlaySettings()
   const params = new URLSearchParams(location.search)
-  const poll = parseInt(params.get('poll') || '5000', 10)
-  const achievementPoll = parseInt(params.get('rapoll') || '60000', 10) // Default 60 seconds for achievements
-  const style = (params.get('style') || 'progress').toLowerCase() // 'progress' | 'grid' | 'recent' | 'tracker'
-  const showHardcore = params.get('hardcore') !== '0'
-  const compact = params.get('compact') === '1'
-  const isClean = params.get('clean') === '1'
-  const maxAchievements = params.get('max') ? parseInt(params.get('max'), 10) : null
+  const globalConfig = settings.global || {}
+  const achievementConfig = settings.achievements || {}
+  const poll = getNumberParam(params, 'poll', globalConfig.pollMs ?? 5000, { min: 500, max: 60000 })
+  const achievementPoll = getNumberParam(params, 'rapoll', globalConfig.achievementPollMs ?? 60000, { min: 5000, max: 300000 })
+  const style = (getStringParam(params, 'style', achievementConfig.style || 'progress') || 'progress').toLowerCase()
+  const showHardcore = getBoolParam(params, 'hardcore', achievementConfig.showHardcore ?? true)
+  const compact = getBoolParam(params, 'compact', achievementConfig.compact ?? false)
+  const isClean = getBoolParam(params, 'clean', globalConfig.clean ?? false)
+  const maxAchievements = params.get('max') ? parseInt(params.get('max'), 10) : (achievementConfig.maxAchievements ?? null)
 
   const tick = usePoll(poll)
   const storageUpdate = useStorageListener()
@@ -109,12 +117,7 @@ export default function OverlayAchievements() {
   const [game, setGame] = React.useState(null)
 
   // Apply clean overlay styling to document body
-  React.useEffect(() => {
-    if (isClean) {
-      document.body.classList.add('overlay-clean')
-      return () => document.body.classList.remove('overlay-clean')
-    }
-  }, [isClean])
+  useOverlayTheme(globalConfig.theme || 'bamboo', isClean, globalConfig)
 
   // Load current game from storage or server
   React.useEffect(() => {
@@ -124,7 +127,7 @@ export default function OverlayAchievements() {
       
       // Prioritize server for OBS compatibility
       try {
-        const res = await fetch(`${base}/overlay/current`)
+        const res = await fetch(buildOverlayUrl('/overlay/current', base))
         if (res.ok) {
           const json = await res.json()
           g = json?.current || null
@@ -271,7 +274,7 @@ export default function OverlayAchievements() {
             <div className="game-header">
               <div className="game-title">{game.title}</div>
               <div className="game-console">{game.console}</div>
-              {isInHardcoreMode() && (
+              {showHardcore && isInHardcoreMode() && (
                 <div className="hardcore-mode-badge">HARDCORE MODE</div>
               )}
             </div>
@@ -281,7 +284,7 @@ export default function OverlayAchievements() {
                 current={currentGameProgress?.numAchieved || currentGameAchievements.filter(a => a.isEarned).length}
                 total={currentGameProgress?.numPossibleAchievements || currentGameAchievements.length}
                 label="Achievement Progress"
-                hardcore={true}
+                hardcore={showHardcore}
               />
             </div>
 
@@ -342,6 +345,7 @@ export default function OverlayAchievements() {
                 key={achievement.id} 
                 achievement={achievement} 
                 compact={compact}
+                showHardcore={showHardcore}
               />
             ))}
           </div>
@@ -373,7 +377,7 @@ export default function OverlayAchievements() {
                 <div className="text-center text-secondary">No achievements earned yet</div>
               ) : (
                 recentEarned.map(achievement => (
-                  <AchievementBadge key={achievement.id} achievement={achievement} />
+                  <AchievementBadge key={achievement.id} achievement={achievement} showHardcore={showHardcore} />
                 ))
               )}
             </div>
@@ -385,6 +389,7 @@ export default function OverlayAchievements() {
   }
 
   if (style === 'tracker') {
+    const coverUrl = game?.image_url ? buildCoverUrl(game.image_url) : null
     // Get the most recent achievement
     const lastAchievement = currentGameAchievements
       .filter(a => a.isEarned)
@@ -398,7 +403,7 @@ export default function OverlayAchievements() {
       <>
         <div className={`overlay-chrome achievement-tracker ${isClean ? 'overlay-clean' : ''}`}>
           <div className="tracker-container" style={{
-            backgroundImage: game?.image_url ? `url(${game.image_url})` : 'none',
+            backgroundImage: coverUrl ? `url(${coverUrl})` : 'none',
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat'
@@ -458,8 +463,8 @@ export default function OverlayAchievements() {
       .sort((a, b) => new Date(b.dateEarned) - new Date(a.dateEarned))
       .slice(0, maxAchievements || 10)
 
-    const speed = params.get('speed') || '30' // seconds for full scroll
-    const direction = params.get('direction') || 'left' // 'left' | 'right'
+    const speed = getNumberParam(params, 'speed', achievementConfig.speed ?? 30, { min: 10, max: 120 })
+    const direction = getStringParam(params, 'direction', achievementConfig.direction || 'left') || 'left'
 
     return (
       <>

@@ -1,5 +1,9 @@
 import React from 'react'
 import * as Storage from '../services/storage.js'
+import { buildOverlayUrl } from '../utils/overlayApi.js'
+import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
+import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -11,22 +15,20 @@ function usePoll(ms) {
 }
 
 export default function OverlayStats() {
+  const { settings } = useOverlaySettings()
   const params = new URLSearchParams(location.search)
-  const poll = parseInt(params.get('poll') || '5000', 10)
+  const globalConfig = settings.global || {}
+  const statsConfig = settings.stats || {}
+  const poll = getNumberParam(params, 'poll', globalConfig.pollMs ?? 5000, { min: 500, max: 60000 })
   const tick = usePoll(poll)
-  const isClean = params.get('clean') === '1'
-  const styleParam = (params.get('style') || '').toLowerCase()
-  const isCompact = params.get('compact') === '1' || styleParam === 'compact' || styleParam === 'bar'
-  const title = params.get('title') || (import.meta.env.VITE_APP_NAME || 'Event')
-  const widthParam = params.get('width') ? Math.max(180, Math.min(600, parseInt(params.get('width'), 10) || 0)) : null
+  const isClean = getBoolParam(params, 'clean', globalConfig.clean ?? false)
+  const styleParam = (getStringParam(params, 'style', statsConfig.style || '') || '').toLowerCase()
+  const isCompact = getBoolParam(params, 'compact', styleParam === 'compact' || styleParam === 'bar') || styleParam === 'compact' || styleParam === 'bar'
+  const title = getStringParam(params, 'title', statsConfig.title || import.meta.env.VITE_APP_NAME || 'Event')
+  const widthParam = params.get('width') ? Math.max(180, Math.min(600, parseInt(params.get('width'), 10) || 0)) : (statsConfig.width || null)
 
   // Apply clean overlay styling to document body
-  React.useEffect(() => {
-    if (isClean) {
-      document.body.classList.add('overlay-clean')
-      return () => document.body.classList.remove('overlay-clean')
-    }
-  }, [isClean])
+  useOverlayTheme(globalConfig.theme || 'bamboo', isClean, globalConfig)
 
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
 
@@ -35,7 +37,7 @@ export default function OverlayStats() {
     const load = async () => {
       // Always try server first for OBS compatibility
       try {
-        const r = await fetch(`${base}/overlay/stats`)
+        const r = await fetch(buildOverlayUrl('/overlay/stats', base))
         if (r.ok) {
           const j = await r.json()
           const total = Number(j.total || 0)

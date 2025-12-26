@@ -1,16 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react'
+import { adminFetch } from '../utils/adminFetch.js'
 import { useNavigate } from 'react-router-dom'
 import { useGame } from '../context/GameContext.jsx'
 import * as Bonus from '../utils/bonusDetection.js'
 import { collectGenres, detectGenres } from '../utils/genreDetection.js'
 import SmartRoulette from '../components/SmartRoulette.jsx'
 import * as Cache from '../services/cache.js'
-// Use proxy image for viewer contexts (works in OBS too)
-const proxyImage = (url) => {
-  const base = import.meta.env.VITE_IGDB_PROXY_URL
-  if (!url || !base) return null
-  return `${base}/cover?src=${encodeURIComponent(url)}`
-}
+import { buildCoverUrl } from '../utils/coverUrl.js'
 
 function WheelPicker({ games, onPick }) {
   // Simple wrapper for the new SmartRoulette system
@@ -140,7 +136,7 @@ function WheelPicker({ games, onPick }) {
       const base = import.meta.env.VITE_IGDB_PROXY_URL
       if (base) {
         const order = shuffled.map(g => ({ id: g.id, title: g.title, console: g.console }))
-        fetch(`${base}/overlay/spin`, {
+        adminFetch(`${base}/overlay/spin`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ order, targetIdx, durationMs: duration })
@@ -364,7 +360,7 @@ function SelectedPanel({ game }) {
   const [cover, setCover] = useState(null)
 
   React.useEffect(() => {
-    setCover(game?.image_url ? proxyImage(game.image_url) : null)
+    setCover(game?.image_url ? buildCoverUrl(game.image_url) : null)
   }, [game?.image_url])
 
   return (

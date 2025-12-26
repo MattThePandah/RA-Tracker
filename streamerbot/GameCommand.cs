@@ -9,51 +9,27 @@ public class CPHInline
     {
         try
         {
-            // Get current game from local API
+            string apiBaseUrl = "http://localhost:8787";
+            string apiKey = "REPLACE_WITH_STREAMERBOT_API_KEY";
+
             using (WebClient client = new WebClient())
             {
                 client.Encoding = Encoding.UTF8;
-                string response = client.DownloadString("http://localhost:8787/overlay/current");
-                
+                client.Headers["x-streamerbot-key"] = apiKey;
+                string response = client.DownloadString($"{apiBaseUrl}/api/streamerbot/game");
                 JObject data = JObject.Parse(response);
-                JToken current = data["current"];
-                
-                if (current == null || current.Type == JTokenType.Null)
+                string message = data["message"]?.ToString();
+                if (string.IsNullOrWhiteSpace(message))
                 {
-                    CPH.SendMessage("No game is currently being played! PSFest continues...", true);
-                    return true;
+                    message = "No game information available right now.";
                 }
-                
-                string gameTitle = current["title"]?.ToString() ?? "Unknown Game";
-                string console = current["console"]?.ToString() ?? "Unknown Console";
-                string gameId = current["id"]?.ToString() ?? "";
-                
-                // Build response message
-                string message = $"Currently playing: {gameTitle} ({console})";
-                
-                // Add RetroAchievements link if we have a game ID
-                if (!string.IsNullOrEmpty(gameId) && gameId != "0")
-                {
-                    // Extract numeric game ID from internal format (ra-consoleId-gameId)
-                    string numericGameId = gameId;
-                    if (gameId.StartsWith("ra-"))
-                    {
-                        string[] parts = gameId.Split('-');
-                        if (parts.Length >= 3)
-                        {
-                            numericGameId = parts[2];
-                        }
-                    }
-                    message += $" | RetroAchievements: https://retroachievements.org/game/{numericGameId}";
-                }
-                
                 CPH.SendMessage(message, true);
                 return true;
             }
         }
         catch (WebException ex)
         {
-            CPH.SendMessage("Game Info Grabber server is not running. Please check the local API!", true);
+            CPH.SendMessage("Game service is unavailable right now.", true);
             CPH.LogWarn($"GameCommand API Error: {ex.Message}");
             return false;
         }

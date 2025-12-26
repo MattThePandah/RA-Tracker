@@ -23,6 +23,29 @@ export const OVERLAY_THEMES = {
       glow: '0 0 20px rgba(135,202,254,0.3)'
     }
   },
+
+  bamboo: {
+    id: 'bamboo',
+    name: 'Bamboo Night',
+    description: 'Fresh bamboo green with high-contrast studio monochrome',
+    colors: {
+      primary: '#5ecf86',
+      accent: '#ffffff',
+      background: 'rgba(8, 10, 9, 0.95)',
+      backgroundGradient: 'radial-gradient(120% 120% at 20% 0%, rgba(94, 207, 134, 0.15), rgba(8, 12, 10, 0.9) 45%, rgba(5, 6, 5, 0.98))',
+      border: 'rgba(94, 207, 134, 0.2)',
+      text: '#f0fdf4',
+      textSecondary: 'rgba(240, 253, 244, 0.9)',
+      textMuted: 'rgba(240, 253, 244, 0.6)',
+      cardBackground: 'rgba(8, 12, 10, 0.75)',
+      cardBorder: 'rgba(94, 207, 134, 0.15)'
+    },
+    shadows: {
+      card: '0 16px 34px rgba(0,0,0,0.5)',
+      popup: '0 24px 70px rgba(0,0,0,0.7)',
+      glow: '0 0 30px rgba(94, 207, 134, 0.4)'
+    }
+  },
   
   neon: {
     id: 'neon',
@@ -196,7 +219,8 @@ class ThemeManager {
       const settings = localStorage.getItem('overlayThemeSettings')
       if (settings) {
         const parsed = JSON.parse(settings)
-        this.currentTheme = parsed.theme || 'default'
+        const storedTheme = parsed.theme || 'default'
+        this.currentTheme = storedTheme === 'panda' ? 'bamboo' : storedTheme
         this.currentSize = parsed.size || 'standard'
         
         // Load custom themes
@@ -235,7 +259,8 @@ class ThemeManager {
     if (this.customThemes.has(themeId)) {
       return this.customThemes.get(themeId)
     }
-    return OVERLAY_THEMES[themeId] || OVERLAY_THEMES.default
+    const resolved = themeId === 'panda' ? 'bamboo' : themeId
+    return OVERLAY_THEMES[resolved] || OVERLAY_THEMES.default
   }
 
   // Get current size object

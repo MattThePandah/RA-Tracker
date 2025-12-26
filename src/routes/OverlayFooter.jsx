@@ -2,6 +2,11 @@ import React from 'react'
 import * as Storage from '../services/storage.js'
 import { useAchievements } from '../context/AchievementContext.jsx'
 import * as RA from '../services/retroachievements.js'
+import { buildOverlayUrl } from '../utils/overlayApi.js'
+import { buildCoverUrl } from '../utils/coverUrl.js'
+import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
+import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -23,28 +28,31 @@ function useClock() {
 
 export default function OverlayFooter() {
   const { state, loadGameAchievements, isConfigured } = useAchievements()
+  const { settings } = useOverlaySettings()
   const params = new URLSearchParams(location.search)
-  const poll = parseInt(params.get('poll') || '5000', 10)
-  const isClean = params.get('clean') === '1'
-  const barHeight = Math.max(40, Math.min(200, parseInt(params.get('barheight') || '70', 10)))
-  const title = params.get('title') || import.meta.env.VITE_APP_NAME || 'Event'
-  const widthParam = params.get('width') ? Math.max(180, Math.min(600, parseInt(params.get('width'), 10) || 0)) : null
-  const timeMode = (params.get('time') || 'datetime').toLowerCase() // 'datetime' | 'time'
-  const timeFmt = (params.get('timefmt') || '24').toLowerCase() // '24' | '12'
-  const showSeconds = params.get('seconds') !== '0'
+  const globalConfig = settings.global || {}
+  const footerConfig = settings.footer || {}
+  const poll = getNumberParam(params, 'poll', globalConfig.pollMs ?? 5000, { min: 500, max: 60000 })
+  const isClean = getBoolParam(params, 'clean', globalConfig.clean ?? false)
+  const barHeight = getNumberParam(params, 'barheight', footerConfig.barHeight ?? 70, { min: 40, max: 200 })
+  const title = getStringParam(params, 'title', footerConfig.title || import.meta.env.VITE_APP_NAME || 'Event')
+  const widthParam = params.get('width') ? Math.max(180, Math.min(600, parseInt(params.get('width'), 10) || 0)) : (footerConfig.width || null)
+  const timeMode = (getStringParam(params, 'time', footerConfig.timeMode || 'datetime') || 'datetime').toLowerCase()
+  const timeFmt = (getStringParam(params, 'timefmt', footerConfig.timeFmt || '24') || '24').toLowerCase()
+  const showSeconds = getBoolParam(params, 'seconds', footerConfig.showSeconds ?? true)
   const showDate = timeMode !== 'time'
-  const dateFmt = (params.get('datefmt') || 'short').toLowerCase() // 'short' | 'long'
-  const timeStyle = (params.get('timestyle') || 'glow').toLowerCase() // 'glow' | 'neon' | 'solid'
-  const showTimers = params.get('showtimers') === '1'
-  const showCurrent = params.get('showcurrent') === '1'
-  const currentCover = params.get('cgcover') !== '0'
-  const containerWidth = params.get('containerwidth') ? Math.max(600, Math.min(3840, parseInt(params.get('containerwidth'), 10) || 0)) : null
+  const dateFmt = (getStringParam(params, 'datefmt', footerConfig.dateFmt || 'short') || 'short').toLowerCase()
+  const timeStyle = (getStringParam(params, 'timestyle', footerConfig.timeStyle || 'glow') || 'glow').toLowerCase()
+  const showTimers = getBoolParam(params, 'showtimers', footerConfig.showTimers ?? false)
+  const showCurrent = getBoolParam(params, 'showcurrent', footerConfig.showCurrent ?? false)
+  const currentCover = getBoolParam(params, 'cgcover', footerConfig.currentCover ?? true)
+  const containerWidth = params.get('containerwidth') ? Math.max(600, Math.min(3840, parseInt(params.get('containerwidth'), 10) || 0)) : (footerConfig.containerWidth || null)
   
   // Badge carousel integration parameters
-  const showBadges = params.get('showbadges') === '1'
-  const badgeCount = Math.max(1, Math.min(8, parseInt(params.get('badgecount') || '4', 10)))
-  const rotateMs = parseInt(params.get('badgerotate') || '8000', 10)
-  const achievementPoll = parseInt(params.get('rapoll') || '60000', 10)
+  const showBadges = getBoolParam(params, 'showbadges', footerConfig.showBadges ?? false)
+  const badgeCount = getNumberParam(params, 'badgecount', footerConfig.badgeCount ?? 4, { min: 1, max: 8 })
+  const rotateMs = getNumberParam(params, 'badgerotate', footerConfig.rotateMs ?? 8000, { min: 2000, max: 60000 })
+  const achievementPoll = getNumberParam(params, 'rapoll', globalConfig.achievementPollMs ?? 60000, { min: 5000, max: 300000 })
   const now = useClock()
   const timeStr = formatTimeString(now, { timeFmt, showSeconds })
   const dateStr = formatDate(now, dateFmt)
@@ -52,12 +60,7 @@ export default function OverlayFooter() {
   const tick = usePoll(poll)
 
   // Apply clean overlay styling to document body
-  React.useEffect(() => {
-    if (isClean) {
-      document.body.classList.add('overlay-clean')
-      return () => document.body.classList.remove('overlay-clean')
-    }
-  }, [isClean])
+  useOverlayTheme(globalConfig.theme || 'bamboo', isClean, globalConfig)
 
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
   const [timers, setTimers] = React.useState({ currentGameTime: '00:00:00', totalTime: '000:00:00' })
@@ -72,7 +75,7 @@ export default function OverlayFooter() {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
     const load = async () => {
       try {
-        const r = await fetch(`${base}/overlay/stats`)
+        const r = await fetch(buildOverlayUrl('/overlay/stats', base))
         if (r.ok) {
           const j = await r.json()
           const total = Number(j.total || 0)
@@ -105,7 +108,7 @@ export default function OverlayFooter() {
     const tryFetch = async () => {
       let g = null
       try {
-        const res = await fetch(`${base}/overlay/current`)
+        const res = await fetch(buildOverlayUrl('/overlay/current', base))
         if (res.ok) {
           const json = await res.json()
           g = json?.current || null
@@ -131,7 +134,7 @@ export default function OverlayFooter() {
     let id
     const fetchTimers = async () => {
       try {
-        const res = await fetch(`${base}/overlay/timers`)
+        const res = await fetch(buildOverlayUrl('/overlay/timers', base))
         if (res.ok) {
           const t = await res.json()
           if (t?.currentGameTime && (t?.totalTime || t?.psfestTime)) {
@@ -156,7 +159,7 @@ export default function OverlayFooter() {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 5000)
         
-        const r = await fetch(`${base}/overlay/current`, {
+        const r = await fetch(buildOverlayUrl('/overlay/current', base), {
           signal: controller.signal
         })
         clearTimeout(timeoutId)
@@ -303,7 +306,7 @@ export default function OverlayFooter() {
             <div className={`current-chip ${isTight ? 'tight' : ''}`} title={current.title}>
               {currentCover && (
                 current.image_url ? (
-                  <img className="chip-cover" src={current.image_url} alt="" />
+                  <img className="chip-cover" src={buildCoverUrl(current.image_url)} alt="" />
                 ) : (
                   <div className="chip-cover placeholder"><i className="bi bi-controller"></i></div>
                 )

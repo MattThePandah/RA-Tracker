@@ -163,6 +163,7 @@ export default function Achievements() {
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search)
     const forceCurrentGame = urlParams.get('current') === 'true'
+    const forcedGameId = urlParams.get('gameId')
     
     console.log('Achievements Page Init:', {
       viewMode,
@@ -173,6 +174,23 @@ export default function Achievements() {
       isConfigured,
       forcingSelection: forcingSelectionRef.current
     })
+
+    if (forcedGameId && isConfigured) {
+      const forcedGame = raGames.find(g => g.id === forcedGameId)
+      if (forcedGame) {
+        if (viewMode !== 'current') setViewMode('current')
+        const needsSelection = !selectedGame || selectedGame.id !== forcedGameId
+        if (needsSelection && !forcingSelectionRef.current) {
+          forcingSelectionRef.current = true
+          clearCurrentGameData()
+          setSelectedGame(forcedGame)
+          loadGameAchievements(forcedGame.id, true).finally(() => {
+            forcingSelectionRef.current = false
+          })
+        }
+        return
+      }
+    }
 
     // Handle recent achievements mode
     if (viewMode === 'recent' && isConfigured) {

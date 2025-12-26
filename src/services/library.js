@@ -6,7 +6,7 @@ export async function listGames({ base = import.meta.env.VITE_IGDB_PROXY_URL || 
   if (hasCover) params.set('hasCover', '1')
   params.set('limit', String(limit))
 
-  const first = await fetch(`${base}/api/games?${params.toString()}`)
+  const first = await fetch(`${base}/api/games?${params.toString()}`, { credentials: 'include' })
   if (!first.ok) throw new Error(`games_list_failed: ${first.status}`)
   const head = await first.json()
 
@@ -15,7 +15,7 @@ export async function listGames({ base = import.meta.env.VITE_IGDB_PROXY_URL || 
   let offset = (head.offset || 0) + (head.games?.length || 0)
   while (offset < total) {
     params.set('offset', String(offset))
-    const r = await fetch(`${base}/api/games?${params.toString()}`)
+    const r = await fetch(`${base}/api/games?${params.toString()}`, { credentials: 'include' })
     if (!r.ok) break
     const page = await r.json()
     out.push(...(page.games || []))
@@ -27,13 +27,15 @@ export async function listGames({ base = import.meta.env.VITE_IGDB_PROXY_URL || 
 }
 
 export function normalizeGame(g) {
-  // Map server DTO → UI shape for backward compatibility
+  // Map server DTO to UI shape for backward compatibility
   const consoleName = g.console?.name || g.console || ''
+  const consoleId = g.console?.id || g.console_id || g.sources?.ra?.consoleId || null
   const imageUrl = g.cover?.localPath || g.cover?.originalUrl || g.image_url || null
   return {
     id: g.id,
     title: g.title,
     console: consoleName,
+    consoleId,
     image_url: imageUrl,
     release_year: g.releaseYear || g.release_year || null,
     publisher: g.publisher || null,
@@ -43,7 +45,10 @@ export function normalizeGame(g) {
     completion_time: g.completion_time || null,
     rating: g.rating || null,
     notes: g.notes || '',
+    custom_tags: g.custom_tags || [],
+    studio: g.studio || null,
     is_bonus: g.flags?.isBonus || g.is_bonus || false,
   }
 }
+
 

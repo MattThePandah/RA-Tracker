@@ -4,6 +4,10 @@ import AchievementNotificationManager from '../components/AchievementNotificatio
 import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
 import ErrorBoundary, { OverlayErrorFallback } from '../components/ErrorBoundary.jsx'
+import { buildOverlayUrl } from '../utils/overlayApi.js'
+import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
+import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -16,16 +20,19 @@ function usePoll(ms) {
 
 function OverlayBadgeCarouselInner() {
   const { state, loadGameAchievements, isConfigured } = useAchievements()
+  const { settings } = useOverlaySettings()
   const params = new URLSearchParams(location.search)
-  const poll = parseInt(params.get('poll') || '5000', 10)
-  const achievementPoll = parseInt(params.get('rapoll') || '60000', 10) // Default 60 seconds for achievements
-  const rotateMs = parseInt(params.get('rotate') || '8000', 10) // Longer rotation for readability
-  const isClean = params.get('clean') === '1'
-  const isHorizontal = params.get('horizontal') === '1'
+  const globalConfig = settings.global || {}
+  const badgeConfig = settings.badgeCarousel || {}
+  const poll = getNumberParam(params, 'poll', globalConfig.pollMs ?? 5000, { min: 500, max: 60000 })
+  const achievementPoll = getNumberParam(params, 'rapoll', globalConfig.achievementPollMs ?? 60000, { min: 5000, max: 300000 })
+  const rotateMs = getNumberParam(params, 'rotate', badgeConfig.rotateMs ?? 8000, { min: 2000, max: 60000 })
+  const isClean = getBoolParam(params, 'clean', globalConfig.clean ?? false)
+  const isHorizontal = getBoolParam(params, 'horizontal', badgeConfig.horizontal ?? false)
   
   // Stream-friendly: compact layout for corner positioning  
-  const showCount = Math.max(parseInt(params.get('show') || '3', 10), 1)
-  const position = params.get('position') || 'top-left' // top-right, top-left, bottom-right, bottom-left, center
+  const showCount = Math.max(getNumberParam(params, 'show', badgeConfig.showCount ?? 3, { min: 1, max: 8 }), 1)
+  const position = getStringParam(params, 'position', badgeConfig.position || 'top-left') || 'top-left'
 
   const tick = usePoll(poll)
   const [game, setGame] = React.useState(null)
@@ -40,7 +47,7 @@ function OverlayBadgeCarouselInner() {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
         
-        const r = await fetch(`${base}/overlay/current`, {
+        const r = await fetch(buildOverlayUrl('/overlay/current', base), {
           signal: controller.signal
         })
         clearTimeout(timeoutId)
@@ -87,12 +94,7 @@ function OverlayBadgeCarouselInner() {
 
   // Load achievements when game changes
   // Apply clean overlay styling to document body
-  React.useEffect(() => {
-    if (isClean) {
-      document.body.classList.add('overlay-clean')
-      return () => document.body.classList.remove('overlay-clean')
-    }
-  }, [isClean])
+  useOverlayTheme(globalConfig.theme || 'bamboo', isClean, globalConfig)
 
   // Track game ID separately to avoid reloading achievements on every game object update
   const [currentGameId, setCurrentGameId] = React.useState(null)

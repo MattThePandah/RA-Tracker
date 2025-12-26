@@ -88,6 +88,56 @@ export async function searchGames({ q, platformIds = [] }) {
   return mapped
 }
 
+export async function searchGamesWithGenres({ q, platformIds = [] }) {
+  if (!q) return []
+  const key = `genres|${String(q).toLowerCase()}|${(platformIds || []).join(',')}`
+  const now = Date.now()
+  const cached = searchCache.get(key)
+  if (cached && (now - cached.ts) < CACHE_TTL_MS) return cached.data
+
+  const token = await getToken()
+  const headers = {
+    'Client-ID': process.env.TWITCH_CLIENT_ID,
+    'Authorization': `Bearer ${token}`,
+  }
+  const where = Array.isArray(platformIds) && platformIds.length
+    ? `where platforms = (${platformIds.join(',')});`
+    : ''
+  const safe = String(q).replace(/\"/g, '')
+  const body = `fields name,genres.name,platforms.id; search \"${safe}\"; ${where} limit 3;`
+
+  async function doRequest() {
+    let attempt = 0
+    let delay = 800
+    while (true) {
+      try {
+        const { data } = await axios.post('https://api.igdb.com/v4/games', body, { headers })
+        return data
+      } catch (e) {
+        const status = e?.response?.status
+        if (status === 429 && attempt < LIMITS.IGDB_MAX_RETRIES) {
+          const ra = Number(e?.response?.headers?.['retry-after'])
+          const wait = ra ? (Number(ra) * 1000) : delay
+          await new Promise(r => setTimeout(r, wait))
+          attempt++
+          delay = Math.min(delay * 2, 8000)
+          continue
+        }
+        throw e
+      }
+    }
+  }
+
+  const data = await limiter.schedule(() => doRequest())
+  const mapped = (data || []).map(g => ({
+    id: g.id,
+    name: g.name,
+    genre_names: Array.isArray(g.genres) ? g.genres.map(genre => genre?.name).filter(Boolean) : []
+  }))
+  searchCache.set(key, { ts: now, data: mapped })
+  return mapped
+}
+
 export function coverUrlFromImageId(imageId, size = 't_cover_big_2x') {
   if (!imageId) return null
   return `https://images.igdb.com/igdb/image/upload/${size}/${imageId}.jpg`

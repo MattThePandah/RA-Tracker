@@ -3,6 +3,10 @@ import * as Cache from './cache.js'
 
 const PROXY = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
 
+function getCsrfToken() {
+  try { return localStorage.getItem('ra.csrf') || '' } catch { return '' }
+}
+
 // IGDB platform ids (public knowledge from IGDB): PS1=7, PS2=8, PSP=38
 const IGDB_PS_PLATFORMS = {
   'PlayStation': 7,
@@ -13,7 +17,11 @@ const IGDB_PS_PLATFORMS = {
 export async function fetchIGDBCover({ name, console }) {
   try {
     const platformId = IGDB_PS_PLATFORMS[console] || null
-    const { data } = await axios.post(`${PROXY}/igdb/search`, { q: name, platformId })
+    const csrf = getCsrfToken()
+    const { data } = await axios.post(`${PROXY}/igdb/search`, { q: name, platformId }, {
+      withCredentials: true,
+      headers: csrf ? { 'x-csrf-token': csrf } : {}
+    })
     if (!data || !data.length) return null
     const first = data[0]
     if (!first.image_id) return null

@@ -4,6 +4,16 @@ const LS_GAMES = 'tracker.games'
 const LS_SETTINGS = 'tracker.settings'
 const LS_CURRENT = 'tracker.currentGameId'
 
+function getCsrfToken() {
+  try { return localStorage.getItem('ra.csrf') || '' } catch { return '' }
+}
+
+function withAdminHeaders(headers = {}) {
+  const csrf = getCsrfToken()
+  if (csrf) return { ...headers, 'x-csrf-token': csrf }
+  return headers
+}
+
 async function postOverlayState(partial) {
   let retries = 3
   let delay = 1000
@@ -18,9 +28,10 @@ async function postOverlayState(partial) {
       
       const response = await fetch(`${base}/overlay/state`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(partial),
-        signal: controller.signal
+        signal: controller.signal,
+        credentials: 'include'
       })
       
       clearTimeout(timeoutId)
@@ -61,9 +72,10 @@ async function postOverlayStats({ total, completed }) {
     
     const response = await fetch(`${base}/overlay/stats`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ total, completed }),
-      signal: controller.signal
+      signal: controller.signal,
+      credentials: 'include'
     })
     
     clearTimeout(timeoutId)
@@ -89,9 +101,10 @@ async function postOverlayCurrent(current) {
     
     const response = await fetch(`${base}/overlay/current`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ current }),
-      signal: controller.signal
+      signal: controller.signal,
+      credentials: 'include'
     })
     
     clearTimeout(timeoutId)
@@ -173,6 +186,8 @@ export function saveGames(games) {
       notes: g.notes ?? '',
       release_year: g.release_year || null,
       publisher: g.publisher || null,
+      custom_tags: g.custom_tags ?? [],
+      studio: g.studio ?? null,
     }
   }
 
@@ -270,8 +285,9 @@ async function syncTimersToServer() {
     const currentId = getCurrentGameId()
     await fetch(`${base}/overlay/timers`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentGameId: currentId })
+      headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ currentGameId: currentId }),
+      credentials: 'include'
     })
   } catch { /* ignore sync failures */ }
 }
@@ -294,9 +310,10 @@ export async function startCurrentTimer() {
       
       const response = await fetch(`${base}/overlay/timers`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ running: true }),
-        signal: controller.signal
+        signal: controller.signal,
+        credentials: 'include'
       })
       
       clearTimeout(timeoutId)
@@ -343,9 +360,10 @@ export async function pauseCurrentTimer() {
     
     const response = await fetch(`${base}/overlay/timers`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ running: false }),
-      signal: controller.signal
+      signal: controller.signal,
+      credentials: 'include'
     })
     
     clearTimeout(timeoutId)
@@ -372,8 +390,9 @@ export async function resetCurrentTimer() {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
     await fetch(`${base}/overlay/timers`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resetCurrent: true })
+      headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ resetCurrent: true }),
+      credentials: 'include'
     })
   } catch {}
 }
@@ -383,8 +402,9 @@ export async function resetTotalTimer() {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
     await fetch(`${base}/overlay/timers`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ resetTotal: true })
+      headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ resetTotal: true }),
+      credentials: 'include'
     })
   } catch {}
 }
@@ -392,7 +412,7 @@ export async function resetTotalTimer() {
 export async function getTimerStatus() {
   try {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-    const r = await fetch(`${base}/overlay/timers`)
+    const r = await fetch(`${base}/overlay/timers`, { credentials: 'include' })
     if (!r.ok) return { running: false }
     const j = await r.json()
     return { running: !!j.running }
@@ -411,7 +431,8 @@ export async function getTimerData() {
     const timeoutId = setTimeout(() => controller.abort(), 3000)
     
     const r = await fetch(`${base}/overlay/timers`, {
-      signal: controller.signal
+      signal: controller.signal,
+      credentials: 'include'
     })
     
     clearTimeout(timeoutId)
@@ -509,11 +530,12 @@ async function syncTimerWithCurrentGame(gameId) {
     
     const response = await fetch(`${base}/overlay/timers`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ 
         syncCurrentGame: true,
         currentGameId: gameId
-      })
+      }),
+      credentials: 'include'
     })
     
     if (response.ok) {

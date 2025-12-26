@@ -3,6 +3,11 @@ import { useAchievements } from '../context/AchievementContext.jsx'
 import AchievementNotificationManager from '../components/AchievementNotificationManager.jsx'
 import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
+import { buildCoverUrl } from '../utils/coverUrl.js'
+import { buildOverlayUrl } from '../utils/overlayApi.js'
+import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
+import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 function usePolling(callback, interval) {
   useEffect(() => {
@@ -80,7 +85,7 @@ const ModernCoverLoader = ({ imageUrl, className = '', onLoad, fallback }) => {
         }
         
         // Fallback to proxy or direct URL
-        const finalUrl = base ? `${base}/cover?src=${encodeURIComponent(imageUrl)}` : imageUrl
+        const finalUrl = buildCoverUrl(imageUrl)
         if (mounted) {
           setUrl(finalUrl)
           setLoading(false)
@@ -133,25 +138,30 @@ export default function ModernOverlayMain() {
     isConfigured: raConfigured,
     clearCurrentGameData
   } = useAchievements()
+  const { settings } = useOverlaySettings()
 
   const params = useMemo(() => new URLSearchParams(location.search), [])
-  const config = useMemo(() => ({
-    poll: parseInt(params.get('poll') || '3000', 10),
-    achievementPoll: parseInt(params.get('rapoll') || '30000', 10),
-    style: params.get('style') || 'glass',
-    theme: params.get('theme') || 'cyberpunk',
-    showCover: params.get('showcover') !== '0',
-    showYear: params.get('showyear') !== '0',
-    showPublisher: params.get('showpublisher') !== '0',
-    showAchievements: params.get('achievements') !== '0',
-    showTimer: params.get('timer') !== '0',
-    isClean: params.get('clean') === '1',
-    timerSize: params.get('timersize') || 'normal',
-    coverSize: params.get('coversize') || 'normal',
-    animationLevel: params.get('animations') || 'normal', // 'minimal', 'normal', 'enhanced'
-    enableParticles: params.get('particles') !== '0',
-    glassTint: params.get('glasstint') || 'dark'
-  }), [params])
+  const config = useMemo(() => {
+    const globalConfig = settings.global || {}
+    const modernConfig = settings.modern || {}
+    return {
+      poll: getNumberParam(params, 'poll', modernConfig.pollMs ?? globalConfig.pollMs ?? 3000, { min: 500, max: 60000 }),
+      achievementPoll: getNumberParam(params, 'rapoll', modernConfig.achievementPollMs ?? globalConfig.achievementPollMs ?? 30000, { min: 5000, max: 300000 }),
+      style: getStringParam(params, 'style', modernConfig.style || 'glass'),
+      theme: getStringParam(params, 'theme', modernConfig.theme || globalConfig.theme || 'bamboo'),
+      showCover: getBoolParam(params, 'showcover', globalConfig.showCover ?? true),
+      showYear: getBoolParam(params, 'showyear', globalConfig.showYear ?? true),
+      showPublisher: getBoolParam(params, 'showpublisher', globalConfig.showPublisher ?? true),
+      showAchievements: getBoolParam(params, 'achievements', globalConfig.showAchievements ?? true),
+      showTimer: getBoolParam(params, 'timer', modernConfig.showTimer ?? globalConfig.showTimer ?? true),
+      isClean: getBoolParam(params, 'clean', globalConfig.clean ?? false),
+      timerSize: getStringParam(params, 'timersize', modernConfig.timerSize || 'normal'),
+      coverSize: getStringParam(params, 'coversize', modernConfig.coverSize || 'normal'),
+      animationLevel: getStringParam(params, 'animations', modernConfig.animationLevel || 'normal'),
+      enableParticles: getBoolParam(params, 'particles', modernConfig.enableParticles ?? false),
+      glassTint: getStringParam(params, 'glasstint', modernConfig.glassTint || 'dark')
+    }
+  }, [params, settings])
 
   const [game, setGame] = useState(null)
   const [timers, setTimers] = useState({
@@ -162,12 +172,7 @@ export default function ModernOverlayMain() {
   const storageUpdate = useStorageSync()
 
   // Apply overlay styling
-  useEffect(() => {
-    if (config.isClean) {
-      document.body.classList.add('overlay-clean')
-      return () => document.body.classList.remove('overlay-clean')
-    }
-  }, [config.isClean])
+  useOverlayTheme(config.theme, config.isClean, settings.global || {})
 
   // Fetch current game
   const fetchCurrentGame = React.useCallback(async () => {
@@ -175,7 +180,7 @@ export default function ModernOverlayMain() {
       const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
       
       // Try server first
-      const response = await fetch(`${base}/overlay/current`)
+      const response = await fetch(buildOverlayUrl('/overlay/current', base))
       if (response.ok) {
         const data = await response.json()
         setGame(data.current)
@@ -201,7 +206,7 @@ export default function ModernOverlayMain() {
   const fetchTimers = React.useCallback(async () => {
     try {
       const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-      const response = await fetch(`${base}/overlay/timers`)
+      const response = await fetch(buildOverlayUrl('/overlay/timers', base))
       
       if (response.ok) {
         const data = await response.json()
@@ -228,7 +233,7 @@ export default function ModernOverlayMain() {
   const fetchStats = React.useCallback(async () => {
     try {
       const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-      const response = await fetch(`${base}/overlay/stats`)
+      const response = await fetch(buildOverlayUrl('/overlay/stats', base))
       
       if (response.ok) {
         const data = await response.json()
@@ -270,6 +275,7 @@ export default function ModernOverlayMain() {
 
   // Theme classes
   const themeClasses = {
+    bamboo: 'theme-bamboo',
     cyberpunk: 'theme-cyberpunk',
     neon: 'theme-neon',
     quantum: 'theme-quantum',

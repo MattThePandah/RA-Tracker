@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState, useCallback } from 'react'
+import { adminFetch } from '../utils/adminFetch.js'
 
 const SLOT_COUNT = 16 // Fixed number of slots for performance
 const COLORS = [
@@ -53,7 +54,7 @@ function SmartRoulette({ games, poolKey, onGameSelected, onSampleUpdate }) {
       // Seed overlay idle state with minimal payload
       const baseOnly = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
       if (baseOnly) {
-        fetch(`${baseOnly}/overlay/wheel-state`, {
+        adminFetch(`${baseOnly}/overlay/wheel-state`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sample: localSample, poolSize: src.length })
@@ -214,7 +215,7 @@ function SmartRoulette({ games, poolKey, onGameSelected, onSampleUpdate }) {
 
     try {
       const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-      const res = await fetch(`${base}/wheel/spin`, {
+      const res = await adminFetch(`${base}/wheel/spin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

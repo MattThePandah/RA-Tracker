@@ -4,6 +4,11 @@ import AchievementNotificationManager from '../components/AchievementNotificatio
 import * as Storage from '../services/storage.js'
 import * as RA from '../services/retroachievements.js'
 import * as Cache from '../services/cache.js'
+import { buildCoverUrl } from '../utils/coverUrl.js'
+import { buildOverlayUrl } from '../utils/overlayApi.js'
+import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
+import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 // Enhanced cover loading that handles custom covers, local hashed covers, and proxies
 const loadCoverUrl = async (imageUrl) => {
@@ -53,15 +58,9 @@ const loadCoverUrl = async (imageUrl) => {
       console.log('Local cover lookup failed:', error)
     }
     
-    // Handle IGDB URLs with proxy support
-    const base = import.meta.env.VITE_IGDB_PROXY_URL
-    if (base) {
-      return `${base}/cover?src=${encodeURIComponent(imageUrl)}`
-    }
   }
   
-  // Return direct URL for local paths or when no proxy
-  return imageUrl
+  return buildCoverUrl(imageUrl)
 }
 
 // Format seconds to HH:MM:SS or HHH:MM:SS for longer durations
@@ -117,50 +116,50 @@ export default function OverlayMain() {
     clearCurrentGameData
   } = useAchievements()
 
+  const { settings } = useOverlaySettings()
   const params = new URLSearchParams(location.search)
-  const poll = parseInt(params.get('poll') || '5000', 10)
-  const achievementPoll = parseInt(params.get('rapoll') || '60000', 10) // Default 60 seconds for achievements
-  const style = (params.get('style') || 'card').toLowerCase() // 'card' | 'lowerthird' | 'slim'
-  const showCover = params.get('showcover') !== '0'
-  const showYear = params.get('showyear') !== '0'
-  const showPublisher = params.get('showpublisher') !== '0'
-  const showAchievements = params.get('achievements') !== '0'
-  const isClean = params.get('clean') === '1'
+  const globalConfig = settings.global || {}
+  const mainConfig = settings.main || {}
+  const poll = getNumberParam(params, 'poll', mainConfig.pollMs ?? globalConfig.pollMs ?? 5000, { min: 500, max: 60000 })
+  const achievementPoll = getNumberParam(params, 'rapoll', mainConfig.achievementPollMs ?? globalConfig.achievementPollMs ?? 60000, { min: 5000, max: 300000 })
+  const style = (getStringParam(params, 'style', mainConfig.style || 'card') || 'card').toLowerCase()
+  const showCover = getBoolParam(params, 'showcover', globalConfig.showCover ?? true)
+  const showYear = getBoolParam(params, 'showyear', globalConfig.showYear ?? true)
+  const showPublisher = getBoolParam(params, 'showpublisher', globalConfig.showPublisher ?? true)
+  const showAchievements = getBoolParam(params, 'achievements', globalConfig.showAchievements ?? true)
+  const showTimer = getBoolParam(params, 'timer', globalConfig.showTimer ?? true)
+  const isClean = getBoolParam(params, 'clean', globalConfig.clean ?? false)
+  const theme = getStringParam(params, 'theme', mainConfig.theme || globalConfig.theme || 'bamboo')
   // RA presentation controls for reference style
-  const raMode = (params.get('ramode') || 'default').toLowerCase() // 'default' | 'compact' | 'ticker'
-  const raSize = parseInt(params.get('rasize') || '58', 10) // badge size in px (default 58)
-  const raMax = parseInt(params.get('ramax') || '10', 10) // max badges to display
-  const raScroll = params.get('rascroll') === '1' // enable auto-scroll of badges
-  const raSpeed = params.get('raspeed') || '30s' // ticker speed duration (e.g., '30s')
-  const raShow = (params.get('rashow') || 'earned').toLowerCase() // 'earned' | 'all'
-  const raDebug = params.get('radebug') === '1' // show debug overlay
+  const raMode = (getStringParam(params, 'ramode', mainConfig.raMode || 'default') || 'default').toLowerCase()
+  const raSize = getNumberParam(params, 'rasize', mainConfig.raSize ?? 58, { min: 30, max: 140 })
+  const raMax = getNumberParam(params, 'ramax', mainConfig.raMax ?? 10, { min: 0, max: 50 })
+  const raScroll = getBoolParam(params, 'rascroll', mainConfig.raScroll ?? false)
+  const raSpeed = getStringParam(params, 'raspeed', mainConfig.raSpeed || '30s') || '30s'
+  const raShow = (getStringParam(params, 'rashow', mainConfig.raShow || 'earned') || 'earned').toLowerCase()
+  const raDebug = getBoolParam(params, 'radebug', false)
   // Auto mode: switch to emblem showcase for a duration when a new achievement is earned
-  const raAuto = params.get('raauto') === '1'
-  const raAutoDuration = parseInt(params.get('raautoduration') || '30', 10) // seconds
-  const raAutoTest = params.get('raautotest') === '1' // force showcase once for testing
-  const raAutoSize = parseInt(params.get('raautosize') || '72', 10) // preferred badge size during auto showcase
-  const raAutoMax = parseInt(params.get('raautomax') || String(Math.max(raMax, 0)), 10) // preferred max badges during auto showcase
+  const raAuto = getBoolParam(params, 'raauto', mainConfig.raAuto ?? false)
+  const raAutoDuration = getNumberParam(params, 'raautoduration', mainConfig.raAutoDuration ?? 30, { min: 5, max: 120 })
+  const raAutoTest = getBoolParam(params, 'raautotest', false)
+  const raAutoSize = getNumberParam(params, 'raautosize', mainConfig.raAutoSize ?? 72, { min: 40, max: 160 })
+  const raAutoMax = getNumberParam(params, 'raautomax', mainConfig.raAutoMax ?? Math.max(raMax, 0), { min: 0, max: 50 })
   // Announcement overlay: keep bar visible and slide in a large achievement card for N seconds
-  const raAnnounce = params.get('raannounce') === '1'
-  const raAnnounceDuration = parseInt(params.get('raannounceduration') || String(raAutoDuration), 10)
-  const raAnnounceSize = parseInt(params.get('raannouncesize') || '116', 10)
+  const raAnnounce = getBoolParam(params, 'raannounce', mainConfig.raAnnounce ?? false)
+  const raAnnounceDuration = getNumberParam(params, 'raannounceduration', mainConfig.raAnnounceDuration ?? raAutoDuration, { min: 5, max: 120 })
+  const raAnnounceSize = getNumberParam(params, 'raannouncesize', mainConfig.raAnnounceSize ?? 116, { min: 60, max: 200 })
   // Inline badges visibility: by default, hide when announcement mode is on
   const raInlineParam = params.get('rainline')
-  const showInlineBadges = raInlineParam != null ? (raInlineParam !== '0') : !raAnnounce
-  const raRows = parseInt(params.get('rarows') || '0', 10) // limit rows when wrapping; 0 = unlimited
-  const refreshSec = parseInt(params.get('refresh') || '0', 10) // optional: add <meta refresh> every N seconds
-  const hardRefreshMin = parseInt(params.get('hardrefresh') || '0', 10) // optional: force reload every N minutes
-  const timerPx = parseInt(params.get('timerpx') || '0', 10) // optional: override timer font size in px
+  const showInlineBadges = raInlineParam != null ? (raInlineParam !== '0') : (mainConfig.showInlineBadges ?? !raAnnounce)
+  const raRows = getNumberParam(params, 'rarows', mainConfig.raRows ?? 0, { min: 0, max: 6 })
+  const refreshSec = getNumberParam(params, 'refresh', 0, { min: 0, max: 3600 })
+  const hardRefreshMin = getNumberParam(params, 'hardrefresh', 0, { min: 0, max: 240 })
+  const timerPx = getNumberParam(params, 'timerpx', mainConfig.timerPx ?? 0, { min: 0, max: 140 })
   const tick = usePoll(poll)
   const storageUpdate = useStorageListener()
 
   // Apply clean overlay styling to document body
-  React.useEffect(() => {
-    if (isClean) {
-      document.body.classList.add('overlay-clean')
-      return () => document.body.classList.remove('overlay-clean')
-    }
-  }, [isClean])
+  useOverlayTheme(theme, isClean, globalConfig)
 
   // Optional auto-refresh (off by default to avoid surprise reloads in OBS)
   React.useEffect(() => {
@@ -244,7 +243,7 @@ export default function OverlayMain() {
       
       // Prioritize server for OBS compatibility
       try {
-        const res = await fetch(`${base}/overlay/current`)
+        const res = await fetch(buildOverlayUrl('/overlay/current', base))
         if (res.ok) {
           const json = await res.json()
           g = json?.current || null
@@ -324,7 +323,7 @@ export default function OverlayMain() {
 
     const fetchTimers = async () => {
       try {
-        const res = await fetch(`${base}/overlay/timers`)
+        const res = await fetch(buildOverlayUrl('/overlay/timers', base))
         if (res.ok) {
           const t = await res.json()
           if (t?.currentGameTime && (t?.totalTime || t?.psfestTime)) {
@@ -366,7 +365,7 @@ export default function OverlayMain() {
     let stopped = false
     const load = async () => {
       try {
-        const r = await fetch(`${base}/overlay/stats`)
+        const r = await fetch(buildOverlayUrl('/overlay/stats', base))
         if (r.ok) {
           const j = await r.json()
           const total = Number(j.total || 0)
@@ -384,12 +383,12 @@ export default function OverlayMain() {
   if (!game) return <div className="overlay-chrome p-3">No current game</div>
 
   if (style === 'reference') {
-    const maxWidth = params.get('maxwidth') ? parseInt(params.get('maxwidth'), 10) : 1400
-    const coverW = parseInt(params.get('coverw') || '220', 10)
+    const maxWidth = getNumberParam(params, 'maxwidth', mainConfig.maxWidth ?? 1400, { min: 600, max: 4000 })
+    const coverW = getNumberParam(params, 'coverw', mainConfig.coverWidth ?? 220, { min: 120, max: 420 })
     const coverH = Math.round(coverW * 4/3)
     const gameNumber = (stats.completed || 0) + 1
-    const showTotal = params.get('showtotal') !== '0'
-    const titleLines = parseInt(params.get('titlelines') || '1', 10)
+    const showTotal = getBoolParam(params, 'showtotal', mainConfig.showTotal ?? true)
+    const titleLines = getNumberParam(params, 'titlelines', mainConfig.titleLines ?? 1, { min: 1, max: 3 })
     
     // Achievement data
     const { currentGameAchievements, currentGameProgress, loading } = state
@@ -437,10 +436,12 @@ export default function OverlayMain() {
                   </div>
                 </div>
                 <div className="ref-right">
-                  <div className="timer-block blue">
-                    <div className="t-label">Current Game</div>
-                    <div className="t-time">{currentGameTime}</div>
-                  </div>
+                  {showTimer && (
+                    <div className="timer-block blue">
+                      <div className="t-label">Current Game</div>
+                      <div className="t-time">{currentGameTime}</div>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="ref-divider" />
@@ -449,10 +450,12 @@ export default function OverlayMain() {
                   <div className="event-left">
                     <span className="event-game">Game {gameNumber}{showTotal && stats.total ? ` of ${stats.total}` : ''}</span>
                   </div>
-                  <div className="timer-block pink">
-                    <div className="t-label">Total Time</div>
-                    <div className="t-time">{totalTime}</div>
-                  </div>
+                  {showTimer && (
+                    <div className="timer-block pink">
+                      <div className="t-label">Total Time</div>
+                      <div className="t-time">{totalTime}</div>
+                    </div>
+                  )}
               </div>
 
             {/* Split with another gradient divider, then show an expanded achievements section */}
@@ -708,22 +711,24 @@ export default function OverlayMain() {
         </div>
 
         {/* Timer Section */}
-        <div className="timer-section d-flex gap-3">
-          <div className="timer-card current-game">
-            <div className="timer-label">Current Game</div>
-            <div className="timer-value">{currentGameTime}</div>
-          </div>
-          <div className="timer-card event-total">
-            <div className="timer-label">Event Total</div>
-            <div className="timer-value">{totalTime}</div>
-          </div>
-          {/* Debug indicator - only show when not clean mode */}
-          {!isClean && (
-            <div className="debug-indicator" style={{fontSize: '10px', color: '#666', position: 'absolute', bottom: '5px', right: '5px'}}>
-              Last: {lastUpdate}
+        {showTimer && (
+          <div className="timer-section d-flex gap-3">
+            <div className="timer-card current-game">
+              <div className="timer-label">Current Game</div>
+              <div className="timer-value">{currentGameTime}</div>
             </div>
-          )}
-        </div>
+            <div className="timer-card event-total">
+              <div className="timer-label">Event Total</div>
+              <div className="timer-value">{totalTime}</div>
+            </div>
+            {/* Debug indicator - only show when not clean mode */}
+            {!isClean && (
+              <div className="debug-indicator" style={{fontSize: '10px', color: '#666', position: 'absolute', bottom: '5px', right: '5px'}}>
+                Last: {lastUpdate}
+              </div>
+            )}
+          </div>
+        )}
       </div>
       </div>
       <AchievementNotificationManager />

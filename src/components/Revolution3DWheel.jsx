@@ -1,17 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import * as THREE from 'three'
+import { buildCoverUrl } from '../utils/coverUrl.js'
 
-// Handle local covers - they're already served from the dev server
-const getImageUrl = (url) => {
-  if (!url) return null
-  // If it's already a local URL (starts with /covers/ or http://localhost), use as-is
-  if (url.startsWith('/covers/') || url.startsWith('http://localhost')) {
-    return url
-  }
-  // Otherwise use proxy for external URLs
-  const base = import.meta.env.VITE_IGDB_PROXY_URL
-  return base ? `${base}/cover?src=${encodeURIComponent(url)}` : url
-}
+const getImageUrl = (url) => buildCoverUrl(url)
 
 const Revolution3DWheel = ({ 
   games = [], 

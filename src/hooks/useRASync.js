@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import * as RA from '../services/retroachievements.js'
 import * as IGDB from '../services/igdb.js'
+import { adminFetch } from '../utils/adminFetch.js'
 
 // Reads RA credentials and merges remote games into local state
 export default function useRASync({ state, dispatch }) {
@@ -21,11 +22,14 @@ export default function useRASync({ state, dispatch }) {
       const apiKey = creds.raApiKey || import.meta.env.VITE_RA_API_KEY
       if (!apiKey || !username) return
 
-      const ids = await RA.resolveDefaultPSConsoleIds({ apiKey })
+      const allConsolesEnabled = import.meta.env.VITE_ALL_CONSOLES_ENABLED === 'true'
+      const consoleIds = allConsolesEnabled
+        ? (await RA.getConsoleIds({ apiKey, activeOnly: true, gameSystemsOnly: true })).map(c => c.id)
+        : Object.values(await RA.resolveDefaultPSConsoleIds({ apiKey }))
       const games = await RA.fetchGamesForConsoles({
         username,
         apiKey,
-        consoleIds: Object.values(ids),
+        consoleIds,
         withHashes: false,
         onlyWithAchievements: true,
       })
@@ -48,7 +52,7 @@ export default function useRASync({ state, dispatch }) {
           const { urls } = await IGDB.precacheCovers({ games: newGames })
           const base = import.meta.env.VITE_IGDB_PROXY_URL || ''
           if (base && urls && urls.length) {
-            fetch(`${base}/covers/prefetch`, {
+            adminFetch(`${base}/covers/prefetch`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ urls }),

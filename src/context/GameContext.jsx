@@ -3,6 +3,7 @@ import * as Storage from '../services/storage.js'
 import * as Bonus from '../utils/bonusDetection.js'
 import useRASync from '../hooks/useRASync.js'
 import { listGames as listServerGames } from '../services/library.js'
+import { adminFetch } from '../utils/adminFetch.js'
 
 const GameContext = createContext(null)
 
@@ -38,8 +39,22 @@ function reducer(state, action) {
       return { ...state, currentGameId: action.id }
     }
     case 'UPDATE_GAME': {
+      const prev = state.games.find(g => g.id === action.game.id) || null
       const games = state.games.map(g => g.id === action.game.id ? action.game : g)
       Storage.saveGames(games)
+      if (state.currentGameId && action.game.id === state.currentGameId) {
+        const changed = !prev || [
+          'title',
+          'console',
+          'image_url',
+          'release_year',
+          'publisher',
+          'status'
+        ].some(key => (prev?.[key] ?? null) !== (action.game?.[key] ?? null))
+        if (changed) {
+          Storage.setCurrentGameId(state.currentGameId)
+        }
+      }
       return { ...state, games, filtered: games, stats: computeStats(games) }
     }
     case 'SET_SETTINGS': {
@@ -70,6 +85,48 @@ export function GameProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, undefined, initialState)
 
   const rasync = useRASync({ state, dispatch })
+  const notifyReadyRef = React.useRef(false)
+  const notifyStatusRef = React.useRef(new Map())
+  const historyReadyRef = React.useRef(false)
+  const historyStateRef = React.useRef(new Map())
+
+  const sendNotification = React.useCallback(async (type, game) => {
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      if (!base) return
+      const payload = {
+        id: game.id,
+        title: game.title,
+        console: game.console,
+        image_url: game.image_url || null,
+        rating: game.rating ?? null,
+        completion_time: game.completion_time ?? null,
+        status: game.status || null
+      }
+      await adminFetch(`${base}/api/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, payload })
+      })
+    } catch {}
+  }, [])
+
+  const sendLegacyHistory = React.useCallback(async (game, entry) => {
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      if (!base) return
+      await adminFetch(`${base}/api/user/history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gameId: game.id,
+          duration: entry.duration,
+          timestamp: entry.timestamp,
+          eventType: 'legacy_fields'
+        })
+      })
+    } catch {}
+  }, [])
 
   useEffect(() => {
     // initial bonus detection pass (idempotent)
@@ -85,11 +142,87 @@ export function GameProvider({ children }) {
   }, [])
 
   useEffect(() => {
+    const prevMap = notifyStatusRef.current
+    const nextMap = new Map()
+
+    if (!notifyReadyRef.current) {
+      for (const g of state.games) {
+        nextMap.set(g.id, g.status || '')
+      }
+      notifyStatusRef.current = nextMap
+      notifyReadyRef.current = true
+      return
+    }
+
+    for (const g of state.games) {
+      const nextStatus = g.status || ''
+      const prevStatus = prevMap.get(g.id) || ''
+      nextMap.set(g.id, nextStatus)
+      if (prevStatus && prevStatus !== nextStatus) {
+        if (nextStatus === 'In Progress') {
+          sendNotification('gameStarted', g)
+        }
+        if (nextStatus === 'Completed') {
+          sendNotification('gameCompleted', g)
+        }
+      }
+    }
+
+    notifyStatusRef.current = nextMap
+  }, [state.games, sendNotification])
+
+  useEffect(() => {
+    const prevMap = historyStateRef.current
+    const nextMap = new Map()
+    const pending = []
+
+    if (!historyReadyRef.current) {
+      for (const g of state.games) {
+        const completion = Number(g?.completion_time) || 0
+        const finishedTs = g?.date_finished ? Date.parse(g.date_finished) : null
+        const startedTs = g?.date_started ? Date.parse(g.date_started) : null
+        nextMap.set(g.id, `${completion}|${finishedTs || ''}|${startedTs || ''}`)
+      }
+      historyStateRef.current = nextMap
+      historyReadyRef.current = true
+      return
+    }
+
+    for (const g of state.games) {
+      const completion = Number(g?.completion_time) || 0
+      const finishedTs = g?.date_finished ? Date.parse(g.date_finished) : null
+      const startedTs = g?.date_started ? Date.parse(g.date_started) : null
+      const signature = `${completion}|${finishedTs || ''}|${startedTs || ''}`
+      const prevSignature = prevMap.get(g.id) || ''
+      nextMap.set(g.id, signature)
+
+      if (!signature || signature === prevSignature) continue
+      if (!completion || !Number.isFinite(completion)) continue
+      const baseTs = Number.isFinite(finishedTs) ? finishedTs : (Number.isFinite(startedTs) ? startedTs : null)
+      if (!baseTs) continue
+      pending.push({
+        game: g,
+        entry: {
+          duration: Math.max(0, Math.round(completion * 3600)),
+          timestamp: baseTs
+        }
+      })
+    }
+
+    historyStateRef.current = nextMap
+    if (pending.length) {
+      for (const item of pending) {
+        sendLegacyHistory(item.game, item.entry)
+      }
+    }
+  }, [state.games, sendLegacyHistory])
+
+  useEffect(() => {
     (async () => {
       try {
         const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
         // Try new server-backed library first
-        const res = await fetch(`${base}/api/games?limit=1`).catch(() => null)
+        const res = await fetch(`${base}/api/games?limit=1`, { credentials: 'include' }).catch(() => null)
         if (res && res.ok) {
           const all = await listServerGames({ base, limit: 1000 })
           if (all?.length) {
@@ -109,6 +242,8 @@ export function GameProvider({ children }) {
                 completion_time: lg.completion_time || g.completion_time || null,
                 rating: lg.rating ?? g.rating ?? null,
                 notes: lg.notes ?? g.notes ?? '',
+                custom_tags: lg.custom_tags ?? g.custom_tags ?? [],
+                studio: lg.studio ?? g.studio ?? null,
               } : g
             })
             dispatch({ type: 'SET_GAMES', games: merged })
