@@ -2,9 +2,11 @@ import React from 'react'
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useGame } from './context/GameContext.jsx'
 import AchievementNotificationManager from './components/AchievementNotificationManager.jsx'
+import TimerDock from './components/TimerDock.jsx'
 import { useAdmin } from './context/AdminContext.jsx'
 import { fetchPublicSite } from './services/publicApi.js'
 import useSiteTheme from './hooks/useSiteTheme.js'
+import { isLight } from './utils/siteTheme.js'
 
 export default function App() {
   const { state } = useGame()
@@ -28,12 +30,15 @@ export default function App() {
 
   useSiteTheme(siteTheme)
 
+  const isThemeLight = isLight(siteTheme?.admin?.bg || '#080a09')
+  const navThemeClass = isLight(siteTheme?.admin?.panel || '#141816') ? 'navbar-light' : 'navbar-dark'
+
   return (
-    <div className="container-fluid min-vh-100 d-flex flex-column admin-shell">
-      <header className="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary px-3">
+    <div className={`container-fluid min-vh-100 d-flex flex-column admin-shell ${isThemeLight ? 'light-mode' : ''}`}>
+      <header className={`navbar navbar-expand-lg ${navThemeClass} px-3 shadow-sm`} style={{ background: 'var(--admin-panel)', borderBottom: '1px solid var(--admin-border)', backdropFilter: 'blur(10px)' }}>
         <Link className="navbar-brand fw-bold d-flex align-items-center gap-2" to={`${base}/dashboard`}>
           <i className="bi bi-controller"></i>
-          <span className="brand">RA Creator Studio</span>
+          <span className="brand" style={{ color: 'var(--brand)' }}>RA Creator Studio</span>
         </Link>
         <ul className="navbar-nav me-auto mb-2 mb-lg-0">
           <li className="nav-item">
@@ -59,6 +64,11 @@ export default function App() {
           <li className="nav-item">
             <Link className={`nav-link ${active('overlays')}`} to={`${base}/overlays`}>
               <i className="bi bi-broadcast me-1"></i>Overlays
+            </Link>
+          </li>
+          <li className="nav-item">
+            <Link className={`nav-link ${active('events')}`} to={`${base}/events`}>
+              <i className="bi bi-calendar-event me-1"></i>Events
             </Link>
           </li>
           <li className="nav-item">
@@ -110,6 +120,7 @@ export default function App() {
             <i className="bi bi-graph-up me-1"></i>
             <strong>{state.stats.percent}%</strong> Progress
           </span>
+          <TimerDock />
           <Link className="btn btn-sm btn-outline-secondary" to="/">Public</Link>
           {user && (
             <button className="btn btn-sm btn-outline-light" onClick={logout}>
@@ -121,7 +132,7 @@ export default function App() {
       <main className="flex-grow-1">
         <Outlet />
       </main>
-      <footer className="bg-black border-top border-secondary text-center p-2 small opacity-75">
+      <footer className={`text-center p-2 small opacity-75 mt-auto ${isLight(siteTheme?.admin?.panel2 || '#0c0e0d') ? 'text-dark' : 'text-light'}`} style={{ background: 'var(--admin-panel-2)', borderTop: '1px solid var(--admin-border)' }}>
         <i className="bi bi-controller me-2"></i>
         RA Creator Studio - RetroAchievements tracking and video planning
       </footer>

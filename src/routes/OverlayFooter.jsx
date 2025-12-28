@@ -6,6 +6,7 @@ import { buildOverlayUrl } from '../utils/overlayApi.js'
 import { buildCoverUrl } from '../utils/coverUrl.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import useOverlayEvent from '../hooks/useOverlayEvent.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 function usePoll(ms) {
@@ -58,6 +59,10 @@ export default function OverlayFooter() {
   const dateStr = formatDate(now, dateFmt)
   const isTight = barHeight <= 72
   const tick = usePoll(poll)
+  const overlayEvent = useOverlayEvent(15000)
+  const eventTitle = overlayEvent?.overlayTitle || overlayEvent?.name || ''
+  const eventSubtitle = overlayEvent?.overlaySubtitle || overlayEvent?.console || ''
+  const displayTitle = eventTitle || title
 
   // Apply clean overlay styling to document body
   useOverlayTheme(globalConfig.theme || 'bamboo', isClean, globalConfig)
@@ -348,9 +353,12 @@ export default function OverlayFooter() {
           {/* Event compact at far right */}
           <div className={`stats-compact-card footer-event ${isTight ? 'tight' : ''}`} style={{ ...(widthParam ? { width: widthParam } : {}) }}>
             <div className="d-flex align-items-center justify-content-between" style={{ gap: 8, marginBottom: 6 }}>
-              <div className="stats-compact-title">{title}</div>
+              <div className="stats-compact-title">{displayTitle}</div>
               <div className="percent-badge">{stats.percent}%</div>
             </div>
+            {eventSubtitle && (
+              <div className="stats-compact-subtitle">{eventSubtitle}</div>
+            )}
             <div className="progress-bar-bg stats-compact-bar">
               <div className="progress-bar-fill" style={{ width: `${stats.percent}%` }} />
             </div>

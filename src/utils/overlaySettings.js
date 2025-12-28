@@ -12,7 +12,8 @@ export const DEFAULT_OVERLAY_SETTINGS = {
     showTimer: true,
     brandColor: '#5ecf86',
     accentColor: '#66b7ff',
-    textColor: '#eefcf6'
+    textColor: '#eefcf6',
+    eventConsoles: [] // List of console names or IDs to filter for "Event" stats
   },
   main: {
     style: 'reference',
@@ -87,6 +88,33 @@ export const DEFAULT_OVERLAY_SETTINGS = {
     rotateMs: 8000,
     position: 'top-left',
     horizontal: false
+  },
+  full: {
+    layout: 'balanced',
+    leftWidth: 360,
+    rightWidth: 360,
+    padding: 32,
+    columnGap: 24,
+    moduleGap: 16,
+    bottomHeight: 0,
+    showGuides: true,
+    showGameFrame: true,
+    showCameraFrame: true,
+    gameInsetX: 28,
+    gameInsetY: 20,
+    cameraPosition: 'bottom-right',
+    cameraDock: false,
+    cameraWidth: 360,
+    cameraHeight: 200,
+    cameraOffsetX: 32,
+    cameraOffsetY: 32,
+    achievementCycleMs: 8000,
+    modules: {
+      current: { enabled: true, position: 'left', order: 1 },
+      stats: { enabled: true, position: 'left', order: 2 },
+      timers: { enabled: true, position: 'right', order: 1 },
+      achievements: { enabled: true, position: 'right', order: 2, count: 4 }
+    }
   }
 }
 
@@ -96,6 +124,16 @@ function mergeSection(base, incoming) {
 
 export function mergeOverlaySettings(incoming) {
   const data = incoming || {}
+  const fullBase = DEFAULT_OVERLAY_SETTINGS.full || {}
+  const fullIncoming = data.full || {}
+  const moduleBase = fullBase.modules || {}
+  const moduleIncoming = fullIncoming.modules || {}
+  const mergedModules = {
+    current: mergeSection(moduleBase.current, moduleIncoming.current),
+    stats: mergeSection(moduleBase.stats, moduleIncoming.stats),
+    timers: mergeSection(moduleBase.timers, moduleIncoming.timers),
+    achievements: mergeSection(moduleBase.achievements, moduleIncoming.achievements)
+  }
   return {
     version: 1,
     global: mergeSection(DEFAULT_OVERLAY_SETTINGS.global, data.global),
@@ -105,7 +143,11 @@ export function mergeOverlaySettings(incoming) {
     footer: mergeSection(DEFAULT_OVERLAY_SETTINGS.footer, data.footer),
     achievements: mergeSection(DEFAULT_OVERLAY_SETTINGS.achievements, data.achievements),
     wheel: mergeSection(DEFAULT_OVERLAY_SETTINGS.wheel, data.wheel),
-    badgeCarousel: mergeSection(DEFAULT_OVERLAY_SETTINGS.badgeCarousel, data.badgeCarousel)
+    badgeCarousel: mergeSection(DEFAULT_OVERLAY_SETTINGS.badgeCarousel, data.badgeCarousel),
+    full: {
+      ...mergeSection(fullBase, fullIncoming),
+      modules: mergedModules
+    }
   }
 }
 
@@ -131,4 +173,10 @@ export function getNumberParam(params, key, fallback, { min = null, max = null }
   if (min != null && num < min) return min
   if (max != null && num > max) return max
   return num
+}
+
+export function clampNumber(value, min, max, fallback) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return fallback
+  return Math.max(min, Math.min(max, num))
 }

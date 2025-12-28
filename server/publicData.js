@@ -88,8 +88,9 @@ function mapPublicRow(row) {
     publicStatus: row.public_status,
     publicRating: row.public_rating,
     publicReviewTitle: row.public_review_title,
-    publicReview: row.public_review,
-    publicVideoUrl: row.public_video_url,
+    publicReview: row.public_review || '',
+    publicVideoUrl: row.public_video_url || '',
+    achievements: row.achievements || [],
     game: row.game,
     updatedAt: row.updated_at
   }
@@ -125,10 +126,14 @@ export async function ensurePublicSchema() {
       public_review_title text,
       public_review text,
       public_video_url text,
+      achievements jsonb,
       game jsonb,
       updated_at timestamptz not null default now()
     )
   `)
+  await query(`alter table public_games add column if not exists achievements jsonb`)
+  await query(`alter table public_games add column if not exists public_review text`)
+  await query(`alter table public_games add column if not exists public_video_url text`)
   await query(`
     create table if not exists public_settings (
       id int primary key default 1,
@@ -277,6 +282,9 @@ function normalizeSiteSettings(site, current = DEFAULT_SITE) {
     showAbout: normalizeBoolean(next.showAbout, true),
     showLinks: normalizeBoolean(next.showLinks, true),
     featuredGameId: cleanText(next.featuredGameId, 120),
+    heroImage: cleanText(next.heroImage, 240),
+    characterImage: cleanText(next.characterImage, 240),
+    logoImage: cleanText(next.logoImage, 240),
     links: normalizeLinks(next.links),
     theme
   }
@@ -356,18 +364,20 @@ export async function updatePublicMetadata(gameId, updates) {
     public_review_title: updates.publicReviewTitle ?? currentData.publicReviewTitle ?? currentData.public_review_title ?? '',
     public_review: updates.publicReview ?? currentData.publicReview ?? currentData.public_review ?? '',
     public_video_url: updates.publicVideoUrl ?? currentData.publicVideoUrl ?? currentData.public_video_url ?? '',
+    achievements: updates.achievements ?? currentData.achievements ?? [],
     game: updates.game ?? currentData.game ?? null
   }
 
   await query(
-    `insert into public_games (game_id, public_status, public_rating, public_review_title, public_review, public_video_url, game, updated_at)
-     values ($1, $2, $3, $4, $5, $6, $7, now())
+    `insert into public_games (game_id, public_status, public_rating, public_review_title, public_review, public_video_url, achievements, game, updated_at)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, now())
      on conflict (game_id)
      do update set public_status = excluded.public_status,
                    public_rating = excluded.public_rating,
                    public_review_title = excluded.public_review_title,
                    public_review = excluded.public_review,
                    public_video_url = excluded.public_video_url,
+                   achievements = excluded.achievements,
                    game = excluded.game,
                    updated_at = now()`,
     [
@@ -377,6 +387,7 @@ export async function updatePublicMetadata(gameId, updates) {
       next.public_review_title,
       next.public_review,
       next.public_video_url,
+      JSON.stringify(next.achievements),
       next.game
     ]
   )

@@ -11,6 +11,7 @@ import OverlayWheel from './routes/OverlayWheel.jsx'
 import OverlayAchievements from './routes/OverlayAchievements.jsx'
 import OverlayFooter from './routes/OverlayFooter.jsx'
 import OverlayBadgeCarousel from './routes/OverlayBadgeCarousel.jsx'
+import OverlayFull from './routes/OverlayFull.jsx'
 import Settings from './routes/Settings.jsx'
 import ImportExport from './routes/ImportExport.jsx'
 import Current from './routes/Current.jsx'
@@ -21,6 +22,7 @@ import PublicSite from './routes/PublicSite.jsx'
 import Dashboard from './routes/Dashboard.jsx'
 import Pulse from './routes/Pulse.jsx'
 import Overlays from './routes/Overlays.jsx'
+import Events from './routes/Events.jsx'
 import Public from './routes/Public.jsx'
 import PublicGame from './routes/PublicGame.jsx'
 import { GameProvider } from './context/GameContext.jsx'
@@ -60,6 +62,7 @@ createRoot(document.getElementById('root')).render(
           <Route path='current' element={<Current />} />
           <Route path='studio' element={<Studio />} />
           <Route path='overlays' element={<Overlays />} />
+          <Route path='events' element={<Events />} />
           <Route path='suggestions' element={<Suggestions />} />
           <Route path='public-site' element={<PublicSite />} />
           <Route path='library' element={<Library />} />
@@ -77,6 +80,7 @@ createRoot(document.getElementById('root')).render(
         <Route path='/overlay/achievements' element={<AchievementProvider><OverlayAchievements /></AchievementProvider>} />
         <Route path='/overlay/footer' element={<AchievementProvider><OverlayFooter /></AchievementProvider>} />
         <Route path='/overlay/badge-carousel' element={<AchievementProvider><OverlayBadgeCarousel /></AchievementProvider>} />
+        <Route path='/overlay/full' element={<AchievementProvider><OverlayFull /></AchievementProvider>} />
 
         <Route path='*' element={<div className='p-4'>Not found</div>} />
       </Routes>

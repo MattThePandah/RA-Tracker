@@ -7,6 +7,7 @@ import { buildCoverUrl } from '../utils/coverUrl.js'
 import { adminFetch } from '../utils/adminFetch.js'
 import { renderMarkdown } from '../utils/markdown.js'
 import { extractGameIdFromInternalId } from '../services/retroachievements.js'
+import { useAchievements } from '../context/AchievementContext.jsx'
 
 const toTimeParts = (hoursValue) => {
   const hoursNum = Number(hoursValue || 0)
@@ -38,6 +39,7 @@ const normalizeDuration = (hoursValue, minutesValue, secondsValue) => {
 
 export default function GameDetailModal({ game, onClose }) {
   const { dispatch } = useGame()
+  const { state: achState, loadGameAchievements } = useAchievements()
   const fileInputRef = useRef(null)
   const editorRef = useRef(null)
   const lastEditorMarkdown = useRef('')
@@ -58,6 +60,7 @@ export default function GameDetailModal({ game, onClose }) {
   const [publicLoading, setPublicLoading] = useState(false)
   const [publicSaved, setPublicSaved] = useState(false)
   const [publicError, setPublicError] = useState('')
+  const [showAchPicker, setShowAchPicker] = useState(false)
   const [privateSaved, setPrivateSaved] = useState(false)
   const [privateSaving, setPrivateSaving] = useState(false)
   const [privateDirty, setPrivateDirty] = useState(false)
@@ -190,6 +193,12 @@ export default function GameDetailModal({ game, onClose }) {
     loadPublic()
     return () => { mounted = false }
   }, [game?.id])
+
+  useEffect(() => {
+    if (activeTab === 'public' && game?.id) {
+      loadGameAchievements(game.id)
+    }
+  }, [activeTab, game?.id])
 
   useEffect(() => {
     let cancelled = false
@@ -537,12 +546,14 @@ export default function GameDetailModal({ game, onClose }) {
     setPublicSaved(false)
     setPublicError('')
     try {
+      console.log('Saving public info. Achievements in state:', achState.currentGameAchievements?.length)
       const payload = {
         publicStatus: publicForm.publicStatus,
         publicRating: publicForm.publicRating === '' ? null : Number(publicForm.publicRating),
         publicReviewTitle: publicForm.publicReviewTitle,
         publicReview: publicForm.publicReview,
         publicVideoUrl: publicForm.publicVideoUrl,
+        achievements: achState.currentGameAchievements || [],
         game: {
           id: game.id,
           title: game.title,
@@ -868,6 +879,7 @@ export default function GameDetailModal({ game, onClose }) {
                           <button type="button" onClick={() => applyEditorCommand('insertUnorderedList')}>Bullets</button>
                           <button type="button" onClick={() => applyEditorCommand('insertOrderedList')}>Numbered</button>
                           <button type="button" onClick={insertLink}>Link</button>
+                          <button type="button" onClick={() => setShowAchPicker(true)} style={{ background: 'var(--brand)', color: '#000', fontWeight: 'bold' }}>Import Achievement</button>
                           <button type="button" onClick={() => applyEditorCommand('removeFormat')}>Clear</button>
                         </div>
                         <div
@@ -893,6 +905,45 @@ export default function GameDetailModal({ game, onClose }) {
           </div>
         </div>
       </div>
+
+      {showAchPicker && (
+        <div className="modal-backdrop" style={{ zIndex: 1100 }} onClick={() => setShowAchPicker(false)}>
+          <div className="modal-dialog modal-dialog-centered modal-lg" onClick={e => e.stopPropagation()}>
+            <div className="modal-content bg-panel border-secondary">
+              <div className="modal-header border-secondary">
+                <h5 className="modal-title">Select Achievement to Import</h5>
+                <button type="button" className="btn-close btn-close-white" onClick={() => setShowAchPicker(false)}></button>
+              </div>
+              <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                <div className="row g-3">
+                  {(achState.currentGameAchievements || []).map(ach => (
+                    <div key={ach.id} className="col-md-6">
+                      <div 
+                        className="d-flex align-items-center gap-3 p-3 rounded border border-secondary border-opacity-25 hover-bg-white-05 cursor-pointer"
+                        onClick={() => {
+                          const tag = `[[ach:${ach.id}]]`
+                          if (publicReviewMode === 'markdown') {
+                            setPublicForm(prev => ({ ...prev, publicReview: (prev.publicReview || '') + '\n' + tag + '\n' }))
+                          } else {
+                            applyEditorCommand('insertText', tag)
+                          }
+                          setShowAchPicker(false)
+                        }}
+                      >
+                        <img src={ach.badge_url || `https://media.retroachievements.org/Badge/${ach.badgeName}.png`} alt="" style={{ width: '40px', height: '40px', borderRadius: '4px' }} />
+                        <div className="min-w-0">
+                          <div className="fw-bold small truncate-1">{ach.title}</div>
+                          <div className="text-muted small opacity-75">{ach.points} pts</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { buildOverlayUrl } from '../utils/overlayApi.js'
 
 const RA_BASE = 'https://retroachievements.org/API'
 
@@ -100,7 +101,7 @@ export async function getGameInfoAndUserProgress({ apiKey, username, gameId, inc
   
   // Use local server proxy to avoid CORS issues and manage rate limiting
   const proxyBase = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-  const url = `${proxyBase}/api/retroachievements/game/${gameId}`
+  const url = buildOverlayUrl(`/api/retroachievements/game/${gameId}`, proxyBase)
   const params = new URLSearchParams()
   params.set('username', username)
   params.set('apiKey', apiKey)
@@ -115,7 +116,11 @@ export async function getGameInfoAndUserProgress({ apiKey, username, gameId, inc
       withCredentials: true
     }
     
-    const { data } = await axios.get(`${url}?${params.toString()}`, config)
+    const requestUrl = new URL(url)
+    for (const [key, value] of params.entries()) {
+      requestUrl.searchParams.set(key, value)
+    }
+    const { data } = await axios.get(requestUrl.toString(), config)
     
     if (!data || typeof data !== 'object') {
       throw new Error('Invalid response format from RetroAchievements API')

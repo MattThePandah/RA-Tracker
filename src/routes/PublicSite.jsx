@@ -27,6 +27,9 @@ const DEFAULT_SITE = {
   showAbout: true,
   showLinks: true,
   featuredGameId: '',
+  heroImage: '',
+  characterImage: '',
+  logoImage: '',
   links: [],
   theme: cloneSiteTheme()
 }
@@ -37,7 +40,8 @@ export default function PublicSite() {
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState('')
   const [saved, setSaved] = React.useState(false)
-  const [presetId, setPresetId] = React.useState('custom')
+  const [adminPresetId, setAdminPresetId] = React.useState('custom')
+  const [publicPresetId, setPublicPresetId] = React.useState('custom')
 
   const load = async () => {
     setLoading(true)
@@ -49,7 +53,8 @@ export default function PublicSite() {
       ])
       const nextSite = { ...DEFAULT_SITE, ...(settingsData.site || {}) }
       setSite(nextSite)
-      setPresetId(getSiteThemePresetId(nextSite.theme))
+      setAdminPresetId(getSiteThemePresetId({ admin: nextSite.theme?.admin }))
+      setPublicPresetId(getSiteThemePresetId({ public: nextSite.theme?.public }))
       setGames(gamesData.games || [])
     } catch (err) {
       setError('Failed to load public site settings.')
@@ -74,7 +79,8 @@ export default function PublicSite() {
       theme[section] = nextSection
       return { ...prev, theme }
     })
-    setPresetId('custom')
+    if (section === 'admin') setAdminPresetId('custom')
+    if (section === 'public') setPublicPresetId('custom')
   }
 
   const updateLink = (index, field, value) => {
@@ -114,12 +120,31 @@ export default function PublicSite() {
   const adminTheme = site.theme?.admin || {}
   const publicTheme = site.theme?.public || {}
   const presets = SITE_THEME_PRESETS
-  const applyPreset = () => {
-    const preset = getSiteThemePreset(presetId)
+
+  const applyAdminPreset = (pid) => {
+    setAdminPresetId(pid)
+    const preset = getSiteThemePreset(pid)
     if (!preset) return
-    const nextTheme = cloneSiteTheme(preset.theme)
-    setSite(prev => ({ ...prev, theme: nextTheme }))
-    applySiteTheme(nextTheme)
+    setSite(prev => ({
+      ...prev,
+      theme: {
+        ...(prev.theme || {}),
+        admin: { ...(preset.theme.admin || {}) }
+      }
+    }))
+  }
+
+  const applyPublicPreset = (pid) => {
+    setPublicPresetId(pid)
+    const preset = getSiteThemePreset(pid)
+    if (!preset) return
+    setSite(prev => ({
+      ...prev,
+      theme: {
+        ...(prev.theme || {}),
+        public: { ...(preset.theme.public || {}) }
+      }
+    }))
   }
 
   return (
@@ -149,42 +174,44 @@ export default function PublicSite() {
               <label className="form-label">Tagline</label>
               <input className="form-control" value={site.tagline} onChange={e => updateField('tagline', e.target.value)} />
             </div>
+            <div className="mb-2">
+              <label className="form-label">Character/Avatar Image</label>
+              <input className="form-control" value={site.characterImage} onChange={e => updateField('characterImage', e.target.value)} placeholder="e.g. mascot.png" />
+            </div>
+            <div className="mb-2">
+              <label className="form-label">Navbar Logo Image</label>
+              <input className="form-control" value={site.logoImage} onChange={e => updateField('logoImage', e.target.value)} placeholder="e.g. logo.png" />
+            </div>
           </div>
         </div>
 
         <div className="col-12">
           <div className="card bg-panel p-3">
-            <h5 className="h6 mb-3">Theme</h5>
-            <div className="row g-2 align-items-end mb-3">
-              <div className="col-sm-6 col-lg-4">
-                <label className="form-label">Preset</label>
-                <select
-                  className="form-select"
-                  value={presetId}
-                  onChange={e => setPresetId(e.target.value)}
-                >
-                  <option value="custom">Custom / Current</option>
-                  {presets.map(preset => (
-                    <option key={preset.id} value={preset.id}>{preset.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-sm-6 col-lg-3">
-                <button className="btn btn-outline-primary w-100" type="button" onClick={applyPreset} disabled={presetId === 'custom'}>
-                  Apply Preset
-                </button>
-              </div>
-            </div>
+            <h5 className="h6 mb-3">Theme Configuration</h5>
             <div className="row g-3">
               <div className="col-12 col-lg-6">
-                <div className="fw-semibold mb-2">Admin UI</div>
+                <div className="fw-semibold mb-2">Admin UI Theme</div>
+                <div className="row g-2 align-items-end mb-3">
+                  <div className="col">
+                    <select
+                      className="form-select"
+                      value={adminPresetId}
+                      onChange={e => applyAdminPreset(e.target.value)}
+                    >
+                      <option value="custom">Custom / Current</option>
+                      {presets.map(preset => (
+                        <option key={preset.id} value={preset.id}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 <div className="row g-2">
                   <div className="col-sm-6">
-                    <label className="form-label">Brand</label>
+                    <label className="form-label">Brand (Green)</label>
                     <input className="form-control" value={adminTheme.brand || ''} onChange={e => updateTheme('admin', 'brand', e.target.value)} />
                   </div>
                   <div className="col-sm-6">
-                    <label className="form-label">Accent</label>
+                    <label className="form-label">Accent (Blue)</label>
                     <input className="form-control" value={adminTheme.accent || ''} onChange={e => updateTheme('admin', 'accent', e.target.value)} />
                   </div>
                   <div className="col-sm-6">
@@ -215,7 +242,21 @@ export default function PublicSite() {
               </div>
 
               <div className="col-12 col-lg-6">
-                <div className="fw-semibold mb-2">Public Site</div>
+                <div className="fw-semibold mb-2">Public Site Theme</div>
+                <div className="row g-2 align-items-end mb-3">
+                  <div className="col">
+                    <select
+                      className="form-select"
+                      value={publicPresetId}
+                      onChange={e => applyPublicPreset(e.target.value)}
+                    >
+                      <option value="custom">Custom / Current</option>
+                      {presets.map(preset => (
+                        <option key={preset.id} value={preset.id}>{preset.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 <div className="row g-2">
                   <div className="col-sm-6">
                     <label className="form-label">Background</label>
@@ -238,11 +279,11 @@ export default function PublicSite() {
                     <input className="form-control" value={publicTheme.muted || ''} onChange={e => updateTheme('public', 'muted', e.target.value)} />
                   </div>
                   <div className="col-sm-6">
-                    <label className="form-label">Primary</label>
+                    <label className="form-label">Primary (Green)</label>
                     <input className="form-control" value={publicTheme.primary || ''} onChange={e => updateTheme('public', 'primary', e.target.value)} />
                   </div>
                   <div className="col-sm-6">
-                    <label className="form-label">Accent</label>
+                    <label className="form-label">Accent (Blue)</label>
                     <input className="form-control" value={publicTheme.accent || ''} onChange={e => updateTheme('public', 'accent', e.target.value)} />
                   </div>
                   <div className="col-sm-6">
@@ -281,7 +322,7 @@ export default function PublicSite() {
               </div>
             </div>
             <div className="text-secondary small mt-2">
-              Theme values support hex or rgba strings. Save to apply across admin and public pages.
+              Theme values support hex or rgba strings. Admin and Public themes are now configured independently.
             </div>
           </div>
         </div>
@@ -296,6 +337,11 @@ export default function PublicSite() {
             <div className="mb-2">
               <label className="form-label">Subheadline</label>
               <textarea className="form-control" rows="2" value={site.heroSubtitle} onChange={e => updateField('heroSubtitle', e.target.value)} />
+            </div>
+            <div className="mb-3">
+              <label className="form-label">Hero Background Image</label>
+              <input className="form-control" value={site.heroImage} onChange={e => updateField('heroImage', e.target.value)} placeholder="e.g. background.png (from local-assets)" />
+              <small className="text-secondary">Files from the local assets folder are available via <code>/local-assets/</code></small>
             </div>
             <div className="row g-2">
               <div className="col">

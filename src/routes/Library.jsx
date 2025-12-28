@@ -45,8 +45,21 @@ function mergeTags(existing, incoming) {
   return next
 }
 
+function formatCompletionTime(hoursValue) {
+  const hoursNum = Number(hoursValue || 0)
+  if (!Number.isFinite(hoursNum) || hoursNum <= 0) return ''
+  const totalSeconds = Math.max(0, Math.round(hoursNum * 3600))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}h ${minutes.toString().padStart(2, '0')}m`
+  if (minutes > 0) return `${minutes}m ${seconds.toString().padStart(2, '0')}s`
+  return `${seconds}s`
+}
+
 function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, selectionMode, selected, onSelectToggle }) {
   const [url, setUrl] = React.useState(null)
+  const completionLabel = formatCompletionTime(game.completion_time)
   React.useEffect(() => {
     let mounted = true
     ;(async () => {
@@ -132,8 +145,8 @@ function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, se
           {game.is_bonus && <span className="badge badge-soft">Bonus</span>}
           {game.rating && <span className="badge bg-info">★{game.rating}</span>}
         </div>
-        {game.completion_time && (
-          <div className="small text-secondary mt-1">{game.completion_time}h completion</div>
+        {completionLabel && (
+          <div className="small text-secondary mt-1">Completion: {completionLabel}</div>
         )}
       </div>
       <div className="card-footer d-flex gap-1 p-2">

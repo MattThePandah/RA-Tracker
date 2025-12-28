@@ -1,13 +1,13 @@
 const DEFAULT_SITE_THEME = {
   admin: {
-    brand: '#5ecf86',
-    accent: '#ffffff',
+    brand: '#3FE19E',
+    accent: '#28A1FE',
     bg: '#080a09',
-    panel: '#111413',
+    panel: '#141816',
     panel2: '#0c0e0d',
     text: '#f0fdf4',
     muted: 'rgba(240, 253, 244, 0.6)',
-    border: 'rgba(94, 207, 134, 0.15)'
+    border: 'rgba(63, 225, 158, 0.15)'
   },
   public: {
     bg: '#060807',
@@ -15,11 +15,11 @@ const DEFAULT_SITE_THEME = {
     bg2: '#0b120d',
     text: '#f0fdf4',
     muted: 'rgba(240, 253, 244, 0.65)',
-    primary: '#5ecf86',
-    accent: '#66b7ff',
+    primary: '#3FE19E',
+    accent: '#28A1FE',
     lime: '#9dff6d',
     card: 'rgba(12, 16, 14, 0.88)',
-    border: 'rgba(94, 207, 134, 0.18)',
+    border: 'rgba(63, 225, 158, 0.18)',
     nav: 'rgba(6, 8, 7, 0.85)',
     shadow: '0 24px 50px rgba(0, 0, 0, 0.55)',
     soft: 'rgba(255, 255, 255, 0.04)',
@@ -31,8 +31,41 @@ const DEFAULT_SITE_THEME = {
 const SITE_THEME_PRESETS = [
   {
     id: 'bamboo',
-    label: 'Bamboo (Default)',
+    label: 'Bamboo Dark (Panda)',
     theme: DEFAULT_SITE_THEME
+  },
+  {
+    id: 'bamboo-light',
+    label: 'Bamboo Light (Panda)',
+    theme: {
+      admin: {
+        brand: '#3FE19E',
+        accent: '#28A1FE',
+        bg: '#f0f4f2',
+        panel: '#ffffff',
+        panel2: '#e6ede9',
+        text: '#1a1c1b',
+        muted: 'rgba(26, 28, 27, 0.6)',
+        border: 'rgba(63, 225, 158, 0.25)'
+      },
+      public: {
+        bg: '#fdfdfd',
+        bgDark: '#f4f7f5',
+        bg2: '#d9e4df',
+        text: '#1a1c1b',
+        muted: 'rgba(26, 28, 27, 0.75)',
+        primary: '#3FE19E',
+        accent: '#28A1FE',
+        lime: '#34d399',
+        card: 'rgba(255, 255, 255, 0.96)',
+        border: 'rgba(63, 225, 158, 0.25)',
+        nav: 'rgba(255, 255, 255, 0.92)',
+        shadow: '0 20px 40px rgba(0, 0, 0, 0.08)',
+        soft: 'rgba(0, 0, 0, 0.05)',
+        font: 'Manrope, system-ui, sans-serif',
+        radius: '16px'
+      }
+    }
   },
   {
     id: 'neon-arcade',
@@ -216,12 +249,21 @@ export function normalizeSiteTheme(raw, base = DEFAULT_SITE_THEME) {
 
 export function getSiteThemePresetId(theme) {
   const normalized = normalizeSiteTheme(theme, DEFAULT_SITE_THEME)
-  const normalizedKey = JSON.stringify(normalized)
+  const isCheckAdmin = !!theme?.admin
+  const isCheckPublic = !!theme?.public
+
   for (const preset of SITE_THEME_PRESETS) {
     const presetNormalized = normalizeSiteTheme(preset.theme, DEFAULT_SITE_THEME)
-    if (JSON.stringify(presetNormalized) === normalizedKey) {
-      return preset.id
+    
+    let match = true
+    if (isCheckAdmin) {
+      if (JSON.stringify(presetNormalized.admin) !== JSON.stringify(normalized.admin)) match = false
     }
+    if (isCheckPublic) {
+      if (JSON.stringify(presetNormalized.public) !== JSON.stringify(normalized.public)) match = false
+    }
+    
+    if (match) return preset.id
   }
   return 'custom'
 }
@@ -238,9 +280,39 @@ export function cloneSiteTheme(theme = DEFAULT_SITE_THEME) {
   }
 }
 
+export function isLight(color) {
+  if (!color) return false
+  const s = String(color).trim().toLowerCase()
+  
+  let r = 0, g = 0, b = 0
+
+  if (s.startsWith('#')) {
+    const raw = s.slice(1)
+    const full = raw.length === 3 ? raw.split('').map(ch => ch + ch).join('') : raw
+    const num = parseInt(full, 16)
+    r = (num >> 16) & 255
+    g = (num >> 8) & 255
+    b = num & 255
+  } else if (s.startsWith('rgb')) {
+    const match = s.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+    if (match) {
+      r = parseInt(match[1])
+      g = parseInt(match[2])
+      b = parseInt(match[3])
+    }
+  } else {
+    return false
+  }
+
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000
+  return brightness > 140 // Adjusted threshold for better light mode detection
+}
+
 export function applySiteTheme(rawTheme) {
   if (typeof document === 'undefined') return
   const theme = normalizeSiteTheme(rawTheme, DEFAULT_SITE_THEME)
+  
+  // Apply Admin Theme
   const adminVars = {
     '--brand': theme.admin.brand,
     '--accent': theme.admin.accent,
@@ -261,8 +333,8 @@ export function applySiteTheme(rawTheme) {
     if (accentRgb) adminTarget.style.setProperty('--accent-rgb', accentRgb)
   }
 
-  const root = document.documentElement
-  applyVars(root, {
+  // Apply Public Theme (to root or specific container)
+  const publicVars = {
     '--pub-bg': theme.public.bg,
     '--pub-bg-dark': theme.public.bgDark,
     '--pub-bg-2': theme.public.bg2,
@@ -277,41 +349,33 @@ export function applySiteTheme(rawTheme) {
     '--pub-font': theme.public.font,
     '--pub-radius': theme.public.radius,
     '--pub-shadow': theme.public.shadow,
-    '--pub-soft': theme.public.soft
-  })
-
-  const publicVars = {
+    '--pub-soft': theme.public.soft,
+    // Legacy mapping support
     '--public-ink': theme.public.text,
-    '--public-muted': theme.public.muted,
     '--public-bg': theme.public.bg,
-    '--public-bg-2': theme.public.bg2,
-    '--public-accent': theme.public.accent,
-    '--public-cyan': theme.public.primary,
-    '--public-lime': theme.public.lime,
-    '--public-card': theme.public.card,
-    '--public-border': theme.public.border,
-    '--public-nav': theme.public.nav,
-    '--public-shadow': theme.public.shadow,
-    '--public-soft': theme.public.soft,
-    '--public-font': theme.public.font,
-    '--public-radius': theme.public.radius,
-    '--public-teal': theme.public.primary,
-    '--public-amber': theme.public.accent,
-    '--public-cream': theme.public.card
+    '--public-accent': theme.public.accent
   }
 
   const publicPrimaryRgb = hexToRgb(theme.public.primary)
   const publicAccentRgb = hexToRgb(theme.public.accent)
-  const publicLimeRgb = hexToRgb(theme.public.lime)
-  if (publicPrimaryRgb) publicVars['--public-primary-rgb'] = publicPrimaryRgb
-  if (publicAccentRgb) publicVars['--public-accent-rgb'] = publicAccentRgb
-  if (publicLimeRgb) publicVars['--public-lime-rgb'] = publicLimeRgb
+  const publicBgRgb = hexToRgb(theme.public.bg)
+  
   if (publicPrimaryRgb) publicVars['--pub-primary-rgb'] = publicPrimaryRgb
   if (publicAccentRgb) publicVars['--pub-accent-rgb'] = publicAccentRgb
-  if (publicLimeRgb) publicVars['--pub-lime-rgb'] = publicLimeRgb
+  if (publicBgRgb) publicVars['--pub-bg-rgb'] = publicBgRgb
 
-  applyVars(root, publicVars)
-  applyVars(document.querySelector('.public-shell'), publicVars)
+  const root = document.documentElement
+  const pubTarget = document.querySelector('.pub-shell')
+  
+  // Apply to root for globals like font
+  root.style.setProperty('--pub-font', theme.public.font)
+  
+  if (pubTarget) {
+    applyVars(pubTarget, publicVars)
+  } else {
+    // If not on public page, still apply to root so preview works
+    applyVars(root, publicVars)
+  }
 }
 
 export { DEFAULT_SITE_THEME, SITE_THEME_PRESETS }

@@ -8,6 +8,9 @@ export function getOverlayToken() {
     try {
       const params = new URLSearchParams(window.location.search)
       token = params.get('token') || params.get('overlayToken') || token
+      if (!token) {
+        token = localStorage.getItem('ra.overlayToken') || ''
+      }
     } catch {}
   }
   cachedToken = token

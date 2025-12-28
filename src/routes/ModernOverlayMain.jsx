@@ -7,6 +7,7 @@ import { buildCoverUrl } from '../utils/coverUrl.js'
 import { buildOverlayUrl } from '../utils/overlayApi.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import useOverlayEvent from '../hooks/useOverlayEvent.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 function usePolling(callback, interval) {
@@ -169,6 +170,7 @@ export default function ModernOverlayMain() {
     totalTime: '000:00:00'
   })
   const [stats, setStats] = useState({ total: 0, completed: 0, percent: 0 })
+  const overlayEvent = useOverlayEvent(15000)
   const storageUpdate = useStorageSync()
 
   // Apply overlay styling
@@ -304,6 +306,8 @@ export default function ModernOverlayMain() {
   const earnedCount = achievements.filter(a => a.isEarned).length
   const totalAchievements = achievements.length
   const achievementPercent = totalAchievements > 0 ? Math.round((earnedCount / totalAchievements) * 100) : 0
+  const eventTitle = overlayEvent?.overlayTitle || overlayEvent?.name || ''
+  const eventSubtitle = overlayEvent?.overlaySubtitle || overlayEvent?.console || ''
 
   return (
     <>
@@ -311,6 +315,12 @@ export default function ModernOverlayMain() {
         {config.enableParticles && <div className="particle-background"></div>}
         
         <div className="modern-overlay-content">
+          {eventTitle && (
+            <div className="modern-event-pill">
+              <span className="modern-event-title">{eventTitle}</span>
+              {eventSubtitle && <span className="modern-event-sub"> - {eventSubtitle}</span>}
+            </div>
+          )}
           {/* Main Game Card */}
           <div className="modern-game-card">
             <div className="game-card-glow"></div>

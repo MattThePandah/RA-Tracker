@@ -8,6 +8,7 @@ import { buildCoverUrl } from '../utils/coverUrl.js'
 import { buildOverlayUrl } from '../utils/overlayApi.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
+import useOverlayEvent from '../hooks/useOverlayEvent.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 // Enhanced cover loading that handles custom covers, local hashed covers, and proxies
@@ -157,6 +158,9 @@ export default function OverlayMain() {
   const timerPx = getNumberParam(params, 'timerpx', mainConfig.timerPx ?? 0, { min: 0, max: 140 })
   const tick = usePoll(poll)
   const storageUpdate = useStorageListener()
+  const overlayEvent = useOverlayEvent(15000)
+  const eventTitle = overlayEvent?.overlayTitle || overlayEvent?.name || ''
+  const eventSubtitle = overlayEvent?.overlaySubtitle || overlayEvent?.console || ''
 
   // Apply clean overlay styling to document body
   useOverlayTheme(theme, isClean, globalConfig)
@@ -448,6 +452,12 @@ export default function OverlayMain() {
               
                 <div className="ref-bottom">
                   <div className="event-left">
+                    {eventTitle && (
+                      <div className="event-pill">
+                        <span className="event-pill-title">{eventTitle}</span>
+                        {eventSubtitle && <span className="event-pill-sub"> - {eventSubtitle}</span>}
+                      </div>
+                    )}
                     <span className="event-game">Game {gameNumber}{showTotal && stats.total ? ` of ${stats.total}` : ''}</span>
                   </div>
                   {showTimer && (

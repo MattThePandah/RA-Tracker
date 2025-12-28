@@ -38,6 +38,23 @@ import {
   getOverlaySettings,
   updateOverlaySettings
 } from './overlayData.js'
+import {
+  ensureEventSchema,
+  listEvents,
+  getActiveEvent,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  setActiveEvent
+} from './eventData.js'
+import {
+  ensureTimerSchema,
+  loadTimerStateFromDb,
+  saveTimerStateToDb,
+  loadTimerStateFromFile,
+  saveTimerStateToFile,
+  loadLegacyTimerStateFromDb
+} from './timerData.js'
 import { getPool, isPgEnabled } from './db.js'
 
 const app = express()
@@ -476,6 +493,16 @@ app.post('/overlay/state', requireAdmin, requireCsrf, requireOrigin, (req, res) 
 app.get('/overlay/current', requireOverlayAuth, (req, res) => {
   res.json({ current: overlayState.current, updatedAt: overlayState.updatedAt })
 })
+app.get('/overlay/event', requireOverlayAuth, async (req, res) => {
+  try {
+    if (!activeEvent) {
+      await refreshActiveEventFromStore()
+    }
+    res.json({ event: activeEvent })
+  } catch (error) {
+    res.status(500).json({ error: 'failed_to_load_event' })
+  }
+})
 app.post('/overlay/current', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
   const g = req.body?.current
   if (g === null) {
@@ -503,6 +530,13 @@ app.post('/overlay/current', requireAdmin, requireCsrf, requireOrigin, (req, res
 
 // Serve cached covers statically
 app.use('/covers', express.static(COVERS_DIR))
+
+// Serve local assets from user's custom directory
+const USER_ASSETS_DIR = 'C:\\Users\\Matt\\Documents\\ComfyUI\\output\\Using'
+if (fs.existsSync(USER_ASSETS_DIR)) {
+  console.log(`[Startup] Serving local assets from ${USER_ASSETS_DIR}`)
+  app.use('/local-assets', express.static(USER_ASSETS_DIR))
+}
 
 // Local-first cover endpoint. If cached file exists, serve it. Otherwise fetch, cache, and serve.
 app.get('/cover', async (req, res) => {
@@ -626,7 +660,40 @@ app.post('/overlay/wheel-state', requireAdmin, requireCsrf, requireOrigin, (req,
 
 // Lightweight overlay stats (counts only) to avoid big payloads
 let overlayStats = loadJSON(STATS_FILE, { total: 0, completed: 0, percent: 0, updatedAt: 0 })
-app.get('/overlay/stats', requireOverlayAuth, (req, res) => {
+app.get('/overlay/stats', requireOverlayAuth, async (req, res) => {
+  try {
+    if (!activeEvent) {
+      await refreshActiveEventFromStore()
+    }
+    const settings = await getOverlaySettings()
+    const eventConsoles = Array.isArray(activeEvent?.consoles) ? activeEvent.consoles : []
+    const consoles = eventConsoles.length > 0 ? eventConsoles : (settings.global?.eventConsoles || [])
+    
+    if (consoles.length > 0) {
+      const idx = getIndex()
+      const allGames = mergeWithGameLibrary(idx.games || [])
+      const filtered = allGames.filter(g => {
+        const cName = getConsoleName(g)
+        const cId = g.console?.id
+        return consoles.includes(cName) || consoles.includes(cId)
+      })
+      
+      const total = filtered.length
+      const completed = filtered.filter(g => g.status === 'Completed').length
+      const percent = total ? Math.round((completed / total) * 100) : 0
+      
+      return res.json({
+        total,
+        completed,
+        percent,
+        updatedAt: Date.now(),
+        isFiltered: true
+      })
+    }
+  } catch (e) {
+    console.error('[Stats] Dynamic calculation failed:', e.message)
+  }
+  
   res.json(overlayStats)
 })
 app.post('/overlay/stats', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
@@ -869,7 +936,9 @@ app.get('/api/stats/pulse', requireAdmin, async (req, res) => {
 
 // Timer state for overlays (server-calculated to avoid OBS Browser Source freezing)
 // New model: accumulate only while current timer is running.
-let timerState = {
+let activeEvent = null
+let activeEventId = null
+const BASE_TIMER_STATE = {
   // Control
   running: false,
   currentGameId: null,
@@ -887,6 +956,34 @@ let timerState = {
   currentGameStartTime: null,
 
   updatedAt: Date.now(),
+}
+let timerState = { ...BASE_TIMER_STATE }
+
+const dirtyTimerGameIds = new Set()
+
+function markTimerGameDirty(gameId) {
+  const id = String(gameId || '').trim()
+  if (id) dirtyTimerGameIds.add(id)
+}
+
+async function persistTimerState({ wait = false, gameIds = null } = {}) {
+  if (!activeEventId) return
+  saveJSON(TIMERS_FILE, timerState)
+  if (!isPgEnabled()) {
+    saveTimerStateToFile(activeEventId, timerState)
+    return
+  }
+  const ids = Array.isArray(gameIds) ? gameIds : Array.from(dirtyTimerGameIds)
+  const promise = saveTimerStateToDb(activeEventId, timerState, { gameIds: ids })
+    .then(() => {
+      if (ids && ids.length) {
+        ids.forEach(id => dirtyTimerGameIds.delete(id))
+      }
+    })
+    .catch(error => {
+      console.warn('Timer DB persistence failed:', error.message || error)
+    })
+  if (wait) await promise
 }
 
 function getLivePerGameTimes() {
@@ -914,6 +1011,57 @@ function parseRange(value) {
   if (key === '30d') return { label: '30d', days: 30 }
   if (key === '90d') return { label: '90d', days: 90 }
   return { label: 'all', days: null }
+}
+
+function normalizeTimerStateAfterLoad() {
+  if (!timerState.perGame) timerState.perGame = {}
+  if (typeof timerState.currentAccumulatedSec === 'number' && timerState.currentGameId) {
+    timerState.perGame[timerState.currentGameId] = (timerState.perGame[timerState.currentGameId] || 0) + timerState.currentAccumulatedSec
+    delete timerState.currentAccumulatedSec
+  }
+
+  const now = Date.now()
+  const timeSinceLastUpdate = now - (timerState.updatedAt || 0)
+
+  if (timerState.running && timeSinceLastUpdate > 300_000) {
+    console.log('Detected potential crash recovery scenario - timer was running for', Math.floor(timeSinceLastUpdate / 60000), 'minutes')
+    timerState.currentStartedAt = now
+    const gameProgress = timerState.currentGameId ? (timerState.perGame[timerState.currentGameId] || 0) : 0
+    console.log('Crash recovery - resuming timer for game:', timerState.currentGameId, 'with', gameProgress, 'seconds accumulated')
+  } else if (timerState.running) {
+    timerState.currentStartedAt = now
+  }
+
+  if (timerState.totalAccumulatedSec < 0) {
+    console.warn('Fixing negative total time')
+    timerState.totalAccumulatedSec = 0
+  }
+
+  if (timerState.perGame) {
+    Object.keys(timerState.perGame).forEach(gameId => {
+      if (timerState.perGame[gameId] < 0) {
+        console.warn('Fixing negative game time for', gameId)
+        timerState.perGame[gameId] = 0
+      }
+    })
+  }
+}
+
+async function loadEventTimerState(eventId) {
+  if (!eventId) return null
+  if (isPgEnabled()) {
+    const dbState = await loadTimerStateFromDb(eventId)
+    if (dbState) return dbState
+    const legacy = await loadLegacyTimerStateFromDb()
+    if (legacy) {
+      await saveTimerStateToDb(eventId, legacy, { gameIds: Object.keys(legacy.perGame || {}) })
+      return legacy
+    }
+    return null
+  }
+  const fileState = loadTimerStateFromFile(eventId)
+  if (fileState) return fileState
+  return null
 }
 
 function getPerGameTimesForRange(range) {
@@ -1034,81 +1182,125 @@ function buildPulseStats(range) {
 
 // Load persisted timer state if available with backup recovery
 let timerStateLoaded = false
+let timerStateLoadedFromDb = false
+
 try {
-  const persistedTimers = loadJSON(TIMERS_FILE, null)
-  if (persistedTimers && typeof persistedTimers === 'object') {
-    timerState = { ...timerState, ...persistedTimers }
-    timerStateLoaded = true
-    console.log('Timer state loaded from primary file')
-  }
-} catch (primaryError) {
-  console.warn('Failed to load primary timer state:', primaryError.message)
-  
-  // Try to load from backup
-  try {
-    const backupFile = TIMERS_FILE.replace('.json', '.backup.json')
-    const backupTimers = loadJSON(backupFile, null)
-    if (backupTimers && typeof backupTimers === 'object' && backupTimers.isBackup) {
-      timerState = { ...timerState, ...backupTimers }
-      timerStateLoaded = true
-      console.log('Timer state recovered from backup file')
-      
-      // Save backup as primary to fix corruption
-      try {
-        delete backupTimers.isBackup
-        delete backupTimers.backupTimestamp
-        saveJSON(TIMERS_FILE, backupTimers)
-        console.log('Primary timer state restored from backup')
-      } catch (restoreError) {
-        console.warn('Failed to restore primary timer state:', restoreError.message)
+  await ensureEventSchema()
+  await ensureTimerSchema()
+  activeEvent = await getActiveEvent()
+  activeEventId = activeEvent?.id || null
+} catch (eventError) {
+  console.warn('Failed to load active event:', eventError.message)
+}
+
+try {
+  if (activeEventId) {
+    if (isPgEnabled()) {
+      const dbState = await loadEventTimerState(activeEventId)
+      if (dbState && typeof dbState === 'object') {
+        timerState = { ...timerState, ...dbState, perGame: dbState.perGame || {} }
+        timerStateLoaded = true
+        timerStateLoadedFromDb = true
+        console.log('Timer state loaded for active event')
+      }
+    } else {
+      const fileState = await loadEventTimerState(activeEventId)
+      if (fileState) {
+        timerState = { ...timerState, ...fileState, perGame: fileState.perGame || {} }
+        timerStateLoaded = true
+        console.log('Timer state loaded from event file')
       }
     }
-  } catch (backupError) {
-    console.warn('Failed to load backup timer state:', backupError.message)
+  }
+} catch (dbError) {
+  console.warn('Failed to load timer state:', dbError.message)
+}
+
+if (!timerStateLoaded) {
+  try {
+    const persistedTimers = loadJSON(TIMERS_FILE, null)
+    if (persistedTimers && typeof persistedTimers === 'object') {
+      timerState = { ...timerState, ...persistedTimers }
+      timerStateLoaded = true
+      console.log('Timer state loaded from primary file')
+      if (!isPgEnabled() && activeEventId) {
+        saveTimerStateToFile(activeEventId, timerState)
+      }
+    }
+  } catch (primaryError) {
+    console.warn('Failed to load primary timer state:', primaryError.message)
+    
+    // Try to load from backup
+    try {
+      const backupFile = TIMERS_FILE.replace('.json', '.backup.json')
+      const backupTimers = loadJSON(backupFile, null)
+      if (backupTimers && typeof backupTimers === 'object' && backupTimers.isBackup) {
+        timerState = { ...timerState, ...backupTimers }
+        timerStateLoaded = true
+        console.log('Timer state recovered from backup file')
+        
+        // Save backup as primary to fix corruption
+        try {
+          delete backupTimers.isBackup
+          delete backupTimers.backupTimestamp
+          saveJSON(TIMERS_FILE, backupTimers)
+          console.log('Primary timer state restored from backup')
+        } catch (restoreError) {
+          console.warn('Failed to restore primary timer state:', restoreError.message)
+        }
+      }
+    } catch (backupError) {
+      console.warn('Failed to load backup timer state:', backupError.message)
+    }
   }
 }
 
-// If we loaded timer state, migrate and validate it
+if (isPgEnabled() && activeEventId && !timerStateLoadedFromDb) {
+  try {
+    const hasTotals = Object.values(timerState.perGame || {}).some(value => Number(value) > 0)
+    const hasState = hasTotals ||
+      Number(timerState.totalAccumulatedSec) > 0 ||
+      !!timerState.currentGameId ||
+      !!timerState.running
+    if (hasState) {
+      await saveTimerStateToDb(activeEventId, timerState, { gameIds: Object.keys(timerState.perGame || {}) })
+      console.log('[Timer] Seeded database from file state.')
+    }
+  } catch (seedError) {
+    console.warn('Failed to seed timer state to DB:', seedError.message)
+  }
+}
+
 if (timerStateLoaded) {
-  // Migrate legacy single current accumulator to perGame map
-  if (!timerState.perGame) timerState.perGame = {}
-  if (typeof timerState.currentAccumulatedSec === 'number' && timerState.currentGameId) {
-    timerState.perGame[timerState.currentGameId] = (timerState.perGame[timerState.currentGameId] || 0) + timerState.currentAccumulatedSec
-    delete timerState.currentAccumulatedSec
-  }
-  
-  // Detect potential crash recovery scenario
-  const now = Date.now()
-  const timeSinceLastUpdate = now - (timerState.updatedAt || 0)
-  
-  if (timerState.running && timeSinceLastUpdate > 300_000) { // More than 5 minutes
-    console.log('Detected potential crash recovery scenario - timer was running for', Math.floor(timeSinceLastUpdate / 60000), 'minutes')
-    
-    // Don't count the downtime - resume from now
-    timerState.currentStartedAt = now
-    
-    // Log crash recovery stats
-    const gameProgress = timerState.currentGameId ? (timerState.perGame[timerState.currentGameId] || 0) : 0
-    console.log('Crash recovery - resuming timer for game:', timerState.currentGameId, 'with', gameProgress, 'seconds accumulated')
-  } else if (timerState.running) {
-    // Normal restart - resume from now
-    timerState.currentStartedAt = now
-  }
-  
-  // Validate state integrity
-  if (timerState.totalAccumulatedSec < 0) {
-    console.warn('Fixing negative total time')
-    timerState.totalAccumulatedSec = 0
-  }
-  
-  if (timerState.perGame) {
-    Object.keys(timerState.perGame).forEach(gameId => {
-      if (timerState.perGame[gameId] < 0) {
-        console.warn('Fixing negative game time for', gameId)
-        timerState.perGame[gameId] = 0
-      }
-    })
-  }
+  normalizeTimerStateAfterLoad()
+}
+
+async function switchActiveEvent(eventId) {
+  const id = String(eventId || '').trim()
+  if (!id) throw new Error('Event ID is required')
+  if (activeEventId && id === activeEventId) return activeEvent
+
+  await persistTimerState({ wait: true })
+
+  const nextEvent = await setActiveEvent(id)
+  activeEvent = nextEvent
+  activeEventId = nextEvent?.id || null
+  dirtyTimerGameIds.clear()
+
+  const nextState = activeEventId ? await loadEventTimerState(activeEventId) : null
+  timerState = { ...BASE_TIMER_STATE, ...(nextState || {}) }
+  normalizeTimerStateAfterLoad()
+  return activeEvent
+}
+
+async function refreshActiveEventFromStore() {
+  activeEvent = await getActiveEvent()
+  activeEventId = activeEvent?.id || null
+  dirtyTimerGameIds.clear()
+  const nextState = activeEventId ? await loadEventTimerState(activeEventId) : null
+  timerState = { ...BASE_TIMER_STATE, ...(nextState || {}) }
+  normalizeTimerStateAfterLoad()
+  return activeEvent
 }
 
 try {
@@ -1159,6 +1351,8 @@ app.get('/overlay/timers', requireOverlayAuth, (req, res) => {
   res.json({
     currentGameTime,
     totalTime,
+    currentSeconds: Math.max(0, currentElapsed),
+    totalSeconds: Math.max(0, totalElapsed),
     currentGameId: timerState.currentGameId,
     running,
     updatedAt: now,
@@ -1189,17 +1383,21 @@ app.get('/overlay/timers/game/:id', requireOverlayAuth, (req, res) => {
   }
 })
 
-app.post('/overlay/timers', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+app.post('/overlay/timers', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
   const now = Date.now()
   const body = req.body || {}
+  let settled = false
 
   function settleCurrent() {
+    if (settled) return null
     if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
       const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
       if (deltaSec > 0) {
         const gid = timerState.currentGameId
         timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
         timerState.totalAccumulatedSec += deltaSec
+        markTimerGameDirty(gid)
+        settled = true
         return { gameId: gid, durationSec: deltaSec }
       }
     }
@@ -1257,7 +1455,10 @@ app.post('/overlay/timers', requireAdmin, requireCsrf, requireOrigin, (req, res)
   }
   if (body.resetCurrent) {
     const gid = timerState.currentGameId
-    if (gid) timerState.perGame[gid] = 0
+    if (gid) {
+      timerState.perGame[gid] = 0
+      markTimerGameDirty(gid)
+    }
     if (timerState.running) timerState.currentStartedAt = now
   }
   if (body.resetTotal) {
@@ -1275,9 +1476,37 @@ app.post('/overlay/timers', requireAdmin, requireCsrf, requireOrigin, (req, res)
     }
   }
 
+  if ('setCurrentSeconds' in body || 'setTotalSeconds' in body) {
+    const hasCurrent = timerState.currentGameId
+    if (timerState.running) settleCurrent()
+
+    if ('setCurrentSeconds' in body && hasCurrent) {
+      const rawSeconds = Number(body.setCurrentSeconds)
+      if (Number.isFinite(rawSeconds)) {
+        const nextSeconds = Math.max(0, Math.floor(rawSeconds))
+        const gid = timerState.currentGameId
+        const prevSeconds = Number(timerState.perGame[gid] || 0)
+        timerState.perGame[gid] = nextSeconds
+        markTimerGameDirty(gid)
+        if (!('setTotalSeconds' in body)) {
+          const delta = nextSeconds - prevSeconds
+          timerState.totalAccumulatedSec = Math.max(0, Number(timerState.totalAccumulatedSec || 0) + delta)
+        }
+        if (timerState.running) timerState.currentStartedAt = now
+      }
+    }
+
+    if ('setTotalSeconds' in body) {
+      const rawTotal = Number(body.setTotalSeconds)
+      if (Number.isFinite(rawTotal)) {
+        timerState.totalAccumulatedSec = Math.max(0, Math.floor(rawTotal))
+      }
+    }
+  }
+
   timerState.updatedAt = now
   // Persist
-  saveJSON(TIMERS_FILE, timerState)
+  await persistTimerState({ wait: true })
   res.json({ ok: true, updatedAt: timerState.updatedAt, running: timerState.running })
 })
 
@@ -1346,7 +1575,7 @@ app.post('/wheel/spin', requireAdmin, requireCsrf, requireOrigin, (req, res) => 
 })
 
 // RetroAchievements API proxy to avoid CORS and manage rate limiting
-app.get('/api/retroachievements/game/:gameId', requireAdmin, async (req, res) => {
+app.get('/api/retroachievements/game/:gameId', requireOverlayAuth, async (req, res) => {
   try {
     const gameId = req.params.gameId
     const username = req.query.username || process.env.RA_USERNAME
@@ -1401,6 +1630,14 @@ app.get('/api/retroachievements/game/:gameId', requireAdmin, async (req, res) =>
     const data = await fetchPromise
     raProxyInflight.delete(key)
     raProxyCache.set(key, { ts: Date.now(), data })
+    
+    if (data && data.Achievements) {
+      const achCount = Object.keys(data.Achievements).length
+      console.log(`[RA Proxy] Fetched ${achCount} achievements for game ${gameId}`)
+    } else {
+      console.warn(`[RA Proxy] No achievements found in response for game ${gameId}`)
+    }
+
     res.json(data)
   } catch (error) {
     console.error('RetroAchievements API error:', error.message)
@@ -1731,6 +1968,10 @@ app.post('/api/public/games/:gameId', requireAdmin, requireCsrf, requireOrigin, 
       updates.publicVideoUrl = sanitizeText(body.publicVideoUrl, 500)
     }
 
+    if ('achievements' in body && Array.isArray(body.achievements)) {
+      updates.achievements = body.achievements
+    }
+
     if (body.game && typeof body.game === 'object') {
       updates.game = {
         id: String(body.game.id || gameId),
@@ -1830,34 +2071,37 @@ app.get('/api/admin/public-settings', requireAdmin, async (req, res) => {
   }
 })
 
-app.post('/api/admin/public-settings', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
-  try {
-    const updates = {}
-    if ('suggestions_open' in req.body) {
-      updates.suggestions_open = !!req.body.suggestions_open
+  app.post('/api/admin/public-settings', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+    try {
+      const updates = {}
+      if ('suggestions_open' in req.body) {
+        updates.suggestions_open = !!req.body.suggestions_open
     }
     if ('max_open' in req.body) {
       const maxOpen = Number(req.body.max_open)
       updates.max_open = Number.isFinite(maxOpen) ? Math.max(0, Math.min(1000, maxOpen)) : 0
     }
-    if ('console_limits' in req.body) {
-      if (req.body.console_limits && typeof req.body.console_limits === 'object') {
-        const normalized = {}
-        for (const [key, value] of Object.entries(req.body.console_limits)) {
-          const cleanKey = String(key || '').trim().toLowerCase()
-          if (!cleanKey) continue
-          const limit = Number(value)
-          normalized[cleanKey] = Number.isFinite(limit) ? Math.max(0, Math.min(1000, limit)) : 0
+      if ('console_limits' in req.body) {
+        if (req.body.console_limits && typeof req.body.console_limits === 'object') {
+          const normalized = {}
+          for (const [key, value] of Object.entries(req.body.console_limits)) {
+            const cleanKey = String(key || '').trim().toLowerCase()
+            if (!cleanKey) continue
+            const limit = Number(value)
+            normalized[cleanKey] = Number.isFinite(limit) ? Math.max(0, Math.min(1000, limit)) : 0
+          }
+          updates.console_limits = normalized
+        } else {
+          updates.console_limits = {}
         }
-        updates.console_limits = normalized
-      } else {
-        updates.console_limits = {}
       }
-    }
-    const updated = await updatePublicSettings(updates)
-    res.json(updated)
-  } catch (error) {
-    res.status(500).json({ error: error.message })
+      if ('site' in req.body) {
+        updates.site = req.body.site || {}
+      }
+      const updated = await updatePublicSettings(updates)
+      res.json(updated)
+    } catch (error) {
+      res.status(500).json({ error: error.message })
   }
 })
 
@@ -1877,6 +2121,65 @@ app.post('/api/admin/overlay-settings', requireAdmin, requireCsrf, requireOrigin
     res.json(settings)
   } catch (error) {
     res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/admin/events', requireAdmin, async (req, res) => {
+  try {
+    const events = await listEvents()
+    res.json({ events, activeEventId: activeEventId || null })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.get('/api/admin/events/active', requireAdmin, async (req, res) => {
+  try {
+    if (!activeEvent) {
+      await refreshActiveEventFromStore()
+    }
+    res.json({ event: activeEvent || null })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+app.post('/api/admin/events', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+  try {
+    const created = await createEvent(req.body || {})
+    res.json(created)
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+})
+
+app.patch('/api/admin/events/:id', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+  try {
+    const updated = await updateEvent(req.params.id, req.body || {})
+    if (activeEventId && updated.id === activeEventId) activeEvent = updated
+    res.json(updated)
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+})
+
+app.delete('/api/admin/events/:id', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+  try {
+    await deleteEvent(req.params.id)
+    await refreshActiveEventFromStore()
+    res.json({ ok: true, activeEventId: activeEventId || null })
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/admin/events/active', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+  try {
+    const eventId = req.body?.eventId
+    const next = await switchActiveEvent(eventId)
+    res.json({ ok: true, event: next })
+  } catch (error) {
+    res.status(400).json({ error: error.message })
   }
 })
 
@@ -1961,16 +2264,13 @@ setInterval(() => {
     if (deltaSec > 0) {
       const gid = timerState.currentGameId
       timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
-      timerState.psfestAccumulatedSec += deltaSec
+      timerState.totalAccumulatedSec += deltaSec
+      markTimerGameDirty(gid)
       timerState.currentStartedAt = now
       timerState.updatedAt = now
-      
+
       // Save primary state
-      try {
-        saveJSON(TIMERS_FILE, timerState)
-      } catch (error) {
-        console.error('Timer persistence failed:', error)
-      }
+      persistTimerState().catch(() => {})
       
       // Create backup with timestamp for crash recovery
       try {
@@ -1988,7 +2288,7 @@ setInterval(() => {
 }, 15_000)
 
 // Graceful shutdown: checkpoint timers with enhanced error handling
-const gracefulShutdown = (signal) => {
+const gracefulShutdown = async (signal) => {
   console.log(`Received ${signal}, performing graceful shutdown...`)
   
   try {
@@ -2001,6 +2301,7 @@ const gracefulShutdown = (signal) => {
         const gid = timerState.currentGameId
         timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
         timerState.totalAccumulatedSec += deltaSec
+        markTimerGameDirty(gid)
         console.log(`Checkpointing ${deltaSec} seconds for game ${gid}`)
       }
       timerState.currentStartedAt = now
@@ -2011,7 +2312,7 @@ const gracefulShutdown = (signal) => {
     let saveAttempts = 3
     while (saveAttempts > 0) {
       try {
-        saveJSON(TIMERS_FILE, timerState)
+        await persistTimerState({ wait: true })
         console.log('Timer state saved successfully on shutdown')
         break
       } catch (error) {
@@ -2041,7 +2342,12 @@ const gracefulShutdown = (signal) => {
 // Handle multiple shutdown signals
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGQUIT']) {
   try {
-    process.on(sig, () => gracefulShutdown(sig))
+    process.on(sig, () => {
+      gracefulShutdown(sig).catch(error => {
+        console.error('Graceful shutdown failed:', error.message || error)
+        process.exit(1)
+      })
+    })
   } catch (error) {
     console.warn(`Failed to register ${sig} handler:`, error.message)
   }
@@ -2059,10 +2365,13 @@ process.on('uncaughtException', (error) => {
         const gid = timerState.currentGameId
         timerState.perGame[gid] = (timerState.perGame[gid] || 0) + deltaSec
         timerState.totalAccumulatedSec += deltaSec
+        markTimerGameDirty(gid)
       }
       timerState.currentStartedAt = now
       timerState.updatedAt = now
     }
+
+    persistTimerState({ wait: false }).catch(() => {})
     
     const crashFile = TIMERS_FILE.replace('.json', '.crash.json')
     saveJSON(crashFile, { ...timerState, isCrashBackup: true, crashTime: now, crashError: error.message })

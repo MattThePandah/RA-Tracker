@@ -409,6 +409,42 @@ export async function resetTotalTimer() {
   } catch {}
 }
 
+export async function setTimerTimes({ currentSeconds, totalSeconds }) {
+  try {
+    const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+    if (!base) return false
+    const payload = {}
+    if (Number.isFinite(currentSeconds)) {
+      payload.setCurrentSeconds = Math.max(0, Math.floor(currentSeconds))
+    }
+    if (Number.isFinite(totalSeconds)) {
+      payload.setTotalSeconds = Math.max(0, Math.floor(totalSeconds))
+    }
+    if (!Object.keys(payload).length) return false
+    const res = await fetch(`${base}/overlay/timers`, {
+      method: 'POST',
+      headers: withAdminHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(payload),
+      credentials: 'include'
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+function parseDuration(value) {
+  if (Number.isFinite(value)) return value
+  if (value === null || value === undefined) return 0
+  const raw = String(value).trim()
+  if (!raw) return 0
+  const parts = raw.split(':').map(seg => Number.parseInt(seg, 10))
+  if (parts.some(n => !Number.isFinite(n))) return 0
+  while (parts.length < 3) parts.unshift(0)
+  const slice = parts.slice(-3)
+  return (slice[0] * 3600) + (slice[1] * 60) + slice[2]
+}
+
 export async function getTimerStatus() {
   try {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
@@ -445,12 +481,18 @@ export async function getTimerData() {
     const j = await r.json()
     
     // Validate the response data
+    const currentSeconds = Number.isFinite(j.currentSeconds)
+      ? j.currentSeconds
+      : parseDuration(j.currentTime ?? j.currentGameTime ?? j.currentFormatted)
+    const totalSeconds = Number.isFinite(j.totalSeconds)
+      ? j.totalSeconds
+      : parseDuration(j.totalTime ?? j.totalFormatted ?? j.psfestTime)
     const timerData = {
       running: !!j.running,
-      currentTime: Math.max(0, j.currentTime || 0),
-      totalTime: Math.max(0, j.totalTime || 0),
+      currentTime: Math.max(0, currentSeconds || 0),
+      totalTime: Math.max(0, totalSeconds || 0),
       currentFormatted: j.currentFormatted || j.currentGameTime || '0:00:00',
-      totalFormatted: j.totalFormatted || j.totalTime || '0:00:00',
+      totalFormatted: j.totalFormatted || j.totalTime || j.psfestTime || '0:00:00',
       currentGameId: j.currentGameId || null,
       lastUpdate: j.lastUpdate || Date.now()
     }

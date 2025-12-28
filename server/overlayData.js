@@ -21,7 +21,8 @@ const DEFAULT_OVERLAY_SETTINGS = {
     showTimer: true,
     brandColor: '#5ecf86',
     accentColor: '#66b7ff',
-    textColor: '#eefcf6'
+    textColor: '#eefcf6',
+    eventConsoles: []
   },
   main: {
     style: 'reference',
@@ -96,6 +97,33 @@ const DEFAULT_OVERLAY_SETTINGS = {
     rotateMs: 8000,
     position: 'top-left',
     horizontal: false
+  },
+  full: {
+    layout: 'balanced',
+    leftWidth: 360,
+    rightWidth: 360,
+    padding: 32,
+    columnGap: 24,
+    moduleGap: 16,
+    bottomHeight: 0,
+    showGuides: true,
+    showGameFrame: true,
+    showCameraFrame: true,
+    gameInsetX: 28,
+    gameInsetY: 20,
+    cameraPosition: 'bottom-right',
+    cameraDock: false,
+    cameraWidth: 360,
+    cameraHeight: 200,
+    cameraOffsetX: 32,
+    cameraOffsetY: 32,
+    achievementCycleMs: 8000,
+    modules: {
+      current: { enabled: true, position: 'left', order: 1 },
+      stats: { enabled: true, position: 'left', order: 2 },
+      timers: { enabled: true, position: 'right', order: 1 },
+      achievements: { enabled: true, position: 'right', order: 2, count: 4 }
+    }
   }
 }
 
@@ -138,6 +166,37 @@ function cleanText(value, maxLen) {
   return s.length > maxLen ? s.slice(0, maxLen) : s
 }
 
+function normalizePosition(value, fallback) {
+  const v = cleanText(value || fallback, 12)
+  if (v === 'left' || v === 'right' || v === 'bottom') return v
+  return fallback
+}
+
+function normalizeCameraPosition(value, fallback) {
+  const v = cleanText(value || fallback, 16)
+  if (v === 'top-left' || v === 'top-right' || v === 'bottom-left' || v === 'bottom-right') return v
+  return fallback
+}
+
+function normalizeFullLayout(value, fallback) {
+  const v = cleanText(value || fallback, 12)
+  if (v === 'balanced' || v === 'focus') return v
+  return fallback
+}
+
+function normalizeModule(base = {}, incoming = {}) {
+  const position = normalizePosition(incoming?.position || base.position, base.position)
+  const module = {
+    enabled: normalizeBoolean(incoming?.enabled, base.enabled),
+    position,
+    order: clampNumber(incoming?.order, 1, 12, base.order)
+  }
+  if (Object.prototype.hasOwnProperty.call(base, 'count')) {
+    module.count = clampNumber(incoming?.count, 1, 12, base.count)
+  }
+  return module
+}
+
 function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS) {
   const base = { ...DEFAULT_OVERLAY_SETTINGS, ...(current || {}) }
   const incoming = input || {}
@@ -156,7 +215,8 @@ function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS
       showTimer: normalizeBoolean(incoming.global?.showTimer, base.global.showTimer),
       brandColor: cleanText(incoming.global?.brandColor || base.global.brandColor, 32),
       accentColor: cleanText(incoming.global?.accentColor || base.global.accentColor, 32),
-      textColor: cleanText(incoming.global?.textColor || base.global.textColor, 32)
+      textColor: cleanText(incoming.global?.textColor || base.global.textColor, 32),
+      eventConsoles: Array.isArray(incoming.global?.eventConsoles) ? incoming.global.eventConsoles : base.global.eventConsoles || []
     },
     main: {
       style: cleanText(incoming.main?.style || base.main.style, 20),
@@ -231,6 +291,33 @@ function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS
       rotateMs: clampNumber(incoming.badgeCarousel?.rotateMs, 2000, 60000, base.badgeCarousel.rotateMs),
       position: cleanText(incoming.badgeCarousel?.position || base.badgeCarousel.position, 20),
       horizontal: normalizeBoolean(incoming.badgeCarousel?.horizontal, base.badgeCarousel.horizontal)
+    },
+    full: {
+      layout: normalizeFullLayout(incoming.full?.layout || base.full.layout, base.full.layout),
+      leftWidth: clampNumber(incoming.full?.leftWidth, 200, 720, base.full.leftWidth),
+      rightWidth: clampNumber(incoming.full?.rightWidth, 200, 720, base.full.rightWidth),
+      padding: clampNumber(incoming.full?.padding, 0, 120, base.full.padding),
+      columnGap: clampNumber(incoming.full?.columnGap, 0, 60, base.full.columnGap),
+      moduleGap: clampNumber(incoming.full?.moduleGap, 4, 40, base.full.moduleGap),
+      bottomHeight: clampNumber(incoming.full?.bottomHeight, 0, 260, base.full.bottomHeight),
+      showGuides: normalizeBoolean(incoming.full?.showGuides, base.full.showGuides),
+      showGameFrame: normalizeBoolean(incoming.full?.showGameFrame, base.full.showGameFrame),
+      showCameraFrame: normalizeBoolean(incoming.full?.showCameraFrame, base.full.showCameraFrame),
+      gameInsetX: clampNumber(incoming.full?.gameInsetX, 0, 240, base.full.gameInsetX),
+      gameInsetY: clampNumber(incoming.full?.gameInsetY, 0, 240, base.full.gameInsetY),
+      cameraPosition: normalizeCameraPosition(incoming.full?.cameraPosition || base.full.cameraPosition, base.full.cameraPosition),
+      cameraDock: normalizeBoolean(incoming.full?.cameraDock, base.full.cameraDock),
+      cameraWidth: clampNumber(incoming.full?.cameraWidth, 160, 800, base.full.cameraWidth),
+      cameraHeight: clampNumber(incoming.full?.cameraHeight, 120, 600, base.full.cameraHeight),
+      cameraOffsetX: clampNumber(incoming.full?.cameraOffsetX, 0, 200, base.full.cameraOffsetX),
+      cameraOffsetY: clampNumber(incoming.full?.cameraOffsetY, 0, 200, base.full.cameraOffsetY),
+      achievementCycleMs: clampNumber(incoming.full?.achievementCycleMs, 0, 60000, base.full.achievementCycleMs),
+      modules: {
+        current: normalizeModule(base.full.modules?.current, incoming.full?.modules?.current),
+        stats: normalizeModule(base.full.modules?.stats, incoming.full?.modules?.stats),
+        timers: normalizeModule(base.full.modules?.timers, incoming.full?.modules?.timers),
+        achievements: normalizeModule(base.full.modules?.achievements, incoming.full?.modules?.achievements)
+      }
     }
   }
 }
@@ -260,6 +347,18 @@ export async function getOverlaySettings() {
 
 export async function updateOverlaySettings(updates = {}) {
   const current = await getOverlaySettings()
+  const mergedFull = {
+    ...current.full,
+    ...updates.full,
+    modules: {
+      ...current.full?.modules,
+      ...updates.full?.modules,
+      current: { ...current.full?.modules?.current, ...updates.full?.modules?.current },
+      stats: { ...current.full?.modules?.stats, ...updates.full?.modules?.stats },
+      timers: { ...current.full?.modules?.timers, ...updates.full?.modules?.timers },
+      achievements: { ...current.full?.modules?.achievements, ...updates.full?.modules?.achievements }
+    }
+  }
   const next = normalizeOverlaySettings({
     ...current,
     ...updates,
@@ -270,7 +369,8 @@ export async function updateOverlaySettings(updates = {}) {
     footer: { ...current.footer, ...updates.footer },
     achievements: { ...current.achievements, ...updates.achievements },
     wheel: { ...current.wheel, ...updates.wheel },
-    badgeCarousel: { ...current.badgeCarousel, ...updates.badgeCarousel }
+    badgeCarousel: { ...current.badgeCarousel, ...updates.badgeCarousel },
+    full: mergedFull
   }, current)
 
   if (!isPgEnabled()) {
