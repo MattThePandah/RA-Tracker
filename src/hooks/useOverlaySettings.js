@@ -9,6 +9,7 @@ export function useOverlaySettings() {
   React.useEffect(() => {
     let active = true
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+    const pollMs = 5000
 
     const load = async () => {
       try {
@@ -24,7 +25,11 @@ export function useOverlaySettings() {
     }
 
     load()
-    return () => { active = false }
+    const id = setInterval(load, pollMs)
+    return () => {
+      active = false
+      clearInterval(id)
+    }
   }, [])
 
   return { settings, loading }

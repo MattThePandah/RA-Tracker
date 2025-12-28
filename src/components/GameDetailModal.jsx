@@ -37,6 +37,23 @@ const normalizeDuration = (hoursValue, minutesValue, secondsValue) => {
   }
 }
 
+const normalizeImageExt = (value) => {
+  const ext = String(value || '').toLowerCase()
+  if (ext === 'jpeg' || ext === '.jpeg' || ext === 'jpg' || ext === '.jpg') return 'jpg'
+  if (ext === 'png' || ext === '.png') return 'png'
+  if (ext === 'webp' || ext === '.webp') return 'webp'
+  return null
+}
+
+const getCoverExtForFile = (file) => {
+  const type = String(file?.type || '').toLowerCase()
+  if (type.includes('jpeg')) return 'jpg'
+  if (type.includes('png')) return 'png'
+  if (type.includes('webp')) return 'webp'
+  const nameExt = String(file?.name || '').split('.').pop()
+  return normalizeImageExt(nameExt) || 'jpg'
+}
+
 export default function GameDetailModal({ game, onClose }) {
   const { dispatch } = useGame()
   const { state: achState, loadGameAchievements } = useAchievements()
@@ -108,7 +125,7 @@ export default function GameDetailModal({ game, onClose }) {
           return
         }
 
-        const base = import.meta.env.VITE_IGDB_PROXY_URL || ''
+        const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
         const safeBase = base ? base.replace(/\/+$/, '') : ''
 
         if (game.image_url.startsWith('https://')) {
@@ -132,7 +149,7 @@ export default function GameDetailModal({ game, onClose }) {
           }
         }
 
-        setCurrentCover(buildCoverUrl(game.image_url))
+        setCurrentCover(buildCoverUrl(game.image_url, safeBase))
       } catch (error) {
         console.warn('Failed to load cover:', error)
         setCurrentCover(null)
@@ -377,8 +394,28 @@ export default function GameDetailModal({ game, onClose }) {
     setIsUploadingCover(true)
 
     try {
-      const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const customPath = `custom-covers/${game.id}.${fileExt}`
+      const fileExt = getCoverExtForFile(file)
+      let customPath = `custom-covers/${game.id}.${fileExt}`
+      let serverUploadFailed = false
+
+      try {
+        const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+        const contentType = file.type === 'image/jpg' ? 'image/jpeg' : (file.type || (fileExt === 'jpg' ? 'image/jpeg' : `image/${fileExt}`))
+        const uploadUrl = `${base}/api/covers/custom?gameId=${encodeURIComponent(game.id)}&ext=${encodeURIComponent(fileExt)}`
+        const res = await adminFetch(uploadUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': contentType },
+          body: file
+        })
+        if (res.ok) {
+          const data = await res.json().catch(() => ({}))
+          if (data?.path) customPath = data.path
+        } else {
+          serverUploadFailed = true
+        }
+      } catch (error) {
+        serverUploadFailed = true
+      }
 
       await Cache.saveCover(customPath, file)
 
@@ -397,6 +434,11 @@ export default function GameDetailModal({ game, onClose }) {
       })
       setCurrentCover(URL.createObjectURL(file))
       await persistMetadata({ image_url: updatedGame.image_url })
+
+      if (serverUploadFailed) {
+        console.warn('Cover saved locally, but server upload failed for OBS.')
+        alert('Cover saved locally, but the overlay server did not accept the upload. OBS may still show a broken cover.')
+      }
     } catch (error) {
       console.error('Failed to upload cover:', error)
       alert('Failed to upload cover. Please try again.')

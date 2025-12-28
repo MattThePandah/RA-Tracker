@@ -77,6 +77,7 @@ export default function Overlays() {
     return () => { active = false }
   }, [])
 
+
   const updateSection = (section, key, value) => {
     setSettings(prev => ({
       ...prev,
@@ -229,6 +230,7 @@ export default function Overlays() {
                 <label className="form-label small fw-bold opacity-50">Default Theme</label>
                 <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.global.theme} onChange={e => updateSection('global', 'theme', e.target.value)}>
                   <option value="bamboo">Bamboo</option>
+                  <option value="bamboo-light">Bamboo Light</option>
                   <option value="midnight">Midnight</option>
                   <option value="minimal">Minimal</option>
                 </select>
@@ -295,6 +297,12 @@ export default function Overlays() {
                 </div>
               </div>
               <div className="col-6">
+                <div className="form-check form-switch p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 d-flex justify-content-between align-items-center gap-3">
+                  <label className="form-check-label small fw-bold opacity-75" htmlFor="fullCameraFrame">Camera Framing</label>
+                  <input className="form-check-input ms-0" type="checkbox" checked={settings.full.showCameraFrame} onChange={e => updateSection('full', 'showCameraFrame', e.target.checked)} id="fullCameraFrame" />
+                </div>
+              </div>
+              <div className="col-6">
                 <label className="form-label small fw-bold opacity-50">Camera Position</label>
                 <select
                   className="form-select border-0 bg-panel-2 shadow-sm"
@@ -323,6 +331,56 @@ export default function Overlays() {
                   <option value="balanced">Balanced (columns + stage)</option>
                   <option value="focus">Focus (slimmer columns, bigger stage)</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="small fw-bold opacity-50 mb-3 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Camera Module</div>
+              <div className="row g-2">
+                <div className="col-6">
+                  <div className="input-group input-group-sm shadow-sm">
+                    <span className="input-group-text border-0 bg-panel opacity-50 small" style={{ fontSize: '10px' }}>Width</span>
+                    <input
+                      className="form-control border-0 bg-panel text-center fw-bold"
+                      type="number"
+                      value={settings.full.cameraWidth ?? 360}
+                      onChange={e => updateSection('full', 'cameraWidth', clampNumber(e.target.value, 0, 4000, settings.full.cameraWidth ?? 360))}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="input-group input-group-sm shadow-sm">
+                    <span className="input-group-text border-0 bg-panel opacity-50 small" style={{ fontSize: '10px' }}>Height</span>
+                    <input
+                      className="form-control border-0 bg-panel text-center fw-bold"
+                      type="number"
+                      value={settings.full.cameraHeight ?? 200}
+                      onChange={e => updateSection('full', 'cameraHeight', clampNumber(e.target.value, 0, 4000, settings.full.cameraHeight ?? 200))}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="input-group input-group-sm shadow-sm">
+                    <span className="input-group-text border-0 bg-panel opacity-50 small" style={{ fontSize: '10px' }}>Offset X</span>
+                    <input
+                      className="form-control border-0 bg-panel text-center fw-bold"
+                      type="number"
+                      value={settings.full.cameraOffsetX ?? 32}
+                      onChange={e => updateSection('full', 'cameraOffsetX', clampNumber(e.target.value, 0, 4000, settings.full.cameraOffsetX ?? 32))}
+                    />
+                  </div>
+                </div>
+                <div className="col-6">
+                  <div className="input-group input-group-sm shadow-sm">
+                    <span className="input-group-text border-0 bg-panel opacity-50 small" style={{ fontSize: '10px' }}>Offset Y</span>
+                    <input
+                      className="form-control border-0 bg-panel text-center fw-bold"
+                      type="number"
+                      value={settings.full.cameraOffsetY ?? 32}
+                      onChange={e => updateSection('full', 'cameraOffsetY', clampNumber(e.target.value, 0, 4000, settings.full.cameraOffsetY ?? 32))}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 

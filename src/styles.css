@@ -226,7 +226,7 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.35px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--full-subtle);
 }
 .full-event-title {
   font-weight: 700;
@@ -352,6 +352,14 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   height: 100vh;
   position: relative;
   overflow: hidden;
+  --full-ink: var(--theme-text, #fff);
+  --full-muted: rgba(255,255,255,0.7);
+  --full-subtle: rgba(255,255,255,0.6);
+  --full-soft: rgba(255,255,255,0.45);
+  --full-item-bg: rgba(0,0,0,0.35);
+  --full-item-border: rgba(255,255,255,0.08);
+  --full-cover-border: rgba(255,255,255,0.15);
+  --full-cover-bg: #0a0a0a;
 }
 .full-overlay-grid {
   display: grid;
@@ -374,21 +382,47 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   flex-direction: column;
   gap: var(--full-module-gap);
   min-width: 0;
+  height: 100%;
+}
+.full-overlay-column-docked {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--full-module-gap);
+}
+.full-overlay-column-slot {
+  min-height: 0;
+  display: flex;
+}
+.full-overlay-column-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--full-module-gap);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.full-overlay-module-grow {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+.full-overlay-module-grow > .full-overlay-card {
+  flex: 1 1 auto;
 }
 .full-overlay-stage {
   position: relative;
   border-radius: 26px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: radial-gradient(120% 120% at 20% 0%, rgba(var(--brand-rgb), 0.18), rgba(6, 10, 12, 0.9) 45%, rgba(4, 6, 8, 0.98));
-  box-shadow: 0 26px 60px rgba(0,0,0,0.6);
+  border: 2px solid var(--overlay-stage-border, rgba(255,255,255,0.12));
+  background: var(--overlay-stage-bg, radial-gradient(120% 120% at 20% 0%, rgba(var(--brand-rgb), 0.18), rgba(6, 10, 12, 0.9) 45%, rgba(4, 6, 8, 0.98)));
+  box-shadow: var(--overlay-stage-shadow, 0 26px 60px rgba(0,0,0,0.6));
   overflow: hidden;
 }
 .full-overlay-stage::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(140deg, rgba(255,255,255,0.08), transparent 45%);
-  opacity: 0.5;
+  background: var(--overlay-stage-sheen, linear-gradient(140deg, rgba(255,255,255,0.08), transparent 45%));
+  opacity: var(--overlay-stage-sheen-opacity, 0.5);
   z-index: 0;
 }
 .full-overlay-frame {
@@ -396,10 +430,10 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   display: none;
   align-items: center;
   justify-content: center;
-  border: 2px dashed rgba(255,255,255,0.25);
+  border: 2px dashed var(--overlay-guide-border, rgba(255,255,255,0.25));
   border-radius: 22px;
-  background: rgba(255,255,255,0.03);
-  color: rgba(255,255,255,0.7);
+  background: var(--overlay-guide-bg, rgba(255,255,255,0.03));
+  color: var(--overlay-guide-text, rgba(255,255,255,0.7));
   text-transform: uppercase;
   letter-spacing: 0.2em;
   font-size: 11px;
@@ -424,11 +458,38 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 .full-overlay-camera-outside {
   z-index: 4;
 }
+.full-overlay-camera-docked {
+  border-radius: 22px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.full-overlay-camera-guide {
+  border: 2px dashed var(--overlay-guide-border, rgba(255,255,255,0.25));
+  background: var(--overlay-guide-bg, rgba(255,255,255,0.03));
+  color: var(--overlay-guide-text, rgba(255,255,255,0.7));
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 11px;
+  padding: 8px 12px;
+}
+.full-overlay-camera-docked:not(.full-overlay-camera-guide) {
+  border: 1px solid transparent;
+  background: transparent;
+  color: transparent;
+}
 .full-overlay-frame-label {
-  background: rgba(0,0,0,0.55);
+  background: var(--overlay-guide-label-bg, rgba(0,0,0,0.55));
+  color: var(--overlay-guide-label-text, rgba(255,255,255,0.85));
   border-radius: 999px;
   padding: 6px 10px;
   font-weight: 600;
+}
+
+body.overlay-clean .full-overlay-shell.overlay-clean {
+  background: var(--overlay-bg, transparent) !important;
 }
 .full-overlay-bottom {
   position: absolute;
@@ -445,6 +506,19 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 .full-overlay-module {
   min-width: 0;
 }
+.full-overlay-module-flex {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+.full-overlay-module-flex > .full-overlay-card {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.full-overlay-module-flex .full-achievement-list {
+  min-height: 0;
+  flex: 1 1 auto;
+}
 .full-overlay-card {
   display: flex;
   flex-direction: column;
@@ -454,25 +528,83 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.22em;
-  color: rgba(255,255,255,0.6);
+  color: var(--full-subtle);
 }
 .full-game-card {
   display: flex;
   gap: 12px;
   align-items: center;
 }
+.full-overlay-now-playing {
+  position: relative;
+  overflow: hidden;
+  color: var(--full-ink);
+  --full-ink: #f7f9fb;
+  --full-muted: rgba(247,249,251,0.72);
+  --full-subtle: rgba(247,249,251,0.6);
+  --full-soft: rgba(247,249,251,0.45);
+  --now-playing-base: rgba(8, 10, 12, 0.6);
+  --now-playing-glass: linear-gradient(150deg, rgba(8, 10, 12, 0.55) 0%, rgba(8, 10, 12, 0.3) 55%, rgba(8, 10, 12, 0.18) 100%);
+  --now-playing-tint: linear-gradient(90deg, rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.08) 55%, rgba(0, 0, 0, 0.16));
+  --now-playing-shadow: 0 2px 6px rgba(0,0,0,0.55);
+  --now-playing-pill-bg: rgba(0,0,0,0.28);
+  --now-playing-pill-border: rgba(255,255,255,0.12);
+  background-color: var(--now-playing-base);
+  background-image: var(--now-playing-cover);
+  background-size: contain;
+  background-position: right center;
+  background-repeat: no-repeat;
+}
+.full-overlay-now-playing.now-playing-light {
+  --now-playing-base: rgba(8, 10, 12, 0.38);
+  --now-playing-glass: linear-gradient(150deg, rgba(8, 10, 12, 0.5) 0%, rgba(8, 10, 12, 0.28) 55%, rgba(8, 10, 12, 0.14) 100%);
+  --now-playing-tint: linear-gradient(90deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.06) 55%, rgba(0, 0, 0, 0.14));
+  --now-playing-shadow: 0 2px 6px rgba(0,0,0,0.45);
+  --now-playing-pill-bg: rgba(0,0,0,0.22);
+  --now-playing-pill-border: rgba(255,255,255,0.1);
+}
+.full-overlay-now-playing::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--now-playing-glass), var(--now-playing-tint);
+  backdrop-filter: none;
+  z-index: 0;
+}
+.full-overlay-now-playing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 120% at 80% 30%, rgba(255,255,255,0.12), rgba(255,255,255,0));
+  z-index: 1;
+}
+.full-overlay-now-playing > * {
+  position: relative;
+  z-index: 2;
+}
+.full-overlay-now-playing .full-card-title,
+.full-overlay-now-playing .full-game-title,
+.full-overlay-now-playing .full-game-meta,
+.full-overlay-now-playing .full-game-status,
+.full-overlay-now-playing .full-game-timer {
+  text-shadow: var(--now-playing-shadow);
+}
+.full-overlay-now-playing .full-game-timer {
+  background: var(--now-playing-pill-bg);
+  border: 1px solid var(--now-playing-pill-border);
+}
 .full-game-cover {
   width: 64px;
   height: 88px;
   border-radius: 10px;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid var(--full-cover-border);
   object-fit: cover;
-  background: #0a0a0a;
+  background: var(--full-cover-bg);
 }
 .full-game-cover.placeholder {
   display: grid;
   place-items: center;
-  color: rgba(255,255,255,0.5);
+  color: var(--full-subtle);
 }
 .full-game-info {
   min-width: 0;
@@ -484,7 +616,7 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 }
 .full-game-meta {
   font-size: 12px;
-  color: rgba(255,255,255,0.7);
+  color: var(--full-muted);
 }
 .full-game-status {
   margin-top: 6px;
@@ -507,7 +639,7 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
-  color: rgba(255,255,255,0.6);
+  color: var(--full-subtle);
 }
 .full-stats-bar {
   height: 8px;
@@ -516,7 +648,7 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 }
 .full-stats-counts {
   font-size: 12px;
-  color: rgba(255,255,255,0.7);
+  color: var(--full-muted);
   text-align: right;
 }
 .full-timer-row {
@@ -529,7 +661,7 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  color: rgba(255,255,255,0.6);
+  color: var(--full-subtle);
 }
 .full-timer-value {
   font-size: 20px;
@@ -538,8 +670,99 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 }
 .full-timer-updated {
   font-size: 11px;
-  color: rgba(255,255,255,0.45);
+  color: var(--full-soft);
   text-align: right;
+}
+.full-overlay-event {
+  --overlay-padding: 8px;
+  gap: 4px;
+}
+.full-overlay-event .full-card-title {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--full-soft);
+  text-align: left;
+}
+.full-event-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.full-event-summary-percent {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--brand);
+}
+.full-event-summary-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--full-soft);
+}
+.full-event-summary-divider {
+  font-size: 12px;
+  color: var(--full-soft);
+}
+.full-event-summary-counts {
+  font-size: 11px;
+  color: var(--full-muted);
+}
+.full-event-inline {
+  font-size: 10px;
+  color: var(--full-muted);
+  line-height: 1.2;
+}
+.full-event-inline .full-event-title {
+  font-weight: 700;
+}
+.full-event-inline .full-event-sub {
+  opacity: 0.7;
+}
+.full-event-timer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--full-item-border);
+}
+.full-event-timer-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--full-subtle);
+}
+.full-event-timer-value {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+.full-game-timer {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0,0,0,0.28);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.full-game-timer-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--full-soft);
+}
+.full-game-timer-value {
+  font-size: 13px;
+  font-weight: 800;
 }
 .full-achievement-progress {
   display: flex;
@@ -553,7 +776,7 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 }
 .full-achievement-count {
   font-size: 12px;
-  color: rgba(255,255,255,0.7);
+  color: var(--full-muted);
 }
 .full-achievement-list {
   display: flex;
@@ -570,8 +793,8 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   min-height: var(--full-achievement-row-height, 72px);
   padding: 8px;
   border-radius: 10px;
-  background: rgba(0,0,0,0.35);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--full-item-bg);
+  border: 1px solid var(--full-item-border);
 }
 .full-achievement-badge {
   width: 36px;
@@ -593,7 +816,7 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 }
 .full-achievement-desc {
   font-size: 11px;
-  color: rgba(255,255,255,0.6);
+  color: var(--full-subtle);
   line-height: 1.3;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -7280,6 +7503,39 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 .overlay-theme-bamboo {
   --overlay-bg: radial-gradient(120% 120% at 20% 0%, rgba(86, 210, 156, 0.18), rgba(6, 18, 16, 0.75) 45%, rgba(6, 10, 16, 0.95));
   font-family: 'Bricolage Grotesque', 'Manrope', system-ui, sans-serif;
+}
+
+.overlay-theme-bamboo-light {
+  --overlay-bg: radial-gradient(120% 120% at 20% 0%, rgba(86, 198, 214, 0.2), rgba(228, 235, 240, 0.96) 45%, rgba(205, 215, 222, 0.98));
+  font-family: 'Bricolage Grotesque', 'Manrope', system-ui, sans-serif;
+}
+
+.overlay-theme-bamboo-light .full-overlay-shell {
+  --full-ink: #1a1c1b;
+  --full-muted: rgba(26, 28, 27, 0.72);
+  --full-subtle: rgba(26, 28, 27, 0.6);
+  --full-soft: rgba(26, 28, 27, 0.45);
+  --theme-cardBackground: rgba(214, 228, 238, 0.92);
+  --theme-cardBorder: rgba(58, 120, 160, 0.18);
+  --full-item-bg: rgba(224, 236, 244, 0.9);
+  --full-item-border: rgba(58, 120, 160, 0.12);
+  --full-cover-border: rgba(0,0,0,0.12);
+  --full-cover-bg: #dde6ea;
+}
+
+.overlay-theme-bamboo-light .overlay-chrome .progress-bar-bg {
+  background: rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.12);
+}
+
+.overlay-theme-bamboo-light .overlay-chrome .game-title {
+  color: var(--brand) !important;
+  text-shadow: none;
+}
+
+.overlay-theme-bamboo-light .overlay-chrome .game-console {
+  color: rgba(26, 28, 27, 0.75);
+  text-shadow: none;
 }
 
 .overlay-theme-midnight {

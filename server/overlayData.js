@@ -108,7 +108,7 @@ const DEFAULT_OVERLAY_SETTINGS = {
     bottomHeight: 0,
     showGuides: true,
     showGameFrame: true,
-    showCameraFrame: true,
+    showCameraFrame: false,
     gameInsetX: 28,
     gameInsetY: 20,
     cameraPosition: 'bottom-right',

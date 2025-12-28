@@ -18,13 +18,20 @@ function usePoll(ms) {
   return tick
 }
 
-function useClock() {
-  const [now, setNow] = React.useState(new Date())
+function useViewportSize() {
+  const [size, setSize] = React.useState(() => ({
+    width: typeof window === 'undefined' ? 0 : window.innerWidth,
+    height: typeof window === 'undefined' ? 0 : window.innerHeight
+  }))
   React.useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(id)
+    if (typeof window === 'undefined') return
+    const handleResize = () => {
+      setSize({ width: window.innerWidth, height: window.innerHeight })
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
   }, [])
-  return now
+  return size
 }
 
 function orderModules(list) {
@@ -53,8 +60,8 @@ export default function OverlayFull() {
 
   useOverlayTheme(globalConfig.theme || 'bamboo', isClean, globalConfig)
 
+  const { width: viewportWidth, height: viewportHeight } = useViewportSize()
   const tick = usePoll(poll)
-  const clock = useClock()
   const [current, setCurrent] = React.useState(null)
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
   const [timers, setTimers] = React.useState({ currentGameTime: '00:00:00', totalTime: '000:00:00' })
@@ -66,6 +73,7 @@ export default function OverlayFull() {
   const statsEnabled = moduleConfig.stats?.enabled ?? false
   const timersEnabled = moduleConfig.timers?.enabled ?? false
   const achievementsEnabled = moduleConfig.achievements?.enabled ?? false
+  const showEventTimer = timersEnabled && globalConfig.showTimer !== false
 
   const needsCurrent = currentEnabled || achievementsEnabled
   const needsStats = statsEnabled
@@ -182,6 +190,7 @@ export default function OverlayFull() {
     .sort((a, b) => b.points - a.points)
   const achievementPages = Math.max(1, Math.ceil(upcomingAll.length / achievementsCount))
   const [achievementPage, setAchievementPage] = React.useState(0)
+  const [nowPlayingTone, setNowPlayingTone] = React.useState('dark')
 
   React.useEffect(() => {
     setAchievementPage(0)
@@ -200,6 +209,62 @@ export default function OverlayFull() {
   const achievementStart = achievementPage * achievementsCount
   const upcoming = upcomingAll.slice(achievementStart, achievementStart + achievementsCount)
   const achievementListStyle = { '--full-achievement-rows': achievementsCount }
+  const eventModuleEnabled = statsEnabled || showEventTimer
+  const eventModuleConfig = statsEnabled ? moduleConfig.stats : moduleConfig.timers
+  const eventModuleId = statsEnabled ? 'stats' : 'timers'
+  const eventModuleTitle = statsEnabled ? (settings.stats?.title || 'Event Progress') : 'Event Timer'
+  const nowPlayingCover = current?.image_url && globalConfig.showCover !== false
+    ? buildCoverUrl(current.image_url)
+    : ''
+  const showNowPlayingThumb = globalConfig.showCover !== false && !nowPlayingCover
+  const nowPlayingToneClass = nowPlayingCover && nowPlayingTone === 'light' ? ' now-playing-light' : ''
+
+  React.useEffect(() => {
+    let cancelled = false
+    if (!nowPlayingCover) {
+      setNowPlayingTone('dark')
+      return () => { cancelled = true }
+    }
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.src = nowPlayingCover
+    img.onload = () => {
+      try {
+        const sampleSize = 24
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
+        if (!ctx) {
+          if (!cancelled) setNowPlayingTone('dark')
+          return
+        }
+        canvas.width = sampleSize
+        canvas.height = sampleSize
+        ctx.drawImage(img, 0, 0, sampleSize, sampleSize)
+        const data = ctx.getImageData(0, 0, sampleSize, sampleSize).data
+        let total = 0
+        let count = 0
+        for (let i = 0; i < data.length; i += 4) {
+          const alpha = data[i + 3] / 255
+          if (alpha === 0) continue
+          const r = data[i]
+          const g = data[i + 1]
+          const b = data[i + 2]
+          const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+          total += luminance
+          count += 1
+        }
+        const avg = count ? (total / count) : 1
+        const tone = avg >= 0.58 ? 'dark' : 'light'
+        if (!cancelled) setNowPlayingTone(tone)
+      } catch {
+        if (!cancelled) setNowPlayingTone('dark')
+      }
+    }
+    img.onerror = () => {
+      if (!cancelled) setNowPlayingTone('dark')
+    }
+    return () => { cancelled = true }
+  }, [nowPlayingCover])
 
   const moduleDefs = [
     {
@@ -208,11 +273,14 @@ export default function OverlayFull() {
       position: moduleConfig.current?.position || 'left',
       enabled: currentEnabled,
       content: (
-        <div className="overlay-card full-overlay-card">
+        <div
+          className={`overlay-card full-overlay-card${nowPlayingCover ? ` full-overlay-now-playing${nowPlayingToneClass}` : ''}`}
+          style={nowPlayingCover ? { '--now-playing-cover': `url(${nowPlayingCover})` } : undefined}
+        >
           <div className="full-card-title">Now Playing</div>
           {current ? (
             <div className="full-game-card">
-              {globalConfig.showCover !== false && (
+              {showNowPlayingThumb && (
                 current.image_url ? (
                   <img className="full-game-cover" src={buildCoverUrl(current.image_url)} alt="" />
                 ) : (
@@ -227,6 +295,12 @@ export default function OverlayFull() {
                   {globalConfig.showPublisher !== false && current.publisher ? ` • ${current.publisher}` : ''}
                 </div>
                 {current.status && <div className="full-game-status">{current.status}</div>}
+                {showEventTimer && (
+                  <div className="full-game-timer">
+                    <span className="full-game-timer-label">Current</span>
+                    <span className="full-game-timer-value">{timers.currentGameTime}</span>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -236,47 +310,35 @@ export default function OverlayFull() {
       )
     },
     {
-      id: 'stats',
-      order: moduleConfig.stats?.order || 1,
-      position: moduleConfig.stats?.position || 'left',
-      enabled: statsEnabled,
+      id: eventModuleId,
+      order: eventModuleConfig?.order || 1,
+      position: eventModuleConfig?.position || 'left',
+      enabled: eventModuleEnabled,
       content: (
-        <div className="overlay-card full-overlay-card">
-          <div className="full-card-title">{settings.stats?.title || 'Event Progress'}</div>
-          <div className="full-stats-row">
-            <div className="full-stats-percent">{stats.percent}%</div>
-            <div className="full-stats-label">complete</div>
-          </div>
-          <div className="progress-bar-bg full-stats-bar">
-            <div className="progress-bar-fill" style={{ width: `${stats.percent}%` }} />
-          </div>
-          <div className="full-stats-counts">{stats.completed.toLocaleString()}/{stats.total.toLocaleString()}</div>
-        </div>
-      )
-    },
-    {
-      id: 'timers',
-      order: moduleConfig.timers?.order || 1,
-      position: moduleConfig.timers?.position || 'right',
-      enabled: timersEnabled && globalConfig.showTimer !== false,
-      content: (
-        <div className="overlay-card full-overlay-card">
-          <div className="full-card-title">Timers</div>
-          {eventTitle && (
-            <div className="full-event-pill">
+        <div className="overlay-card full-overlay-card full-overlay-event">
+          <div className="full-card-title">{eventModuleTitle}</div>
+          {statsEnabled && (
+            <>
+              <div className="full-event-summary">
+                <span className="full-event-summary-percent">{stats.percent}%</span>
+                <span className="full-event-summary-label">Complete</span>
+                <span className="full-event-summary-divider">-</span>
+                <span className="full-event-summary-counts">{stats.completed.toLocaleString()}/{stats.total.toLocaleString()}</span>
+              </div>
+            </>
+          )}
+          {showEventTimer && eventTitle && (
+            <div className="full-event-inline">
               <span className="full-event-title">{eventTitle}</span>
               {eventSubtitle && <span className="full-event-sub"> - {eventSubtitle}</span>}
             </div>
           )}
-          <div className="full-timer-row">
-            <span className="full-timer-label">Current</span>
-            <span className="full-timer-value">{timers.currentGameTime}</span>
-          </div>
-          <div className="full-timer-row">
-            <span className="full-timer-label">Event</span>
-            <span className="full-timer-value">{timers.totalTime}</span>
-          </div>
-          <div className="full-timer-updated">Updated {clock.toLocaleTimeString()}</div>
+          {showEventTimer && (
+            <div className="full-event-timer">
+              <span className="full-event-timer-label">Event</span>
+              <span className="full-event-timer-value">{timers.totalTime}</span>
+            </div>
+          )}
         </div>
       )
     },
@@ -345,47 +407,68 @@ export default function OverlayFull() {
     return Math.max(min, Math.round(num * factor))
   }
   const isFocus = layoutMode === 'focus'
-  const leftWidth = isFocus ? scaleValue(fullConfig.leftWidth ?? 360, 0.78, 240) : (fullConfig.leftWidth ?? 360)
-  const rightWidth = isFocus ? scaleValue(fullConfig.rightWidth ?? 360, 0.78, 240) : (fullConfig.rightWidth ?? 360)
+  const leftWidthBase = isFocus ? scaleValue(fullConfig.leftWidth ?? 360, 0.78, 240) : (fullConfig.leftWidth ?? 360)
+  const rightWidthBase = isFocus ? scaleValue(fullConfig.rightWidth ?? 360, 0.78, 240) : (fullConfig.rightWidth ?? 360)
   const padding = isFocus ? scaleValue(fullConfig.padding ?? 32, 0.8, 16) : (fullConfig.padding ?? 32)
   const columnGap = isFocus ? scaleValue(fullConfig.columnGap ?? 24, 0.75, 12) : (fullConfig.columnGap ?? 24)
   const moduleGap = isFocus ? scaleValue(fullConfig.moduleGap ?? 16, 0.75, 10) : (fullConfig.moduleGap ?? 16)
   const gameInsetX = Number(fullConfig.gameInsetX ?? 28)
   const gameInsetY = Number(fullConfig.gameInsetY ?? 20)
-  let gameInsetLeft = gameInsetX
-  let gameInsetRight = gameInsetX
-  let gameInsetTop = gameInsetY
-  let gameInsetBottom = gameInsetY
   const cameraDock = fullConfig.cameraDock ?? false
   const cameraWidth = Number(fullConfig.cameraWidth ?? 360)
   const cameraHeight = Number(fullConfig.cameraHeight ?? 200)
   const cameraOffsetX = Number(fullConfig.cameraOffsetX ?? 32)
   const cameraOffsetY = Number(fullConfig.cameraOffsetY ?? 32)
   const cameraPosition = String(fullConfig.cameraPosition || 'bottom-right')
-  const columnGapPad = Math.max(8, Math.round(padding * 0.5))
-  const reserveTop = Math.max(0, cameraHeight + cameraOffsetY - padding + columnGapPad)
-  const reserveBottom = Math.max(0, cameraHeight + cameraOffsetY - padding + columnGapPad)
-  const leftColumnStyle = {}
-  const rightColumnStyle = {}
-  if (cameraDock && showCameraFrame) {
-    if (cameraPosition.includes('left') && cameraPosition.includes('top')) {
-      leftColumnStyle.paddingTop = `${reserveTop}px`
-    } else if (cameraPosition.includes('left') && cameraPosition.includes('bottom')) {
-      leftColumnStyle.paddingBottom = `${reserveBottom}px`
-    } else if (cameraPosition.includes('right') && cameraPosition.includes('top')) {
-      rightColumnStyle.paddingTop = `${reserveTop}px`
-    } else if (cameraPosition.includes('right') && cameraPosition.includes('bottom')) {
-      rightColumnStyle.paddingBottom = `${reserveBottom}px`
-    }
+  const cameraEnabled = showCameraFrame
+  const stageInsetBoost = 10
+  const gameInsetXValue = Number.isFinite(gameInsetX) ? Math.max(0, gameInsetX - stageInsetBoost) : 0
+  const gameInsetYValue = Number.isFinite(gameInsetY) ? Math.max(0, gameInsetY - stageInsetBoost) : 0
+  const cameraWidthValue = Number.isFinite(cameraWidth) ? cameraWidth : 360
+  const cameraHeightValue = Number.isFinite(cameraHeight) ? cameraHeight : 200
+  const cameraOffsetXValue = Number.isFinite(cameraOffsetX) ? cameraOffsetX : 32
+  const cameraOffsetYValue = Number.isFinite(cameraOffsetY) ? cameraOffsetY : 32
+  const dockCamera = cameraDock && cameraEnabled
+  const dockCameraLeft = dockCamera && cameraPosition.includes('left')
+  const dockCameraRight = dockCamera && cameraPosition.includes('right')
+  const dockCameraTop = dockCamera && cameraPosition.includes('top')
+  const dockCameraBottom = dockCamera && cameraPosition.includes('bottom')
+  const dockOffsetX = dockCamera ? Math.max(0, cameraOffsetXValue - padding) : 0
+  const dockOffsetYTop = dockCamera ? Math.max(0, cameraOffsetYValue - padding) : 0
+  const dockOffsetYBottom = dockCamera ? Math.max(0, cameraOffsetYValue - padding - bottomHeight) : 0
+  const cameraDockRequiredWidth = dockCamera ? cameraWidthValue + dockOffsetX : 0
+  const leftWidth = dockCameraLeft ? Math.max(leftWidthBase, cameraDockRequiredWidth) : leftWidthBase
+  const rightWidth = dockCameraRight ? Math.max(rightWidthBase, cameraDockRequiredWidth) : rightWidthBase
+  const hasLeftColumn = leftModules.length > 0 || dockCameraLeft
+  const hasRightColumn = rightModules.length > 0 || dockCameraRight
+  const columnCount = (hasLeftColumn ? 1 : 0) + 1 + (hasRightColumn ? 1 : 0)
+  const gapCount = Math.max(0, columnCount - 1)
+  const gridWidth = Math.max(0, viewportWidth - padding * 2)
+  const gridHeight = Math.max(0, viewportHeight - bottomHeight - padding * 2)
+  const stageWidth = Math.max(0, gridWidth - (hasLeftColumn ? leftWidth : 0) - (hasRightColumn ? rightWidth : 0) - columnGap * gapCount)
+  const stageHeight = Math.max(0, gridHeight)
+  const availableStageWidth = stageWidth > 0 ? Math.max(0, stageWidth - cameraOffsetXValue) : cameraWidthValue
+  const availableStageHeight = stageHeight > 0 ? Math.max(0, stageHeight - cameraOffsetYValue) : cameraHeightValue
+  const cameraWidthFinal = dockCamera ? cameraWidthValue : Math.min(cameraWidthValue, availableStageWidth)
+  const cameraHeightFinal = dockCamera ? cameraHeightValue : Math.min(cameraHeightValue, availableStageHeight)
+  let gameInsetLeft = gameInsetXValue
+  let gameInsetRight = gameInsetXValue
+  let gameInsetTop = gameInsetYValue
+  let gameInsetBottom = gameInsetYValue
+  if (cameraEnabled && !dockCamera) {
+    const reserveX = cameraWidthFinal + cameraOffsetXValue + gameInsetXValue
+    const reserveY = cameraHeightFinal + cameraOffsetYValue + gameInsetYValue
+    if (cameraPosition.includes('left')) gameInsetLeft = Math.max(gameInsetLeft, reserveX)
+    if (cameraPosition.includes('right')) gameInsetRight = Math.max(gameInsetRight, reserveX)
+    if (cameraPosition.includes('top')) gameInsetTop = Math.max(gameInsetTop, reserveY)
+    if (cameraPosition.includes('bottom')) gameInsetBottom = Math.max(gameInsetBottom, reserveY)
   }
-  const hasLeftColumn = leftModules.length > 0
-  const hasRightColumn = rightModules.length > 0
   const gridColumns = hasLeftColumn && hasRightColumn
-    ? 'var(--full-left-width) minmax(0, 1fr) var(--full-right-width)'
+    ? 'minmax(0, var(--full-left-width)) minmax(0, 1fr) minmax(0, var(--full-right-width))'
     : hasLeftColumn
-      ? 'var(--full-left-width) minmax(0, 1fr)'
+      ? 'minmax(0, var(--full-left-width)) minmax(0, 1fr)'
       : hasRightColumn
-        ? 'minmax(0, 1fr) var(--full-right-width)'
+        ? 'minmax(0, 1fr) minmax(0, var(--full-right-width))'
         : 'minmax(0, 1fr)'
   const layoutStyle = {
     '--full-left-width': `${leftWidth}px`,
@@ -395,22 +478,52 @@ export default function OverlayFull() {
     '--full-column-gap': `${(hasLeftColumn || hasRightColumn) ? columnGap : 0}px`,
     '--full-module-gap': `${moduleGap}px`,
     '--full-bottom-height': `${bottomHeight}px`,
-    '--full-game-inset-x': `${gameInsetX}px`,
-    '--full-game-inset-y': `${gameInsetY}px`,
+    '--full-game-inset-x': `${gameInsetXValue}px`,
+    '--full-game-inset-y': `${gameInsetYValue}px`,
     '--full-game-inset-left': `${gameInsetLeft}px`,
     '--full-game-inset-right': `${gameInsetRight}px`,
     '--full-game-inset-top': `${gameInsetTop}px`,
     '--full-game-inset-bottom': `${gameInsetBottom}px`,
-    '--full-camera-width': `${fullConfig.cameraWidth ?? 360}px`,
-    '--full-camera-height': `${fullConfig.cameraHeight ?? 200}px`,
-    '--full-camera-offset-x': `${fullConfig.cameraOffsetX ?? 32}px`,
-    '--full-camera-offset-y': `${fullConfig.cameraOffsetY ?? 32}px`
+    '--full-camera-width': `${cameraWidthFinal}px`,
+    '--full-camera-height': `${cameraHeightFinal}px`,
+    '--full-camera-offset-x': `${cameraOffsetXValue}px`,
+    '--full-camera-offset-y': `${cameraOffsetYValue}px`
   }
 
   const cameraStyle = {
     width: 'var(--full-camera-width)',
-    height: 'var(--full-camera-height)'
+    height: 'var(--full-camera-height)',
+    maxWidth: 'calc(100% - var(--full-camera-offset-x))',
+    maxHeight: 'calc(100% - var(--full-camera-offset-y))'
   }
+  const cameraGuideVisible = showGuides && showCameraFrame
+  const renderDockedCamera = (side, isTop) => {
+    const cameraSlotStyle = {
+      justifyContent: side === 'right' ? 'flex-end' : 'flex-start'
+    }
+    const cameraFrameStyle = {
+      width: 'var(--full-camera-width)',
+      height: 'var(--full-camera-height)',
+      maxWidth: '100%',
+      maxHeight: '100%',
+      marginLeft: side === 'left' ? `${dockOffsetX}px` : undefined,
+      marginRight: side === 'right' ? `${dockOffsetX}px` : undefined,
+      marginTop: isTop ? `${dockOffsetYTop}px` : undefined,
+      marginBottom: !isTop ? `${dockOffsetYBottom}px` : undefined
+    }
+    return (
+      <div className="full-overlay-column-slot" style={cameraSlotStyle}>
+        <div className={`full-overlay-camera-docked${cameraGuideVisible ? ' full-overlay-camera-guide' : ''}`} style={cameraFrameStyle}>
+          {cameraGuideVisible && <div className="full-overlay-frame-label">Camera</div>}
+        </div>
+      </div>
+    )
+  }
+  const renderModules = (modules) => (
+    modules.map(module => (
+      <div key={module.id} className="full-overlay-module">{module.content}</div>
+    ))
+  )
   const offsetX = 'var(--full-camera-offset-x)'
   const offsetY = 'var(--full-camera-offset-y)'
   switch (cameraPosition) {
@@ -432,20 +545,24 @@ export default function OverlayFull() {
       break
   }
 
+
   return (
     <div className={`overlay-chrome full-overlay-shell full-layout-${layoutMode} ${showGuides ? 'full-overlay-guides' : ''} ${isClean ? 'overlay-clean' : ''}`} style={layoutStyle}>
-      {showGuides && showCameraFrame && cameraDock && (
-        <div className="full-overlay-frame full-overlay-camera full-overlay-camera-outside" style={cameraStyle}>
-          <div className="full-overlay-frame-label">Camera</div>
-        </div>
-      )}
       <div className="full-overlay-grid">
         {hasLeftColumn && (
-          <div className="full-overlay-column" style={leftColumnStyle}>
-            {leftModules.map(module => (
-              <div key={module.id} className="full-overlay-module">{module.content}</div>
-            ))}
-          </div>
+          dockCameraLeft ? (
+            <div className="full-overlay-column full-overlay-column-docked">
+              {dockCameraTop && renderDockedCamera('left', true)}
+              <div className="full-overlay-column-stack">
+                {renderModules(leftModules)}
+              </div>
+              {dockCameraBottom && renderDockedCamera('left', false)}
+            </div>
+          ) : (
+            <div className="full-overlay-column">
+              {renderModules(leftModules)}
+            </div>
+          )
         )}
         <div className="full-overlay-stage">
           {showGuides && showGameFrame && (
@@ -460,11 +577,19 @@ export default function OverlayFull() {
           )}
         </div>
         {hasRightColumn && (
-          <div className="full-overlay-column" style={rightColumnStyle}>
-            {rightModules.map(module => (
-              <div key={module.id} className="full-overlay-module">{module.content}</div>
-            ))}
-          </div>
+          dockCameraRight ? (
+            <div className="full-overlay-column full-overlay-column-docked">
+              {dockCameraTop && renderDockedCamera('right', true)}
+              <div className="full-overlay-column-stack">
+                {renderModules(rightModules)}
+              </div>
+              {dockCameraBottom && renderDockedCamera('right', false)}
+            </div>
+          ) : (
+            <div className="full-overlay-column">
+              {renderModules(rightModules)}
+            </div>
+          )
         )}
       </div>
 

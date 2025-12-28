@@ -1,7 +1,7 @@
 export const DEFAULT_OVERLAY_SETTINGS = {
   version: 1,
   global: {
-    theme: 'bamboo',
+    theme: 'bamboo-light',
     clean: true,
     pollMs: 5000,
     achievementPollMs: 60000,
@@ -99,7 +99,7 @@ export const DEFAULT_OVERLAY_SETTINGS = {
     bottomHeight: 0,
     showGuides: true,
     showGameFrame: true,
-    showCameraFrame: true,
+    showCameraFrame: false,
     gameInsetX: 28,
     gameInsetY: 20,
     cameraPosition: 'bottom-right',

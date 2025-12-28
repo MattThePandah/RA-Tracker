@@ -33,6 +33,7 @@ server/server/data/
 # Cached assets
 covers/
 public/covers/
+custom-covers/
 cache/
 
 # Logs & diagnostics

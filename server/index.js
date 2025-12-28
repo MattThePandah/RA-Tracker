@@ -257,6 +257,48 @@ function sanitizeText(value, maxLen) {
   return s.length > maxLen ? s.slice(0, maxLen) : s
 }
 
+// Custom cover storage uses sanitized filenames for Windows compatibility.
+const CUSTOM_COVERS_DIR = path.join(process.cwd(), 'custom-covers')
+fs.mkdirSync(CUSTOM_COVERS_DIR, { recursive: true })
+
+function normalizeCustomCoverExt(value) {
+  const ext = String(value || '').toLowerCase()
+  if (ext === '.jpeg' || ext === 'jpeg' || ext === '.jpg' || ext === 'jpg') return '.jpg'
+  if (ext === '.png' || ext === 'png') return '.png'
+  if (ext === '.webp' || ext === 'webp') return '.webp'
+  return null
+}
+
+function customCoverExtFromType(contentType) {
+  const type = String(contentType || '').toLowerCase()
+  if (type.includes('jpeg')) return '.jpg'
+  if (type.includes('jpg')) return '.jpg'
+  if (type.includes('png')) return '.png'
+  if (type.includes('webp')) return '.webp'
+  return null
+}
+
+function sanitizeCustomCoverName(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  return raw.replace(/[^a-z0-9._-]/gi, '_')
+}
+
+function customCoverFilePathFromId(gameId, ext) {
+  const safeName = sanitizeCustomCoverName(gameId) || 'cover'
+  return path.join(CUSTOM_COVERS_DIR, `${safeName}${ext}`)
+}
+
+function customCoverFilePathFromRequest(fileParam) {
+  const base = path.basename(String(fileParam || '').trim())
+  const ext = normalizeCustomCoverExt(path.extname(base))
+  if (!ext) return null
+  const name = path.basename(base, path.extname(base))
+  const safeName = sanitizeCustomCoverName(name)
+  if (!safeName) return null
+  return path.join(CUSTOM_COVERS_DIR, `${safeName}${ext}`)
+}
+
 const streamCache = { ts: 0, data: null }
 const streamLiveState = { twitch: null, youtube: null }
 const streamCacheMs = Number(process.env.STREAM_CACHE_MS || 60_000)
@@ -531,6 +573,12 @@ app.post('/overlay/current', requireAdmin, requireCsrf, requireOrigin, (req, res
 // Serve cached covers statically
 app.use('/covers', express.static(COVERS_DIR))
 
+app.get('/custom-covers/:file', (req, res) => {
+  const filePath = customCoverFilePathFromRequest(req.params.file)
+  if (!filePath || !fs.existsSync(filePath)) return res.status(404).send('custom cover not found')
+  return res.sendFile(filePath)
+})
+
 // Serve local assets from user's custom directory
 const USER_ASSETS_DIR = 'C:\\Users\\Matt\\Documents\\ComfyUI\\output\\Using'
 if (fs.existsSync(USER_ASSETS_DIR)) {
@@ -571,6 +619,27 @@ app.post('/covers/prefetch', requireAdmin, requireCsrf, requireOrigin, async (re
   })
   await Promise.all(workers)
   res.json({ ok, skipped, failed, total: urls.length, dir: COVERS_DIR })
+})
+
+app.post('/api/covers/custom', requireAdmin, requireCsrf, requireOrigin, express.raw({
+  type: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
+  limit: '6mb'
+}), (req, res) => {
+  try {
+    const gameId = String(req.query.gameId || '').trim()
+    if (!gameId) return res.status(400).json({ error: 'gameId_required' })
+    if (!Buffer.isBuffer(req.body) || !req.body.length) {
+      return res.status(400).json({ error: 'image_required' })
+    }
+    const ext = customCoverExtFromType(req.headers['content-type']) || normalizeCustomCoverExt(req.query.ext)
+    if (!ext) return res.status(400).json({ error: 'unsupported_image_type' })
+    const filePath = customCoverFilePathFromId(gameId, ext)
+    fs.writeFileSync(filePath, req.body)
+    res.json({ ok: true, path: `custom-covers/${gameId}${ext}` })
+  } catch (error) {
+    console.error('Custom cover upload failed:', error.message)
+    res.status(500).json({ error: 'custom_cover_upload_failed' })
+  }
 })
 
 // Smart game sampling for roulette wheel (max 16 slots for performance)
