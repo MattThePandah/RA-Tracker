@@ -184,30 +184,53 @@ export default function OverlayFull() {
   const achievementsCount = Math.max(1, Number(moduleConfig.achievements?.count || 4))
   const earnedCount = state.currentGameAchievements.filter(a => a.isEarned).length
   const totalAchievements = state.currentGameAchievements.length
+  const lockedCount = Math.max(0, totalAchievements - earnedCount)
+  const earnedPoints = React.useMemo(() => (
+    state.currentGameAchievements.reduce((sum, achievement) => (
+      sum + (achievement.isEarned ? (Number(achievement.points) || 0) : 0)
+    ), 0)
+  ), [state.currentGameAchievements])
+  const totalPoints = React.useMemo(() => (
+    state.currentGameAchievements.reduce((sum, achievement) => (
+      sum + (Number(achievement.points) || 0)
+    ), 0)
+  ), [state.currentGameAchievements])
   const achievementPercent = totalAchievements ? Math.round((earnedCount / totalAchievements) * 100) : 0
-  const upcomingAll = state.currentGameAchievements
-    .filter(a => !a.isEarned)
-    .sort((a, b) => b.points - a.points)
-  const achievementPages = Math.max(1, Math.ceil(upcomingAll.length / achievementsCount))
+  const achievementAll = React.useMemo(() => {
+    return state.currentGameAchievements
+      .slice()
+      .sort((a, b) => {
+        if (a.isEarned !== b.isEarned) return a.isEarned ? -1 : 1
+        const orderA = Number.isFinite(Number(a.displayOrder)) ? Number(a.displayOrder) : null
+        const orderB = Number.isFinite(Number(b.displayOrder)) ? Number(b.displayOrder) : null
+        if (orderA !== null && orderB !== null && orderA !== orderB) return orderA - orderB
+        if (orderA !== null && orderB === null) return -1
+        if (orderA === null && orderB !== null) return 1
+        const pointsA = Number(a.points || 0)
+        const pointsB = Number(b.points || 0)
+        return pointsB - pointsA
+      })
+  }, [state.currentGameAchievements])
+  const achievementPages = Math.max(1, Math.ceil(achievementAll.length / achievementsCount))
   const [achievementPage, setAchievementPage] = React.useState(0)
   const [nowPlayingTone, setNowPlayingTone] = React.useState('dark')
 
   React.useEffect(() => {
     setAchievementPage(0)
-  }, [upcomingAll.length, achievementsCount, currentGameId])
+  }, [achievementAll.length, achievementsCount, currentGameId])
 
   React.useEffect(() => {
     if (!achievementsEnabled) return
     if (!achievementCycleMs) return
-    if (upcomingAll.length <= achievementsCount) return
+    if (achievementAll.length <= achievementsCount) return
     const id = setInterval(() => {
       setAchievementPage(prev => (prev + 1) % achievementPages)
     }, achievementCycleMs)
     return () => clearInterval(id)
-  }, [achievementsEnabled, achievementCycleMs, upcomingAll.length, achievementsCount, achievementPages])
+  }, [achievementsEnabled, achievementCycleMs, achievementAll.length, achievementsCount, achievementPages])
 
   const achievementStart = achievementPage * achievementsCount
-  const upcoming = upcomingAll.slice(achievementStart, achievementStart + achievementsCount)
+  const visibleAchievements = achievementAll.slice(achievementStart, achievementStart + achievementsCount)
   const achievementListStyle = { '--full-achievement-rows': achievementsCount }
   const eventModuleEnabled = statsEnabled || showEventTimer
   const eventModuleConfig = statsEnabled ? moduleConfig.stats : moduleConfig.timers
@@ -323,7 +346,10 @@ export default function OverlayFull() {
                 <span className="full-event-summary-percent">{stats.percent}%</span>
                 <span className="full-event-summary-label">Complete</span>
                 <span className="full-event-summary-divider">-</span>
-                <span className="full-event-summary-counts">{stats.completed.toLocaleString()}/{stats.total.toLocaleString()}</span>
+                <span className="full-event-summary-counts">
+                  <span className="full-event-summary-counts-label">Games completed</span>
+                  <span className="full-event-summary-counts-value">{stats.completed.toLocaleString()}/{stats.total.toLocaleString()}</span>
+                </span>
               </div>
             </>
           )}
@@ -360,7 +386,10 @@ export default function OverlayFull() {
             <>
               <div className="full-achievement-progress">
                 <div className="full-achievement-percent">{achievementPercent}%</div>
-                <div className="full-achievement-count">{earnedCount}/{totalAchievements} earned</div>
+                <div className="full-achievement-stats">
+                  <div className="full-achievement-count">{earnedCount}/{totalAchievements} earned</div>
+                  <div className="full-achievement-points-total">{earnedPoints}/{totalPoints} pts</div>
+                </div>
               </div>
               <div className="progress-bar-bg full-stats-bar">
                 <div className="progress-bar-fill" style={{ width: `${achievementPercent}%` }} />
@@ -368,13 +397,22 @@ export default function OverlayFull() {
               {state.loading?.gameAchievements && (
                 <div className="text-secondary small">Loading achievements...</div>
               )}
-              {!state.loading?.gameAchievements && upcoming.length === 0 && (
+              {!state.loading?.gameAchievements && totalAchievements === 0 && (
+                <div className="text-secondary small">No achievements found.</div>
+              )}
+              {!state.loading?.gameAchievements && totalAchievements > 0 && lockedCount === 0 && (
                 <div className="text-secondary small">All achievements earned.</div>
               )}
-              {!state.loading?.gameAchievements && upcoming.length > 0 && (
+              {!state.loading?.gameAchievements && totalAchievements > 0 && (
                 <div className="full-achievement-list" style={achievementListStyle} key={`ach-page-${achievementPage}`}>
-                  {upcoming.map(achievement => (
-                    <div className="full-achievement-item" key={achievement.id}>
+                  {visibleAchievements.map(achievement => (
+                    <div
+                      className={`full-achievement-item ${achievement.isEarned ? 'earned' : 'locked'}`}
+                      key={achievement.id}
+                    >
+                      <span className={`full-achievement-watermark ${achievement.isEarned ? 'earned' : 'locked'}`} aria-hidden="true">
+                        {achievement.isEarned ? '🏆' : '🔒'}
+                      </span>
                       <img
                         className="full-achievement-badge"
                         src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`}
@@ -384,7 +422,10 @@ export default function OverlayFull() {
                         <div className="full-achievement-title">{achievement.title}</div>
                         <div className="full-achievement-desc">{achievement.description}</div>
                       </div>
-                      <div className="full-achievement-points">{achievement.points}</div>
+                      <div className="full-achievement-points">
+                        <span className="full-achievement-points-value">{achievement.points}</span>
+                        <span className="full-achievement-points-label">pts</span>
+                      </div>
                     </div>
                   ))}
                 </div>

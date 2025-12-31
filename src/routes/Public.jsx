@@ -6,6 +6,7 @@ import {
   fetchCompletedDrafts,
   fetchSuggestionSettings,
   fetchPublicSite,
+  fetchPublicCurrentGame,
   fetchStreamStatus,
   searchPublicLibrary
 } from '../services/publicApi.js'
@@ -28,6 +29,9 @@ const DEFAULT_SITE = {
   twitchUrl: '',
   youtubeChannelId: '',
   youtubeUrl: '',
+  xUrl: '',
+  mastodonUrl: '',
+  blueskyUrl: '',
   youtubeUploadsLimit: 3,
   showTwitch: true,
   showYouTube: true,
@@ -257,6 +261,7 @@ export default function Public() {
   const [completedDrafts, setCompletedDrafts] = useState([])
   const [loading, setLoading] = useState(true)
   const [streamStatus, setStreamStatus] = useState({ twitch: {}, youtube: {} })
+  const [currentGame, setCurrentGame] = useState(null)
   
   // Suggestion State
   const [suggestionSettings, setSuggestionSettings] = useState({ suggestions_open: true, max_open: 0, openCount: 0 })
@@ -274,11 +279,12 @@ export default function Public() {
   useEffect(() => {
     async function load() {
       try {
-        const [gamesRes, settingsRes, siteRes, draftsRes] = await Promise.allSettled([
+        const [gamesRes, settingsRes, siteRes, draftsRes, currentRes] = await Promise.allSettled([
           fetchPublicGames(),
           fetchSuggestionSettings(),
           fetchPublicSite(),
-          fetchCompletedDrafts()
+          fetchCompletedDrafts(),
+          fetchPublicCurrentGame()
         ])
         
         if (gamesRes.status === 'fulfilled') setPublicGames(gamesRes.value.games || [])
@@ -294,6 +300,7 @@ export default function Public() {
           setSite({ ...DEFAULT_SITE, ...(siteRes.value.site || {}) })
         }
         if (draftsRes.status === 'fulfilled') setCompletedDrafts(draftsRes.value.games || [])
+        if (currentRes.status === 'fulfilled') setCurrentGame(currentRes.value.current || null)
       } catch (e) {
         console.error("Failed to load site data", e)
       } finally {
@@ -305,8 +312,12 @@ export default function Public() {
     // Stream status polling
     const poll = async () => {
       try {
-        const data = await fetchStreamStatus()
-        setStreamStatus(data || {})
+        const [statusRes, currentRes] = await Promise.allSettled([
+          fetchStreamStatus(),
+          fetchPublicCurrentGame()
+        ])
+        if (statusRes.status === 'fulfilled') setStreamStatus(statusRes.value || {})
+        if (currentRes.status === 'fulfilled') setCurrentGame(currentRes.value.current || null)
       } catch {}
     }
     poll()
@@ -379,7 +390,67 @@ export default function Public() {
 
   const twitch = streamStatus?.twitch || {}
   const youtube = streamStatus?.youtube || {}
+  const currentCover = currentGame?.image_url ? buildCoverUrl(currentGame.image_url) : null
+  const currentConsole = currentGame ? consoleLabel(currentGame.console) : ''
+  const isLive = !!(twitch.isLive || youtube.isLive)
+  const liveLabel = twitch.isLive && youtube.isLive
+    ? 'Live on Twitch & YouTube'
+    : (twitch.isLive ? 'Live on Twitch' : (youtube.isLive ? 'Live on YouTube' : ''))
+  const twitchUrl = twitch.url || site.twitchUrl || site.ctaUrl || ''
+  const youtubeUrl = youtube.live?.videoId
+    ? `https://www.youtube.com/watch?v=${youtube.live.videoId}`
+    : (site.youtubeUrl || '')
+  const liveActions = [
+    twitch.isLive && twitchUrl ? { label: 'Watch on Twitch', url: twitchUrl } : null,
+    youtube.isLive && youtubeUrl ? { label: 'Watch on YouTube', url: youtubeUrl } : null
+  ].filter(Boolean)
+  const socialLinks = [
+    site.xUrl ? { key: 'x', label: 'X', url: site.xUrl } : null,
+    site.mastodonUrl ? { key: 'mastodon', label: 'Mastodon', url: site.mastodonUrl, rel: 'me' } : null,
+    site.blueskyUrl ? { key: 'bluesky', label: 'Bluesky', url: site.blueskyUrl } : null
+  ].filter(Boolean)
   const navThemeClass = isLight(site.theme?.public?.nav || '#060807') ? 'pub-nav-light' : 'pub-nav-dark'
+
+  const nowPlayingBody = (
+    <>
+      <div className="pub-now-cover">
+        {currentCover ? (
+          <img src={currentCover} alt={currentGame.title || 'Current game'} loading="lazy" />
+        ) : (
+          <div className="pub-no-cover">No cover</div>
+        )}
+      </div>
+      <div className="pub-now-info">
+        <div className="pub-now-label">
+          Now Playing
+          {liveLabel && <span className="pub-now-live">{liveLabel}</span>}
+        </div>
+        <h2 className="pub-now-title">{currentGame.title || 'Current game'}</h2>
+        <div className="pub-now-meta">
+          {currentConsole && <span>{currentConsole}</span>}
+          {currentConsole && currentGame.release_year && <span>&bull;</span>}
+          {currentGame.release_year && <span>{currentGame.release_year}</span>}
+          {(currentConsole || currentGame.release_year) && currentGame.status && <span>&bull;</span>}
+          {currentGame.status && <span>{currentGame.status}</span>}
+        </div>
+        {liveActions.length > 0 && (
+          <div className="pub-now-actions">
+            {liveActions.map(action => (
+              <a
+                key={action.label}
+                className="pub-btn primary small pub-now-action"
+                href={action.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {action.label}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  )
 
   return (
     <div className="pub-shell">
@@ -449,6 +520,22 @@ export default function Public() {
               <a href="#reviews" className="pub-btn primary">Explore Reviews</a>
               <a href="#suggest" className="pub-btn ghost">Recommend a Game</a>
             </div>
+            {socialLinks.length > 0 && (
+              <div className="pub-socials">
+                <span className="pub-social-label">Follow</span>
+                {socialLinks.map(link => (
+                  <a
+                    key={link.key}
+                    className="pub-btn ghost small pub-social-link"
+                    href={link.url}
+                    target="_blank"
+                    rel={link.rel ? `${link.rel} noreferrer` : 'noreferrer'}
+                  >
+                    {link.label}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           
           {/* Featured Card */}
@@ -471,6 +558,16 @@ export default function Public() {
           )}
         </div>
       </header>
+
+      {currentGame && isLive && (
+        <section className="pub-section pub-animate-in">
+          <div className="pub-container">
+            <div className="pub-now-card pub-glass">
+              {nowPlayingBody}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Live Status */}
       {(site.showTwitch || site.showYouTube) && (twitch.isLive || youtube.isLive) && (

@@ -16,6 +16,9 @@ const DEFAULT_SITE = {
   twitchUrl: '',
   youtubeChannelId: '',
   youtubeUrl: '',
+  xUrl: '',
+  mastodonUrl: '',
+  blueskyUrl: '',
   youtubeUploadsLimit: 3,
   showTwitch: true,
   showYouTube: true,
@@ -389,6 +392,27 @@ export default function PublicSite() {
             </div>
             <div className="text-secondary small">
               YouTube live status and uploads require <code>YOUTUBE_API_KEY</code> on the server.
+            </div>
+          </div>
+        </div>
+
+        <div className="col-12 col-lg-6">
+          <div className="card bg-panel p-3">
+            <h5 className="h6 mb-3">Socials</h5>
+            <div className="mb-2">
+              <label className="form-label">X (Twitter) URL</label>
+              <input className="form-control" value={site.xUrl} onChange={e => updateField('xUrl', e.target.value)} placeholder="https://x.com/yourhandle" />
+            </div>
+            <div className="mb-2">
+              <label className="form-label">Mastodon URL</label>
+              <input className="form-control" value={site.mastodonUrl} onChange={e => updateField('mastodonUrl', e.target.value)} placeholder="https://mastodon.social/@yourhandle" />
+            </div>
+            <div className="mb-2">
+              <label className="form-label">Bluesky URL</label>
+              <input className="form-control" value={site.blueskyUrl} onChange={e => updateField('blueskyUrl', e.target.value)} placeholder="https://bsky.app/profile/yourhandle" />
+            </div>
+            <div className="text-secondary small">
+              Social links appear under the hero buttons on the public page.
             </div>
           </div>
         </div>

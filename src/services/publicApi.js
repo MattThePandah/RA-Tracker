@@ -94,6 +94,11 @@ export async function fetchPublicSite() {
   return requestJson(`${base}/api/public/site`)
 }
 
+export async function fetchPublicCurrentGame() {
+  const base = getBaseUrl()
+  return requestJson(`${base}/api/public/current-game`)
+}
+
 export async function fetchStreamStatus() {
   const base = getBaseUrl()
   return requestJson(`${base}/api/public/stream-status`)

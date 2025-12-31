@@ -1934,6 +1934,10 @@ app.get('/api/public/site', async (req, res) => {
   }
 })
 
+app.get('/api/public/current-game', (req, res) => {
+  res.json({ current: overlayState.current || null, updatedAt: overlayState.updatedAt })
+})
+
 app.get('/api/public/stream-status', async (req, res) => {
   try {
     const now = Date.now()
