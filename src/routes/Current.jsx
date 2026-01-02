@@ -112,7 +112,7 @@ export default function Current() {
     if (k === 'status') {
       const now = new Date().toISOString()
       if (v === 'In Progress' && !game.date_started) patch.date_started = now
-      if (v === 'Completed' && !game.date_finished) patch.date_finished = now
+      if ((v === 'Completed' || v === 'DNF') && !game.date_finished) patch.date_finished = now
       
       // Auto-start timer when status changes to "In Progress"
       if (v === 'In Progress' && game.status !== 'In Progress') {
@@ -399,6 +399,7 @@ export default function Current() {
                 <option>Not Started</option>
                 <option>In Progress</option>
                 <option>Completed</option>
+                <option>DNF</option>
               </select>
             </div>
             <div className="mb-3">

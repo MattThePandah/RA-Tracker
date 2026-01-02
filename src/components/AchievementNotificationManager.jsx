@@ -1,17 +1,18 @@
 import React, { useState, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useAchievements } from '../context/AchievementContext.jsx'
 import Achievement3DPopup from './Achievement3DPopup.jsx'
 import ErrorBoundary, { ComponentErrorFallback } from './ErrorBoundary.jsx'
 import soundManager from '../services/soundManager.js'
 
-const AchievementNotificationManagerInner = () => {
+const AchievementNotificationManagerInner = ({ forceEnable = false } = {}) => {
   const { state } = useAchievements()
   const [activePopups, setActivePopups] = useState([])
   const [lastCheckedTimestamp, setLastCheckedTimestamp] = useState(Date.now())
 
   // Configuration from achievement settings
   const popupDuration = state.settings.popupDuration || 5000
-  const enablePopups = state.settings.enablePopups !== false
+  const enablePopups = forceEnable || state.settings.enablePopups !== false
 
   // Initialize sound manager once at mount
   useEffect(() => {
@@ -93,31 +94,22 @@ const AchievementNotificationManagerInner = () => {
 
   // Calculate positions to stack multiple popups
   const getPopupPosition = (index, total) => {
-    const basePosition = 'top-right'
+    const basePosition = 'top-center'
     // Reduce spacing when many popups are shown simultaneously
     const spacing = total > 4 ? 100 : 120 // Tighter spacing for many popups
-    
-    // For top positions, stack downward
+
     if (basePosition.includes('top')) {
       return {
         position: basePosition,
-        style: {
-          transform: `translateY(${index * spacing}px)`,
-          zIndex: 1000 - index,
-          // Add slight offset for visual variety with many popups
-          ...(total > 2 ? { marginRight: `${(index % 3) * 5}px` } : {})
-        }
+        offsetY: index * spacing,
+        zIndex: 1000 - index
       }
     }
-    
-    // For bottom positions, stack upward
+
     return {
       position: basePosition,
-      style: {
-        transform: `translateY(-${index * spacing}px)`,
-        zIndex: 1000 - index,
-        ...(total > 2 ? { marginRight: `${(index % 3) * 5}px` } : {})
-      }
+      offsetY: -index * spacing,
+      zIndex: 1000 - index
     }
   }
 
@@ -126,39 +118,42 @@ const AchievementNotificationManagerInner = () => {
     return null
   }
 
-  return (
+  const content = (
     <div className="achievement-notification-manager">
       {/* Achievement popups */}
       {enablePopups && activePopups.map((popup, index) => {
         const positionConfig = getPopupPosition(index, activePopups.length)
         
         return (
-          <div
+          <Achievement3DPopup
             key={popup.id}
-            style={positionConfig.style}
-            className="popup-container"
-          >
-            <Achievement3DPopup
-              achievement={popup.achievement}
-              onClose={() => removePopup(popup.id)}
-              duration={popupDuration}
-              position={positionConfig.position}
-              showGameInfo={true}
-              gameProgress={state.currentGameProgress}
-              style="card"
-              theme="auto"
-            />
-          </div>
+            achievement={popup.achievement}
+            onClose={() => removePopup(popup.id)}
+            duration={popupDuration}
+            position={positionConfig.position}
+            offsetY={positionConfig.offsetY}
+            zIndex={positionConfig.zIndex}
+            showGameInfo={true}
+            gameProgress={state.currentGameProgress}
+            variant="card"
+            theme="auto"
+          />
         )
       })}
     </div>
   )
+
+  if (typeof document === 'undefined') {
+    return content
+  }
+
+  return createPortal(content, document.body)
 }
 
 // Wrap with error boundary for better reliability
-const AchievementNotificationManager = () => (
+const AchievementNotificationManager = ({ forceEnable = false } = {}) => (
   <ErrorBoundary fallback={props => <ComponentErrorFallback {...props} componentName="Achievement Notifications" />}>
-    <AchievementNotificationManagerInner />
+    <AchievementNotificationManagerInner forceEnable={forceEnable} />
   </ErrorBoundary>
 )
 

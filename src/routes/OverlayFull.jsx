@@ -8,6 +8,7 @@ import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import useOverlayEvent from '../hooks/useOverlayEvent.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
+import FullOverlayAchievementPopups from '../components/FullOverlayAchievementPopups.jsx'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -57,6 +58,8 @@ export default function OverlayFull() {
   const showCameraFrame = getBoolParam(params, 'camframe', fullConfig.showCameraFrame ?? true)
   const achievementCycleMsRaw = getNumberParam(params, 'racycle', fullConfig.achievementCycleMs ?? 8000, { min: 0, max: 60000 })
   const achievementCycleMs = achievementCycleMsRaw <= 0 ? 0 : Math.max(2000, achievementCycleMsRaw)
+  const raTest = getBoolParam(params, 'ratest', false)
+  const raTestCount = getNumberParam(params, 'racount', 1, { min: 1, max: 6 })
 
   useOverlayTheme(globalConfig.theme || 'bamboo', isClean, globalConfig)
 
@@ -150,8 +153,10 @@ export default function OverlayFull() {
     return () => clearInterval(id)
   }, [timersEnabled])
 
-  const { state, loadGameAchievements, clearCurrentGameData, isConfigured } = useAchievements()
+  const { state, loadGameAchievements, clearCurrentGameData, isConfigured, addRecentAchievement } = useAchievements()
+  const popupDuration = state.settings.popupDuration || 5000
   const [currentGameId, setCurrentGameId] = React.useState(null)
+  const injectedTestRef = React.useRef(false)
 
   React.useEffect(() => {
     if (!achievementsEnabled) return
@@ -169,6 +174,32 @@ export default function OverlayFull() {
       }
     }
   }, [achievementsEnabled, current?.id, currentGameId, isConfigured, loadGameAchievements, clearCurrentGameData])
+
+  React.useEffect(() => {
+    if (!raTest || injectedTestRef.current) return
+    injectedTestRef.current = true
+    const baseTime = Date.now() + 60000
+    const fallback = {
+      title: current?.title || 'Test Game',
+      consoleName: current?.console || 'Retro Console'
+    }
+    const source = state.currentGameAchievements.length ? state.currentGameAchievements : null
+    for (let i = 0; i < raTestCount; i += 1) {
+      const template = source ? source[i % source.length] : null
+      addRecentAchievement({
+        achievementId: baseTime + i,
+        title: template?.title || `Test Achievement ${i + 1}`,
+        description: template?.description || 'Sample achievement description for overlay testing.',
+        points: template?.points || (5 + (i * 5)),
+        badgeName: template?.badgeName || '00000',
+        gameTitle: fallback.title,
+        consoleName: fallback.consoleName,
+        date: new Date(baseTime + (i * 1000)).toISOString(),
+        hardcoreMode: 0,
+        cumulScore: 12345
+      })
+    }
+  }, [raTest, raTestCount, addRecentAchievement, current, state.currentGameAchievements])
 
   React.useEffect(() => {
     if (!achievementsEnabled || !currentGameId || !isConfigured) return
@@ -214,6 +245,7 @@ export default function OverlayFull() {
   const achievementPages = Math.max(1, Math.ceil(achievementAll.length / achievementsCount))
   const [achievementPage, setAchievementPage] = React.useState(0)
   const [nowPlayingTone, setNowPlayingTone] = React.useState('dark')
+  const [achievementGlow, setAchievementGlow] = React.useState(false)
 
   React.useEffect(() => {
     setAchievementPage(0)
@@ -228,6 +260,7 @@ export default function OverlayFull() {
     }, achievementCycleMs)
     return () => clearInterval(id)
   }, [achievementsEnabled, achievementCycleMs, achievementAll.length, achievementsCount, achievementPages])
+
 
   const achievementStart = achievementPage * achievementsCount
   const visibleAchievements = achievementAll.slice(achievementStart, achievementStart + achievementsCount)
@@ -410,16 +443,21 @@ export default function OverlayFull() {
                       className={`full-achievement-item ${achievement.isEarned ? 'earned' : 'locked'}`}
                       key={achievement.id}
                     >
-                      <span className={`full-achievement-watermark ${achievement.isEarned ? 'earned' : 'locked'}`} aria-hidden="true">
-                        {achievement.isEarned ? '🏆' : '🔒'}
-                      </span>
                       <img
                         className="full-achievement-badge"
                         src={`https://media.retroachievements.org/Badge/${achievement.badgeName}.png`}
                         alt=""
                       />
                       <div className="full-achievement-info">
-                        <div className="full-achievement-title">{achievement.title}</div>
+                        <div className="full-achievement-title-row">
+                          <div className="full-achievement-title">{achievement.title}</div>
+                          <span
+                            className={`full-achievement-status-icon ${achievement.isEarned ? 'earned' : 'locked'}`}
+                            aria-label={achievement.isEarned ? 'Unlocked' : 'Locked'}
+                          >
+                            {achievement.isEarned ? '🏆' : '🔒'}
+                          </span>
+                        </div>
                         <div className="full-achievement-desc">{achievement.description}</div>
                       </div>
                       <div className="full-achievement-points">
@@ -605,7 +643,7 @@ export default function OverlayFull() {
             </div>
           )
         )}
-        <div className="full-overlay-stage">
+        <div className={`full-overlay-stage${achievementGlow ? ' achievement-glow' : ''}`}>
           {showGuides && showGameFrame && (
             <div className="full-overlay-frame full-overlay-game">
               <div className="full-overlay-frame-label">Game Capture</div>
@@ -616,6 +654,12 @@ export default function OverlayFull() {
               <div className="full-overlay-frame-label">Camera</div>
             </div>
           )}
+          <FullOverlayAchievementPopups
+            enabled={achievementsEnabled}
+            forceEnable={raTest}
+            duration={popupDuration}
+            onActiveChange={setAchievementGlow}
+          />
         </div>
         {hasRightColumn && (
           dockCameraRight ? (

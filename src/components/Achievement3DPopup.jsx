@@ -8,8 +8,10 @@ const Achievement3DPopup = ({
   position = 'top-right',
   showGameInfo = true,
   gameProgress = null,
-  style = 'card',
-  theme = 'cyberpunk'
+  variant = 'card',
+  theme = 'cyberpunk',
+  offsetY = 0,
+  zIndex
 }) => {
   const [phase, setPhase] = useState('entering') // entering, displaying, celebrating, leaving
   const [particles, setParticles] = useState([])
@@ -172,18 +174,28 @@ const Achievement3DPopup = ({
     return 'common'
   }, [achievement.points])
 
-  if (style === 'minimal') {
+  const inlineStyle = {
+    '--theme-primary': finalTheme.primary,
+    '--theme-secondary': finalTheme.secondary,
+    '--theme-accent': finalTheme.accent,
+    '--theme-bg': finalTheme.bg
+  }
+
+  if (offsetY !== 0) {
+    inlineStyle.marginTop = `${offsetY}px`
+  }
+
+  if (typeof zIndex === 'number') {
+    inlineStyle.zIndex = zIndex
+  }
+
+  if (variant === 'minimal') {
     return (
       <div 
         ref={popupRef}
         className={`achievement-3d-popup minimal ${getPositionClasses()} ${phase} ${rarityClass}`}
         onClick={onClose}
-        style={{
-          '--theme-primary': finalTheme.primary,
-          '--theme-secondary': finalTheme.secondary,
-          '--theme-accent': finalTheme.accent,
-          '--theme-bg': finalTheme.bg
-        }}
+        style={inlineStyle}
       >
         <div className="popup-minimal-content">
           <img src={badgeUrl} alt={achievement.title} className="badge-mini" />
@@ -200,14 +212,9 @@ const Achievement3DPopup = ({
     <>
       <div 
         ref={popupRef}
-        className={`achievement-3d-popup ${style} ${getPositionClasses()} ${phase} ${rarityClass} ${achievement.hardcoreMode ? 'hardcore' : ''}`}
+        className={`achievement-3d-popup ${getPositionClasses()} ${phase} ${rarityClass} ${achievement.hardcoreMode ? 'hardcore' : ''}`}
         onClick={onClose}
-        style={{
-          '--theme-primary': finalTheme.primary,
-          '--theme-secondary': finalTheme.secondary,  
-          '--theme-accent': finalTheme.accent,
-          '--theme-bg': finalTheme.bg
-        }}
+        style={inlineStyle}
       >
         {/* Particle System */}
         <div className="particle-container">

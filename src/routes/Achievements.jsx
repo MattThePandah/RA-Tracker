@@ -79,11 +79,13 @@ const AchievementModal = ({ achievement, onClose }) => {
           </div>
           
           <div className="header-info">
-            <h2 className="modal-achievement-name">{achievement.title}</h2>
-            <div className="modal-points">{achievement.points} Points</div>
-            <div className={`achievement-status ${achievement.isEarned ? 'earned' : 'locked'}`}>
-              {achievement.isEarned ? '🏆 Unlocked' : '🔒 Locked'}
+            <div className="modal-title-row">
+              <h2 className="modal-achievement-name">{achievement.title}</h2>
+              <div className={`achievement-status ${achievement.isEarned ? 'earned' : 'locked'}`}>
+                {achievement.isEarned ? '🏆 Unlocked' : '🔒 Locked'}
+              </div>
             </div>
+            <div className="modal-points">{achievement.points} Points</div>
           </div>
         </div>
         

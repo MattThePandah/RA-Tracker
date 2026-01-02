@@ -18,7 +18,7 @@ export default function Select() {
   const consoles = useMemo(() => Array.from(new Set(state.games.map(g => g.console))), [state.games])
 
   const eligible = useMemo(() => {
-    let arr = state.games.filter(g => g.status !== 'Completed')
+    let arr = state.games.filter(g => !['Completed', 'DNF'].includes(g.status))
     // Search
     if (q) arr = arr.filter(g => g.title.toLowerCase().includes(q.toLowerCase()))
     // Console filter

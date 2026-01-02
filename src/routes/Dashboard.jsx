@@ -5,7 +5,7 @@ import { fetchPublicGames, fetchSuggestions } from '../services/publicApi.js'
 import { buildCoverUrl } from '../utils/coverUrl.js'
 import { adminFetch } from '../utils/adminFetch.js'
 
-const statusOrder = ['Idea', 'Scripting', 'Recording', 'Editing', 'Scheduled', 'Published']
+const statusOrder = ['Idea', 'Scripting', 'Recording', 'Editing', 'Scheduled', 'Published', 'Scrapped']
 const historyLabels = {
   session_end: 'Session ended',
   session_switch: 'Game switched',
@@ -104,7 +104,8 @@ export default function Dashboard() {
 
   const studioPipeline = React.useMemo(() => {
     const rows = state.games
-      .filter(g => g.studio && getStudioStatus(g) !== 'Published')
+      .filter(g => g.studio && !['Published', 'Scrapped'].includes(getStudioStatus(g)))
+      .filter(g => g.status !== 'DNF')
       .map(g => ({
         id: g.id,
         title: g.title,

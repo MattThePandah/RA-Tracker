@@ -60,6 +60,13 @@ function formatCompletionTime(hoursValue) {
 function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, selectionMode, selected, onSelectToggle }) {
   const [url, setUrl] = React.useState(null)
   const completionLabel = formatCompletionTime(game.completion_time)
+  const statusTone = game.status === 'Completed'
+    ? 'success'
+    : game.status === 'In Progress'
+      ? 'warning'
+      : game.status === 'DNF'
+        ? 'danger'
+        : 'secondary'
   React.useEffect(() => {
     let mounted = true
     ;(async () => {
@@ -141,7 +148,7 @@ function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, se
         <div className="small text-secondary">{game.console} {game.release_year ? `• ${game.release_year}` : ''}</div>
         <div className="fw-semibold truncate-2" title={game.title}>{game.title}</div>
         <div className="d-flex gap-2 align-items-center mt-2">
-          <span className={`badge rounded-pill text-bg-${game.status==='Completed'?'success':game.status==='In Progress'?'warning':'secondary'}`}>{game.status}</span>
+          <span className={`badge rounded-pill text-bg-${statusTone}`}>{game.status}</span>
           {game.is_bonus && <span className="badge badge-soft">Bonus</span>}
           {game.rating && <span className="badge bg-info">★{game.rating}</span>}
         </div>
@@ -155,6 +162,7 @@ function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, se
           onQuick(updatedGame)
         }}>Set Current</button>
         <button className="btn btn-sm btn-outline-success" onClick={() => onQuick({ ...game, status: 'Completed', date_finished: new Date().toISOString() })}>Complete</button>
+        <button className="btn btn-sm btn-outline-danger" onClick={() => onQuick({ ...game, status: 'DNF', date_finished: game.date_finished ?? new Date().toISOString() })}>DNF</button>
         <button className="btn btn-sm btn-outline-info" onClick={() => onOpenDetail(game)}>Details</button>
         <button
           className="btn btn-sm btn-outline-warning"
@@ -489,7 +497,7 @@ export default function Library() {
       if (nextStatus === 'In Progress' && !game.date_started) {
         patch.date_started = now
       }
-      if (nextStatus === 'Completed' && !game.date_finished) {
+      if ((nextStatus === 'Completed' || nextStatus === 'DNF') && !game.date_finished) {
         patch.date_finished = now
       }
       updates[id] = patch
@@ -612,6 +620,7 @@ export default function Library() {
           <option>Not Started</option>
           <option>In Progress</option>
           <option>Completed</option>
+          <option>DNF</option>
         </select>
         <div className="form-check form-switch">
           <input className="form-check-input" type="checkbox" checked={hideBonus} onChange={e=>setHideBonus(e.target.checked)} id="hideBonus" />
@@ -666,6 +675,7 @@ export default function Library() {
                   <option>Not Started</option>
                   <option>In Progress</option>
                   <option>Completed</option>
+                  <option>DNF</option>
                 </select>
                 <button className="btn btn-outline-primary" onClick={applyBulkStatus} disabled={!selectedCount}>
                   Apply
@@ -824,6 +834,7 @@ export default function Library() {
                         onQuick(updatedGame)
                       }}>Set Current</button>
                       <button className="btn btn-outline-success" onClick={()=>onQuick({ ...g, status: 'Completed', date_finished: new Date().toISOString() })}>Complete</button>
+                      <button className="btn btn-outline-danger" onClick={()=>onQuick({ ...g, status: 'DNF', date_finished: g.date_finished ?? new Date().toISOString() })}>DNF</button>
                       <button className="btn btn-outline-info" onClick={()=>onOpenDetail(g)}>Details</button>
                       <button
                         className="btn btn-outline-warning"

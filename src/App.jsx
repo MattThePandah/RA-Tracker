@@ -15,6 +15,13 @@ export default function App() {
   const base = '/admin'
   const active = (path) => location.pathname.startsWith(`${base}/${path}`) ? 'active' : ''
   const [siteTheme, setSiteTheme] = React.useState(null)
+  const moreActive = [
+    'events',
+    'suggestions',
+    'public-site',
+    'select',
+    'import-export'
+  ].some(path => location.pathname.startsWith(`${base}/${path}`))
 
   React.useEffect(() => {
     let activeRequest = true
@@ -67,21 +74,6 @@ export default function App() {
             </Link>
           </li>
           <li className="nav-item">
-            <Link className={`nav-link ${active('events')}`} to={`${base}/events`}>
-              <i className="bi bi-calendar-event me-1"></i>Events
-            </Link>
-          </li>
-          <li className="nav-item">
-            <Link className={`nav-link ${active('suggestions')}`} to={`${base}/suggestions`}>
-              <i className="bi bi-chat-left-dots me-1"></i>Suggestions
-            </Link>
-          </li>
-          <li className="nav-item">
-            <Link className={`nav-link ${active('public-site')}`} to={`${base}/public-site`}>
-              <i className="bi bi-layout-text-window-reverse me-1"></i>Public Site
-            </Link>
-          </li>
-          <li className="nav-item">
             <Link className={`nav-link ${active('library')}`} to={`${base}/library`}>
               <i className="bi bi-collection me-1"></i>Library
             </Link>
@@ -91,15 +83,29 @@ export default function App() {
               <i className="bi bi-trophy me-1"></i>Achievements
             </Link>
           </li>
-          <li className="nav-item">
-            <Link className={`nav-link ${active('select')}`} to={`${base}/select`}>
-              <i className="bi bi-dice-3 me-1"></i>Random Select
-            </Link>
-          </li>
-          <li className="nav-item">
-            <Link className={`nav-link ${active('import-export')}`} to={`${base}/import-export`}>
-              <i className="bi bi-arrow-down-up me-1"></i>Import/Export
-            </Link>
+          <li className="nav-item nav-more">
+            <details>
+              <summary className={`nav-link ${moreActive ? 'active' : ''}`}>
+                <i className="bi bi-three-dots me-1"></i>More
+              </summary>
+              <div className="nav-more-menu">
+                <Link className={`dropdown-item ${active('events')}`} to={`${base}/events`}>
+                  <i className="bi bi-calendar-event me-2"></i>Events
+                </Link>
+                <Link className={`dropdown-item ${active('suggestions')}`} to={`${base}/suggestions`}>
+                  <i className="bi bi-chat-left-dots me-2"></i>Suggestions
+                </Link>
+                <Link className={`dropdown-item ${active('public-site')}`} to={`${base}/public-site`}>
+                  <i className="bi bi-layout-text-window-reverse me-2"></i>Public Site
+                </Link>
+                <Link className={`dropdown-item ${active('select')}`} to={`${base}/select`}>
+                  <i className="bi bi-dice-3 me-2"></i>Random Select
+                </Link>
+                <Link className={`dropdown-item ${active('import-export')}`} to={`${base}/import-export`}>
+                  <i className="bi bi-arrow-down-up me-2"></i>Import/Export
+                </Link>
+              </div>
+            </details>
           </li>
           <li className="nav-item">
             <Link className={`nav-link ${active('settings')}`} to={`${base}/settings`}>

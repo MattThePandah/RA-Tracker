@@ -669,6 +669,7 @@ export default function Studio() {
                 <option>Editing</option>
                 <option>Scheduled</option>
                 <option>Published</option>
+                <option>Scrapped</option>
               </select>
             </div>
 

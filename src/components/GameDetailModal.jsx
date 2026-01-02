@@ -278,7 +278,7 @@ export default function GameDetailModal({ game, onClose }) {
     if (status === 'In Progress' && !date_started) {
       date_started = now
     }
-    if (status === 'Completed' && !date_finished) {
+    if ((status === 'Completed' || status === 'DNF') && !date_finished) {
       date_finished = now
     }
 
@@ -747,6 +747,7 @@ export default function GameDetailModal({ game, onClose }) {
                           <option value="Not Started">Not Started</option>
                           <option value="In Progress">In Progress</option>
                           <option value="Completed">Completed</option>
+                          <option value="DNF">DNF</option>
                         </select>
                       </div>
                       <div className="col-md-4">
