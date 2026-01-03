@@ -118,6 +118,15 @@ const DEFAULT_OVERLAY_SETTINGS = {
     cameraOffsetX: 32,
     cameraOffsetY: 32,
     achievementCycleMs: 8000,
+    tv: {
+      enabled: true,
+      logoText: 'PANDA',
+      logoUrl: '',
+      displays: [
+        { label: 'Current', value: '{currentTime}' },
+        { label: 'Event', value: '{totalTime}' }
+      ]
+    },
     modules: {
       current: { enabled: true, position: 'left', order: 1 },
       stats: { enabled: true, position: 'left', order: 2 },
@@ -197,8 +206,23 @@ function normalizeModule(base = {}, incoming = {}) {
   return module
 }
 
+function normalizeTvDisplay(value = {}, fallback = {}) {
+  return {
+    label: cleanText(value?.label || fallback?.label || '', 24),
+    value: cleanText(value?.value || fallback?.value || '', 32)
+  }
+}
+
+function normalizeTvDisplays(incoming, fallback) {
+  const baseList = Array.isArray(fallback) ? fallback : []
+  const source = Array.isArray(incoming) ? incoming : baseList
+  if (!source.length) return baseList
+  return source.slice(0, 4).map((item, index) => normalizeTvDisplay(item, baseList[index]))
+}
+
 function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS) {
-  const base = { ...DEFAULT_OVERLAY_SETTINGS, ...(current || {}) }
+  const baseFull = { ...DEFAULT_OVERLAY_SETTINGS.full, ...(current?.full || {}) }
+  const base = { ...DEFAULT_OVERLAY_SETTINGS, ...(current || {}), full: baseFull }
   const incoming = input || {}
 
   return {
@@ -312,6 +336,12 @@ function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS
       cameraOffsetX: clampNumber(incoming.full?.cameraOffsetX, 0, 200, base.full.cameraOffsetX),
       cameraOffsetY: clampNumber(incoming.full?.cameraOffsetY, 0, 200, base.full.cameraOffsetY),
       achievementCycleMs: clampNumber(incoming.full?.achievementCycleMs, 0, 60000, base.full.achievementCycleMs),
+      tv: {
+        enabled: normalizeBoolean(incoming.full?.tv?.enabled, base.full?.tv?.enabled ?? true),
+        logoText: cleanText(incoming.full?.tv?.logoText || base.full?.tv?.logoText, 32),
+        logoUrl: cleanText(incoming.full?.tv?.logoUrl || base.full?.tv?.logoUrl, 200),
+        displays: normalizeTvDisplays(incoming.full?.tv?.displays, base.full?.tv?.displays)
+      },
       modules: {
         current: normalizeModule(base.full.modules?.current, incoming.full?.modules?.current),
         stats: normalizeModule(base.full.modules?.stats, incoming.full?.modules?.stats),
@@ -350,6 +380,10 @@ export async function updateOverlaySettings(updates = {}) {
   const mergedFull = {
     ...current.full,
     ...updates.full,
+    tv: {
+      ...current.full?.tv,
+      ...updates.full?.tv
+    },
     modules: {
       ...current.full?.modules,
       ...updates.full?.modules,

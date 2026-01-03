@@ -411,6 +411,24 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   --full-item-border: rgba(255,255,255,0.08);
   --full-cover-border: rgba(255,255,255,0.15);
   --full-cover-bg: #0a0a0a;
+  --overlay-backdrop: transparent;
+}
+.full-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-backdrop, transparent);
+  pointer-events: none;
+  z-index: 0;
+  -webkit-mask:
+    linear-gradient(#000, #000) 0 0 / 100% var(--full-stage-y) no-repeat,
+    linear-gradient(#000, #000) 0 calc(var(--full-stage-y) + var(--full-stage-h)) / 100% calc(100% - (var(--full-stage-y) + var(--full-stage-h))) no-repeat,
+    linear-gradient(#000, #000) 0 var(--full-stage-y) / var(--full-stage-x) var(--full-stage-h) no-repeat,
+    linear-gradient(#000, #000) calc(var(--full-stage-x) + var(--full-stage-w)) var(--full-stage-y) / calc(100% - (var(--full-stage-x) + var(--full-stage-w))) var(--full-stage-h) no-repeat;
+  mask:
+    linear-gradient(#000, #000) 0 0 / 100% var(--full-stage-y) no-repeat,
+    linear-gradient(#000, #000) 0 calc(var(--full-stage-y) + var(--full-stage-h)) / 100% calc(100% - (var(--full-stage-y) + var(--full-stage-h))) no-repeat,
+    linear-gradient(#000, #000) 0 var(--full-stage-y) / var(--full-stage-x) var(--full-stage-h) no-repeat,
+    linear-gradient(#000, #000) calc(var(--full-stage-x) + var(--full-stage-w)) var(--full-stage-y) / calc(100% - (var(--full-stage-x) + var(--full-stage-w))) var(--full-stage-h) no-repeat;
 }
 .full-overlay-grid {
   display: grid;
@@ -419,6 +437,8 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   padding: var(--full-grid-pad-top, var(--full-padding)) var(--full-grid-pad-right, var(--full-padding)) var(--full-grid-pad-bottom, var(--full-padding)) var(--full-grid-pad-left, var(--full-padding));
   height: calc(100% - var(--full-bottom-height));
   box-sizing: border-box;
+  position: relative;
+  z-index: 1;
 }
 .full-layout-focus .full-overlay-bottom {
   justify-content: center;
@@ -467,6 +487,278 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   background: var(--overlay-stage-bg, radial-gradient(120% 120% at 20% 0%, rgba(var(--brand-rgb), 0.18), rgba(6, 10, 12, 0.9) 45%, rgba(4, 6, 8, 0.98)));
   box-shadow: var(--overlay-stage-shadow, 0 26px 60px rgba(0,0,0,0.6));
   overflow: hidden;
+}
+.full-overlay-stage-tv {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: hidden;
+}
+.full-overlay-stage-tv::before {
+  display: none;
+}
+.full-tv-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 26px;
+  background: transparent;
+  border: 1px solid var(--tv-shell-border, rgba(0, 0, 0, 0.45));
+  box-shadow: var(--tv-shell-shadow, 0 24px 50px rgba(0, 0, 0, 0.35));
+  box-sizing: border-box;
+}
+.full-tv-screen {
+  position: relative;
+  flex: 1 1 auto;
+  border-radius: 16px;
+  background: transparent;
+  border: 1px solid var(--tv-screen-border, rgba(0, 0, 0, 0.65));
+  overflow: hidden;
+  box-shadow:
+    0 0 0 9999px var(--tv-shell-fill, rgba(42, 47, 50, 0.95)),
+    0 0 0 14px rgba(0, 0, 0, 0.65),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    inset 0 0 26px rgba(0, 0, 0, 0.25);
+  z-index: 1;
+}
+.full-tv-screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(140% 100% at 15% 0%, rgba(255, 255, 255, 0.2), transparent 45%),
+    linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 38%);
+  opacity: 0.6;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 2;
+}
+.full-tv-screen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.18) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.03) 1px, transparent 1px, transparent 4px);
+  opacity: 0.25;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  z-index: 2;
+}
+.full-tv-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 0;
+  background: var(--tv-shell-fill, #2b3033);
+  border-radius: 6px;
+  border-top: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  position: relative;
+  z-index: 2;
+}
+.full-tv-displays {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.full-tv-display {
+  min-width: 120px;
+  padding: 3px 8px 4px;
+  border-radius: 6px;
+  background: var(--tv-display-bg, #0f1f13);
+  border: 1px solid var(--tv-display-border, rgba(126, 255, 163, 0.35));
+  color: var(--tv-display-text, #7effa3);
+  font-family: 'Chakra Petch', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  background-image: radial-gradient(circle at 1px 1px, var(--tv-display-dot, rgba(126, 255, 163, 0.25)) 1px, transparent 1.5px);
+  background-size: 4px 4px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25), inset 0 0 8px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 0 6px rgba(126, 255, 163, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.full-tv-display-label {
+  width: 100%;
+}
+.full-tv-display-value {
+  width: 100%;
+}
+.dot-matrix-text {
+  display: grid;
+  grid-auto-rows: var(--dot-size, 4px);
+  gap: var(--dot-gap, 2px);
+  align-items: center;
+  justify-content: flex-start;
+}
+.dot-matrix-marquee {
+  overflow: hidden;
+  display: block;
+  max-width: 100%;
+}
+.dot-matrix-track {
+  width: max-content;
+  will-change: transform;
+}
+.dot-matrix-track-scrolling {
+  animation: dot-matrix-scroll var(--marquee-duration, 12s) linear infinite;
+}
+.dot-matrix-dot {
+  width: var(--dot-size, 4px);
+  height: var(--dot-size, 4px);
+  border-radius: 999px;
+  background: var(--tv-display-dot, rgba(126, 255, 163, 0.18));
+  opacity: 0.2;
+}
+.dot-matrix-dot.on {
+  background: var(--tv-display-text, #7cff9e);
+  opacity: 1;
+  box-shadow: 0 0 6px rgba(126, 255, 163, 0.65);
+}
+.full-tv-logo {
+  min-width: 380px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 42px;
+  border-radius: 6px;
+  background: var(--tv-logo-bg, #111416);
+  border: 1px solid var(--tv-logo-border, rgba(255, 255, 255, 0.15));
+  color: var(--tv-logo-text, #f3f7f5);
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  font-size: 13px;
+  position: relative;
+  overflow: hidden;
+  min-height: 90px;
+}
+.full-tv-logo-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.6s ease;
+  pointer-events: none;
+  opacity: 0;
+}
+.full-tv-logo-layer-logo {
+  opacity: 0;
+}
+.full-tv-logo.show-logo .full-tv-logo-layer-logo {
+  opacity: 1;
+}
+.full-tv-logo.show-game .full-tv-logo-layer-game {
+  opacity: 1;
+}
+.full-tv-logo.show-event .full-tv-logo-layer-event {
+  opacity: 1;
+}
+.full-tv-logo.show-achievement {
+  border-color: rgba(255, 205, 120, 0.7);
+  box-shadow: 0 0 16px rgba(255, 205, 120, 0.35);
+}
+.full-tv-logo.show-achievement .full-tv-logo-layer-achievement {
+  opacity: 1;
+}
+.full-tv-logo-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.full-tv-logo-stack .dot-matrix-text {
+  justify-content: center;
+}
+@keyframes dot-matrix-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-1 * var(--marquee-distance, 0px)));
+  }
+}
+.full-tv-logo img {
+  display: block;
+  max-height: 56px;
+  max-width: 320px;
+  object-fit: contain;
+}
+.full-tv-logo-mark {
+  width: min(360px, 96%);
+  height: 78px;
+  background-image: var(--logo-url);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.22));
+  -webkit-mask-image: radial-gradient(circle, #000 0 1.1px, transparent 1.5px);
+  -webkit-mask-size: 3px 3px;
+  -webkit-mask-repeat: repeat;
+  -webkit-mask-position: center;
+  mask-image: radial-gradient(circle, #000 0 1.1px, transparent 1.5px);
+  mask-size: 3px 3px;
+  mask-repeat: repeat;
+  mask-position: center;
+}
+.full-tv-logo-mark img {
+  display: none;
+}
+@supports not ((mask-image: url("")) or (-webkit-mask-image: url(""))) {
+  .full-tv-logo-mark {
+    background: none;
+    filter: none;
+  }
+  .full-tv-logo-mark img {
+    display: block;
+  }
+}
+.full-tv-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.full-tv-input {
+  min-width: 116px;
+  padding: 4px 8px;
+}
+.full-tv-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.full-tv-knob {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--tv-knob-bg, #1d2225);
+  border: 1px solid var(--tv-knob-border, rgba(0, 0, 0, 0.65));
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.12);
+}
+.full-overlay-stage-tv.achievement-glow .full-tv-screen {
+  border-color: rgba(255, 205, 120, 0.7);
+  box-shadow:
+    0 0 26px rgba(255, 205, 120, 0.45),
+    0 0 60px rgba(255, 175, 80, 0.35);
+}
+.full-overlay-stage-tv.achievement-glow {
+  animation: none;
+  box-shadow: none;
 }
 .full-overlay-stage.achievement-glow {
   border-color: rgba(255, 205, 120, 0.75);
@@ -730,6 +1022,7 @@ body.overlay-clean .full-overlay-shell.overlay-clean {
   gap: var(--full-module-gap);
   align-items: flex-end;
   box-sizing: border-box;
+  z-index: 1;
 }
 .full-overlay-module {
   min-width: 0;
@@ -7905,6 +8198,66 @@ body.overlay-clean .full-overlay-shell.overlay-clean {
 .overlay-theme-bamboo-light .full-achievement-item.locked .full-achievement-desc,
 .overlay-theme-bamboo-light .full-achievement-item.locked .full-achievement-points,
 .overlay-theme-bamboo-light .full-achievement-item.locked .full-achievement-points-label {
+  color: #151817;
+}
+
+.overlay-theme-panda {
+  --overlay-bg: transparent;
+  font-family: 'Bricolage Grotesque', 'Manrope', system-ui, sans-serif;
+  --tv-shell-bg: linear-gradient(180deg, #3e4346, #2b3033);
+  --tv-shell-border: rgba(0, 0, 0, 0.55);
+  --tv-shell-shadow: 0 26px 58px rgba(0, 0, 0, 0.35);
+  --tv-screen-bg: radial-gradient(140% 120% at 20% 0%, rgba(18, 25, 26, 0.6), rgba(6, 8, 9, 0.98) 60%);
+  --tv-screen-border: rgba(0, 0, 0, 0.75);
+  --tv-shell-fill: #2b3033;
+  --tv-display-bg: #101416;
+  --tv-display-border: rgba(255, 255, 255, 0.15);
+  --tv-display-text: #7cff9e;
+  --tv-display-dot: rgba(126, 255, 163, 0.16);
+  --tv-logo-bg: #101416;
+  --tv-logo-border: rgba(255, 255, 255, 0.15);
+  --tv-logo-text: #f0f8f4;
+  --tv-knob-bg: #1e2326;
+  --tv-knob-border: rgba(0, 0, 0, 0.65);
+}
+
+.overlay-theme-panda .full-overlay-shell {
+  --overlay-backdrop: var(--theme-cardBackground);
+  --full-ink: #1a1c1b;
+  --full-muted: rgba(26, 28, 27, 0.72);
+  --full-subtle: rgba(26, 28, 27, 0.6);
+  --full-soft: rgba(26, 28, 27, 0.45);
+  --theme-cardBackground: rgba(224, 234, 240, 0.92);
+  --theme-cardBorder: rgba(72, 130, 128, 0.18);
+  --full-item-bg: rgba(232, 238, 242, 0.92);
+  --full-item-border: rgba(72, 130, 128, 0.14);
+  --full-cover-border: rgba(0,0,0,0.12);
+  --full-cover-bg: #dde4e7;
+}
+
+.overlay-theme-panda .overlay-chrome .progress-bar-bg {
+  background: rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.12);
+}
+
+.overlay-theme-panda .full-event-summary-label,
+.overlay-theme-panda .full-event-summary-divider,
+.overlay-theme-panda .full-event-summary-counts-label,
+.overlay-theme-panda .full-event-summary-counts-value {
+  color: #0b0d0c;
+}
+.overlay-theme-panda .full-achievement-title,
+.overlay-theme-panda .full-achievement-desc,
+.overlay-theme-panda .full-achievement-count,
+.overlay-theme-panda .full-achievement-points-total,
+.overlay-theme-panda .full-achievement-points,
+.overlay-theme-panda .full-achievement-points-label {
+  color: #0b0d0c;
+}
+.overlay-theme-panda .full-achievement-item.locked .full-achievement-title,
+.overlay-theme-panda .full-achievement-item.locked .full-achievement-desc,
+.overlay-theme-panda .full-achievement-item.locked .full-achievement-points,
+.overlay-theme-panda .full-achievement-item.locked .full-achievement-points-label {
   color: #151817;
 }
 

@@ -33,6 +33,28 @@ const THEMES = {
       labelText: 'rgba(26, 28, 27, 0.8)'
     }
   },
+  panda: {
+    mode: 'light',
+    brand: '#3fdc9b',
+    accent: '#1e9b8a',
+    text: '#1c1f1f',
+    card: 'rgba(255, 255, 255, 0.92)',
+    border: 'rgba(28, 31, 31, 0.12)',
+    shadow: '0 18px 36px rgba(14, 24, 20, 0.16)',
+    background: 'transparent',
+    stage: {
+      bg: 'radial-gradient(120% 120% at 20% 0%, rgba(109, 189, 188, 0.22), rgba(223, 229, 234, 0.98) 45%, rgba(200, 208, 214, 0.99))',
+      border: 'rgba(28, 31, 31, 0.2)',
+      shadow: '0 18px 48px rgba(18, 40, 28, 0.16)',
+      sheen: 'linear-gradient(140deg, rgba(255,255,255,0.6), rgba(255,255,255,0) 45%)',
+      sheenOpacity: '0.55',
+      guideBorder: 'rgba(26, 28, 27, 0.2)',
+      guideBg: 'rgba(26, 28, 27, 0.04)',
+      guideText: 'rgba(26, 28, 27, 0.6)',
+      labelBg: 'rgba(255, 255, 255, 0.7)',
+      labelText: 'rgba(26, 28, 27, 0.8)'
+    }
+  },
   midnight: {
     mode: 'dark',
     brand: '#7dd3fc',

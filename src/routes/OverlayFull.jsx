@@ -9,6 +9,7 @@ import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import useOverlayEvent from '../hooks/useOverlayEvent.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 import FullOverlayAchievementPopups from '../components/FullOverlayAchievementPopups.jsx'
+import DotMatrixText from '../components/DotMatrixText.jsx'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -43,6 +44,221 @@ function safeText(value) {
   return value ? String(value) : ''
 }
 
+const LOGO_SWAP_INTERVAL_MS = 60000
+const GAME_LOCK_MS = 10000
+const DOT_TEXT_MAX = 20
+const DOT_GAME_SCROLL_MAX = 64
+const DOT_GAME_SCROLL_VISIBLE = 14
+const DOT_SCROLL_MAX = 48
+const DOT_SCROLL_VISIBLE = 16
+const DOT_LABEL_MAX = 14
+const DOT_META_MAX = 18
+const DOT_ALLOWED = /[A-Z0-9:%\-\.\/ ]/
+
+const TIMER_TOKENS = [
+  '{current}',
+  '{currentTime}',
+  '{session}',
+  '{total}',
+  '{totalTime}',
+  '{event}'
+]
+
+const GAME_TOKENS = [
+  '{title}',
+  '{game}',
+  '{gameTitle}',
+  '{console}',
+  '{platform}',
+  '{year}',
+  '{publisher}',
+  '{status}'
+]
+
+const CONSOLE_ACRONYMS = new Map([
+  ['PLAYSTATION', 'PS1'],
+  ['PLAYSTATION 2', 'PS2'],
+  ['PLAYSTATION 3', 'PS3'],
+  ['PLAYSTATION 4', 'PS4'],
+  ['PLAYSTATION 5', 'PS5'],
+  ['PSX', 'PS1'],
+  ['PS1', 'PS1'],
+  ['PS2', 'PS2'],
+  ['PS3', 'PS3'],
+  ['PS4', 'PS4'],
+  ['PS5', 'PS5'],
+  ['PSP', 'PSP'],
+  ['PLAYSTATION PORTABLE', 'PSP'],
+  ['PS VITA', 'VITA'],
+  ['PLAYSTATION VITA', 'VITA'],
+  ['SUPER NINTENDO', 'SNES'],
+  ['SUPER NINTENDO ENTERTAINMENT SYSTEM', 'SNES'],
+  ['SNES', 'SNES'],
+  ['NINTENDO ENTERTAINMENT SYSTEM', 'NES'],
+  ['NES', 'NES'],
+  ['NINTENDO 64', 'N64'],
+  ['N64', 'N64'],
+  ['GAMECUBE', 'GC'],
+  ['GC', 'GC'],
+  ['WII', 'WII'],
+  ['WII U', 'WIIU'],
+  ['SWITCH', 'SWITCH'],
+  ['NINTENDO SWITCH', 'SWITCH'],
+  ['DREAMCAST', 'DC'],
+  ['DC', 'DC'],
+  ['SEGA GENESIS', 'GEN'],
+  ['GENESIS', 'GEN'],
+  ['MEGA DRIVE', 'MD'],
+  ['SATURN', 'SAT'],
+  ['MASTER SYSTEM', 'SMS'],
+  ['GAME GEAR', 'GG'],
+  ['NEO GEO', 'NG'],
+  ['PC ENGINE', 'PCE'],
+  ['TURBOGRAFX-16', 'TG16'],
+  ['TURBO GRAFX 16', 'TG16'],
+  ['GAME BOY', 'GB'],
+  ['GAME BOY COLOR', 'GBC'],
+  ['GBC', 'GBC'],
+  ['GAME BOY ADVANCE', 'GBA'],
+  ['GBA', 'GBA'],
+  ['NINTENDO DS', 'DS'],
+  ['DS', 'DS'],
+  ['NINTENDO 3DS', '3DS'],
+  ['3DS', '3DS']
+])
+
+function getConsoleAcronym(consoleName) {
+  if (!consoleName) return ''
+  const normalized = String(consoleName).trim().toUpperCase()
+  if (!normalized) return ''
+  if (CONSOLE_ACRONYMS.has(normalized)) return CONSOLE_ACRONYMS.get(normalized)
+  const compact = normalized.replace(/[^A-Z0-9]/g, '')
+  if (CONSOLE_ACRONYMS.has(compact)) return CONSOLE_ACRONYMS.get(compact)
+  const words = normalized.split(/\s+/).filter(Boolean)
+  if (words.length > 1) {
+    const initials = words.map(word => word[0]).join('')
+    if (initials.length >= 2 && initials.length <= 4) return initials
+  }
+  if (normalized.length <= 6) return normalized
+  return ''
+}
+
+function hasToken(value, tokens) {
+  const text = String(value || '')
+  return tokens.some(token => text.includes(token))
+}
+
+function sanitizeDotText(text) {
+  if (!text) return ''
+  const upper = String(text).toUpperCase()
+  let cleaned = ''
+  for (let i = 0; i < upper.length; i += 1) {
+    const char = upper[i]
+    cleaned += DOT_ALLOWED.test(char) ? char : ' '
+  }
+  return cleaned.replace(/\s+/g, ' ').trim()
+}
+
+function clampDotText(text, maxLen) {
+  const value = String(text || '')
+  if (value.length <= maxLen) return value
+  const sliceLen = Math.max(0, maxLen - 3)
+  return `${value.slice(0, sliceLen).trimEnd()}...`
+}
+
+function getAchievementTime(achievement) {
+  const time = new Date(achievement?.date || 0).getTime()
+  return Number.isFinite(time) ? time : 0
+}
+
+function replaceTokens(value, replacements) {
+  let output = value
+  Object.entries(replacements).forEach(([token, replacement]) => {
+    if (output.includes(token)) {
+      output = output.split(token).join(replacement || '')
+    }
+  })
+  return output
+}
+
+function applyDisplayTokens(value, timers, current) {
+  const text = value == null ? '' : String(value)
+  if (!text) return ''
+  const replacements = {
+    '{current}': timers.currentGameTime,
+    '{currentTime}': timers.currentGameTime,
+    '{session}': timers.currentGameTime,
+    '{total}': timers.totalTime,
+    '{totalTime}': timers.totalTime,
+    '{event}': timers.totalTime,
+    '{title}': current?.title,
+    '{game}': current?.title,
+    '{gameTitle}': current?.title,
+    '{console}': current?.console,
+    '{platform}': current?.console,
+    '{year}': current?.release_year ? String(current.release_year) : '',
+    '{publisher}': current?.publisher,
+    '{status}': current?.status
+  }
+  return replaceTokens(text, replacements)
+}
+
+function applyDisplayFallback(value, label, timers) {
+  const normalizedLabel = String(label || '').trim().toLowerCase()
+  const normalizedValue = String(value || '').trim().toLowerCase()
+  const isPlaceholder = (
+    !normalizedValue ||
+    normalizedValue === 'live' ||
+    normalizedValue === 'current' ||
+    normalizedValue === 'event' ||
+    normalizedValue === 'session' ||
+    normalizedValue === '0' ||
+    normalizedValue === '00:00' ||
+    normalizedValue === '00:00:00' ||
+    normalizedValue === '000:00:00'
+  )
+  const wantsCurrent = normalizedLabel === 'current' || normalizedLabel === 'status'
+  const wantsEvent = normalizedLabel === 'event' || normalizedLabel === 'session'
+  if (wantsCurrent && isPlaceholder) {
+    return timers.currentGameTime || value
+  }
+  if (wantsEvent && isPlaceholder) {
+    return timers.totalTime || value
+  }
+  return value
+}
+
+function displayNeedsTimers(display) {
+  const label = String(display?.label || '')
+  const value = String(display?.value || '')
+  if (hasToken(label, TIMER_TOKENS) || hasToken(value, TIMER_TOKENS)) return true
+  const normalizedLabel = label.trim().toLowerCase()
+  const normalizedValue = value.trim().toLowerCase()
+  const isPlaceholder = (
+    !normalizedValue ||
+    normalizedValue === 'live' ||
+    normalizedValue === 'current' ||
+    normalizedValue === 'event' ||
+    normalizedValue === 'session' ||
+    normalizedValue === '0' ||
+    normalizedValue === '00:00' ||
+    normalizedValue === '00:00:00' ||
+    normalizedValue === '000:00:00'
+  )
+  if (normalizedLabel === 'current' && isPlaceholder) return true
+  if (normalizedLabel === 'status' && isPlaceholder) return true
+  if (normalizedLabel === 'event' && isPlaceholder) return true
+  if (normalizedLabel === 'session' && isPlaceholder) return true
+  return false
+}
+
+function renameDisplayLabel(label) {
+  const normalized = String(label || '').trim().toLowerCase()
+  if (normalized === 'status') return 'Current'
+  if (normalized === 'session') return 'Event'
+  return label
+}
+
 export default function OverlayFull() {
   const { settings } = useOverlaySettings()
   const params = new URLSearchParams(location.search)
@@ -60,8 +276,21 @@ export default function OverlayFull() {
   const achievementCycleMs = achievementCycleMsRaw <= 0 ? 0 : Math.max(2000, achievementCycleMsRaw)
   const raTest = getBoolParam(params, 'ratest', false)
   const raTestCount = getNumberParam(params, 'racount', 1, { min: 1, max: 6 })
+  const logoSwapMs = getNumberParam(params, 'logoswap', LOGO_SWAP_INTERVAL_MS, { min: 5000, max: 900000 })
+  const themeName = globalConfig.theme || 'bamboo'
+  const isPandaTheme = themeName === 'panda'
+  const tvConfig = fullConfig.tv || {}
+  const tvEnabled = isPandaTheme && tvConfig.enabled !== false
+  const tvLogoUrl = typeof tvConfig.logoUrl === 'string' ? tvConfig.logoUrl.trim() : ''
+  const tvLogoText = (typeof tvConfig.logoText === 'string' ? tvConfig.logoText.trim() : '') || 'PANDA'
+  const defaultTvDisplays = [
+    { label: 'Status', value: 'LIVE' },
+    { label: 'Session', value: '00:00:00' }
+  ]
+  const tvDisplaySource = Array.isArray(tvConfig.displays) ? tvConfig.displays : defaultTvDisplays
+  const tvNeedsTimers = tvEnabled && tvDisplaySource.some(display => displayNeedsTimers(display))
 
-  useOverlayTheme(globalConfig.theme || 'bamboo', isClean, globalConfig)
+  useOverlayTheme(themeName, isClean, globalConfig)
 
   const { width: viewportWidth, height: viewportHeight } = useViewportSize()
   const tick = usePoll(poll)
@@ -71,15 +300,21 @@ export default function OverlayFull() {
   const overlayEvent = useOverlayEvent(15000)
   const eventTitle = overlayEvent?.overlayTitle || overlayEvent?.name || ''
   const eventSubtitle = overlayEvent?.overlaySubtitle || overlayEvent?.console || ''
+  const [centerIndex, setCenterIndex] = React.useState(0)
+  const [centerCycleSeed, setCenterCycleSeed] = React.useState(0)
+  const lastGameIdRef = React.useRef(null)
+  const centerLockRef = React.useRef(0)
 
   const currentEnabled = moduleConfig.current?.enabled ?? false
   const statsEnabled = moduleConfig.stats?.enabled ?? false
   const timersEnabled = moduleConfig.timers?.enabled ?? false
   const achievementsEnabled = moduleConfig.achievements?.enabled ?? false
+  const shouldLoadTimers = timersEnabled || tvNeedsTimers
   const showEventTimer = timersEnabled && globalConfig.showTimer !== false
 
-  const needsCurrent = currentEnabled || achievementsEnabled
-  const needsStats = statsEnabled
+  const needsCurrent = currentEnabled || achievementsEnabled || tvEnabled
+  const tvNeedsStats = tvEnabled
+  const needsStats = statsEnabled || tvNeedsStats
 
   React.useEffect(() => {
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
@@ -134,7 +369,7 @@ export default function OverlayFull() {
   }, [tick, needsStats])
 
   React.useEffect(() => {
-    if (!timersEnabled) return
+    if (!shouldLoadTimers) return
     const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
     let id
     const fetchTimers = async () => {
@@ -151,12 +386,18 @@ export default function OverlayFull() {
     fetchTimers()
     id = setInterval(fetchTimers, 1000)
     return () => clearInterval(id)
-  }, [timersEnabled])
+  }, [shouldLoadTimers])
 
-  const { state, loadGameAchievements, clearCurrentGameData, isConfigured, addRecentAchievement } = useAchievements()
+  const { state, loadGameAchievements, loadRecentAchievements, clearCurrentGameData, isConfigured, addRecentAchievement } = useAchievements()
   const popupDuration = state.settings.popupDuration || 5000
+  const bezelDuration = Math.max(15000, popupDuration)
   const [currentGameId, setCurrentGameId] = React.useState(null)
   const injectedTestRef = React.useRef(false)
+  const [bezelAchievement, setBezelAchievement] = React.useState(null)
+  const bezelTimeoutRef = React.useRef(null)
+  const lastBezelRef = React.useRef(0)
+  const seenBezelRef = React.useRef(new Set())
+  const [bezelBootstrapped, setBezelBootstrapped] = React.useState(false)
 
   React.useEffect(() => {
     if (!achievementsEnabled) return
@@ -200,6 +441,78 @@ export default function OverlayFull() {
       })
     }
   }, [raTest, raTestCount, addRecentAchievement, current, state.currentGameAchievements])
+
+  const allowBezelAchievements = tvEnabled
+    && (raTest || (isConfigured && current && RA.hasRetroAchievementsSupport(current)))
+
+  React.useEffect(() => {
+    if (!allowBezelAchievements) return
+    loadRecentAchievements(20)
+    const id = setInterval(() => {
+      loadRecentAchievements(20)
+    }, achievementPoll)
+    return () => clearInterval(id)
+  }, [allowBezelAchievements, achievementPoll, loadRecentAchievements])
+
+  React.useEffect(() => {
+    if (!allowBezelAchievements) {
+      if (bezelTimeoutRef.current) {
+        clearTimeout(bezelTimeoutRef.current)
+        bezelTimeoutRef.current = null
+      }
+      setBezelAchievement(null)
+      lastBezelRef.current = 0
+      seenBezelRef.current = new Set()
+      setBezelBootstrapped(false)
+      return
+    }
+
+    if (!state.recentAchievements.length) {
+      return
+    }
+
+    if (!bezelBootstrapped) {
+      if (!raTest) {
+        const latestTime = Math.max(0, ...state.recentAchievements.map(getAchievementTime))
+        lastBezelRef.current = latestTime
+        seenBezelRef.current = new Set(
+          state.recentAchievements.map(achievement => `${achievement.achievementId}-${achievement.date}`)
+        )
+        setBezelBootstrapped(true)
+        return
+      }
+      setBezelBootstrapped(true)
+    }
+
+    const newAchievements = state.recentAchievements.filter(achievement => (
+      getAchievementTime(achievement) > lastBezelRef.current
+    ))
+
+    if (!newAchievements.length) return
+
+    const newestTimestamp = Math.max(
+      lastBezelRef.current,
+      ...newAchievements.map(getAchievementTime)
+    )
+    lastBezelRef.current = newestTimestamp
+
+    const sorted = newAchievements
+      .slice()
+      .sort((a, b) => getAchievementTime(b) - getAchievementTime(a))
+    const candidate = sorted[0]
+    const popupId = `${candidate.achievementId}-${candidate.date}`
+    if (seenBezelRef.current.has(popupId)) return
+    seenBezelRef.current.add(popupId)
+
+    setBezelAchievement(candidate)
+    if (currentGameId) {
+      loadGameAchievements(currentGameId, true)
+    }
+    if (bezelTimeoutRef.current) clearTimeout(bezelTimeoutRef.current)
+    bezelTimeoutRef.current = setTimeout(() => {
+      setBezelAchievement(null)
+    }, bezelDuration)
+  }, [allowBezelAchievements, bezelDuration, state.recentAchievements, currentGameId, loadGameAchievements])
 
   React.useEffect(() => {
     if (!achievementsEnabled || !currentGameId || !isConfigured) return
@@ -246,6 +559,13 @@ export default function OverlayFull() {
   const [achievementPage, setAchievementPage] = React.useState(0)
   const [nowPlayingTone, setNowPlayingTone] = React.useState('dark')
   const [achievementGlow, setAchievementGlow] = React.useState(false)
+  const showAchievementPopups = achievementsEnabled && !tvEnabled
+
+  React.useEffect(() => {
+    if (!showAchievementPopups) {
+      setAchievementGlow(false)
+    }
+  }, [showAchievementPopups])
 
   React.useEffect(() => {
     setAchievementPage(0)
@@ -566,7 +886,11 @@ export default function OverlayFull() {
     '--full-camera-width': `${cameraWidthFinal}px`,
     '--full-camera-height': `${cameraHeightFinal}px`,
     '--full-camera-offset-x': `${cameraOffsetXValue}px`,
-    '--full-camera-offset-y': `${cameraOffsetYValue}px`
+    '--full-camera-offset-y': `${cameraOffsetYValue}px`,
+    '--full-stage-x': `${padding + (hasLeftColumn ? (leftWidth + columnGap) : 0)}px`,
+    '--full-stage-y': `${padding}px`,
+    '--full-stage-w': `${Math.max(0, stageWidth)}px`,
+    '--full-stage-h': `${Math.max(0, stageHeight)}px`
   }
 
   const cameraStyle = {
@@ -624,9 +948,149 @@ export default function OverlayFull() {
       break
   }
 
+  const consoleAcronym = tvEnabled ? getConsoleAcronym(current?.console) : ''
+  const tvTitleText = tvEnabled ? clampDotText(sanitizeDotText(current?.title), DOT_GAME_SCROLL_MAX) : ''
+  const gameLabelText = tvTitleText ? clampDotText(sanitizeDotText('Now Playing'), DOT_LABEL_MAX) : ''
+  const gameMetaParts = []
+  if (current?.release_year) gameMetaParts.push(String(current.release_year))
+  if (current?.publisher) gameMetaParts.push(`Dev ${current.publisher}`)
+  const gameMetaText = tvTitleText && gameMetaParts.length
+    ? clampDotText(sanitizeDotText(gameMetaParts.join(' ')), DOT_META_MAX)
+    : ''
+  const hasEventStats = tvEnabled && Number.isFinite(stats.total) && stats.total > 0
+  const eventLabelBase = eventTitle || 'Event'
+  const eventLabelText = hasEventStats ? clampDotText(sanitizeDotText(eventLabelBase), DOT_LABEL_MAX) : ''
+  const eventPercentText = hasEventStats
+    ? clampDotText(sanitizeDotText(`${stats.percent}%`), DOT_LABEL_MAX)
+    : ''
+  const eventCountText = hasEventStats ? `${stats.completed}/${stats.total}` : ''
+  const eventMetaText = hasEventStats
+    ? clampDotText(sanitizeDotText(`Done ${eventCountText}`), DOT_META_MAX)
+    : ''
+  const achievementLabelText = bezelAchievement
+    ? clampDotText(sanitizeDotText('Achievement'), DOT_LABEL_MAX)
+    : ''
+  const achievementTitleText = bezelAchievement
+    ? clampDotText(sanitizeDotText(bezelAchievement.title), DOT_SCROLL_MAX)
+    : ''
+  const achievementPointsText = bezelAchievement
+    ? clampDotText(sanitizeDotText(`${bezelAchievement.points || 0} PTS`), DOT_META_MAX)
+    : ''
+  const tvDisplays = tvDisplaySource
+    .slice(0, 4)
+    .map(display => {
+      const labelText = display?.label == null ? '' : String(display.label)
+      const label = applyDisplayTokens(renameDisplayLabel(labelText), timers, current)
+      const rawValue = applyDisplayTokens(display?.value, timers, current)
+      const value = applyDisplayFallback(rawValue, labelText, timers)
+      return { label, value }
+    })
+    .filter(display => display.label || display.value)
+
+  const centerItems = React.useMemo(() => {
+    if (!tvEnabled) return []
+    const items = []
+    if (tvTitleText) {
+      items.push({
+        type: 'game',
+        label: gameLabelText,
+        title: tvTitleText,
+        meta: gameMetaText
+      })
+    }
+    if (hasEventStats) {
+      items.push({
+        type: 'event',
+        label: eventLabelText,
+        title: eventPercentText,
+        meta: eventMetaText
+      })
+    }
+    return items
+  }, [
+    tvEnabled,
+    tvTitleText,
+    gameLabelText,
+    gameMetaText,
+    hasEventStats,
+    eventLabelText,
+    eventPercentText,
+    eventMetaText
+  ])
+
+  const centerRotationItems = React.useMemo(() => {
+    if (!tvEnabled) return []
+    const items = [{ type: 'logo' }]
+    centerItems.forEach(item => {
+      items.push(item)
+      items.push({ type: 'logo' })
+    })
+    return items
+  }, [tvEnabled, centerItems])
+
+  const gameCenterIndex = React.useMemo(() => (
+    centerRotationItems.findIndex(item => item.type === 'game')
+  ), [centerRotationItems])
+
+  React.useEffect(() => {
+    if (!tvEnabled) {
+      setCenterIndex(0)
+      centerLockRef.current = 0
+      return
+    }
+    if (bezelAchievement) return
+    setCenterIndex(0)
+    if (centerRotationItems.length <= 1) return
+    const id = setInterval(() => {
+      if (centerLockRef.current && Date.now() < centerLockRef.current) return
+      setCenterIndex(prev => (prev + 1) % centerRotationItems.length)
+    }, logoSwapMs)
+    return () => clearInterval(id)
+  }, [tvEnabled, bezelAchievement, centerRotationItems.length, logoSwapMs, centerCycleSeed])
+
+  React.useEffect(() => {
+    if (!tvEnabled) return
+    const gameId = current?.id || null
+    if (!gameId) return
+    if (gameId === lastGameIdRef.current) return
+    lastGameIdRef.current = gameId
+    if (gameCenterIndex >= 0) {
+      centerLockRef.current = Date.now() + GAME_LOCK_MS
+      setCenterIndex(gameCenterIndex)
+      setCenterCycleSeed(seed => seed + 1)
+    }
+  }, [tvEnabled, current?.id, gameCenterIndex])
+
+  const activeCenter = centerRotationItems[centerIndex] || centerRotationItems[0] || { type: 'logo' }
+  const centerMode = bezelAchievement ? 'achievement' : (activeCenter?.type || 'logo')
+  const showGameLayer = centerItems.some(item => item.type === 'game')
+  const showEventLayer = centerItems.some(item => item.type === 'event')
+  const showAchievementLayer = Boolean(bezelAchievement)
+
+  const stageFrames = (
+    <>
+      {showGuides && showGameFrame && (
+        <div className="full-overlay-frame full-overlay-game">
+          <div className="full-overlay-frame-label">Game Capture</div>
+        </div>
+      )}
+      {showGuides && showCameraFrame && !cameraDock && (
+        <div className="full-overlay-frame full-overlay-camera" style={cameraStyle}>
+          <div className="full-overlay-frame-label">Camera</div>
+        </div>
+      )}
+      <FullOverlayAchievementPopups
+        enabled={showAchievementPopups}
+        forceEnable={raTest && showAchievementPopups}
+        duration={popupDuration}
+        onActiveChange={setAchievementGlow}
+      />
+    </>
+  )
 
   return (
     <div className={`overlay-chrome full-overlay-shell full-layout-${layoutMode} ${showGuides ? 'full-overlay-guides' : ''} ${isClean ? 'overlay-clean' : ''}`} style={layoutStyle}>
+      <div className="full-overlay-backdrop" aria-hidden="true"></div>
       <div className="full-overlay-grid">
         {hasLeftColumn && (
           dockCameraLeft ? (
@@ -643,23 +1107,133 @@ export default function OverlayFull() {
             </div>
           )
         )}
-        <div className={`full-overlay-stage${achievementGlow ? ' achievement-glow' : ''}`}>
-          {showGuides && showGameFrame && (
-            <div className="full-overlay-frame full-overlay-game">
-              <div className="full-overlay-frame-label">Game Capture</div>
+        <div className={`full-overlay-stage${achievementGlow ? ' achievement-glow' : ''}${tvEnabled ? ' full-overlay-stage-tv' : ''}`}>
+          {tvEnabled ? (
+            <div className="full-tv-shell">
+              <div className="full-tv-screen">
+                {stageFrames}
+              </div>
+              <div className="full-tv-footer">
+                <div className="full-tv-displays">
+                  {tvDisplays.map((display, index) => (
+                    <div className="full-tv-display" key={`tv-display-${index}`}>
+                      {display.label && (
+                        <DotMatrixText
+                          className="full-tv-display-label"
+                          text={display.label}
+                          dotSize={2}
+                          dotGap={0}
+                          charGap={1}
+                        />
+                      )}
+                      {display.value && (
+                        <DotMatrixText
+                          className="full-tv-display-value"
+                          text={display.value}
+                          dotSize={3}
+                          dotGap={0}
+                          charGap={1}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className={`full-tv-logo show-${centerMode}`}>
+                  <div className="full-tv-logo-layer full-tv-logo-layer-logo">
+                    {tvLogoUrl ? (
+                      <div className="full-tv-logo-mark" style={{ '--logo-url': `url("${tvLogoUrl}")` }}>
+                        <img src={tvLogoUrl} alt="Logo" />
+                      </div>
+                    ) : (
+                      <span>{tvLogoText}</span>
+                    )}
+                  </div>
+                  {showGameLayer && (
+                    <div className="full-tv-logo-layer full-tv-logo-layer-game">
+                      <div className="full-tv-logo-stack">
+                        {activeCenter.type === 'game' && activeCenter.label ? (
+                          <DotMatrixText text={activeCenter.label} dotSize={2} dotGap={0} charGap={1} />
+                        ) : (
+                          <DotMatrixText text={gameLabelText} dotSize={2} dotGap={0} charGap={1} />
+                        )}
+                        <DotMatrixText
+                          text={tvTitleText}
+                          dotSize={4}
+                          dotGap={0}
+                          charGap={1}
+                          scroll
+                          maxChars={DOT_GAME_SCROLL_VISIBLE}
+                          scrollSpeed={14}
+                          scrollGap={8}
+                        />
+                        {gameMetaText ? (
+                          <DotMatrixText text={gameMetaText} dotSize={2} dotGap={0} charGap={1} />
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                  {showEventLayer && (
+                    <div className="full-tv-logo-layer full-tv-logo-layer-event">
+                      <div className="full-tv-logo-stack">
+                        <DotMatrixText text={eventLabelText} dotSize={2} dotGap={0} charGap={1} />
+                        <DotMatrixText text={eventPercentText} dotSize={4} dotGap={0} charGap={1} />
+                        {eventMetaText ? (
+                          <DotMatrixText text={eventMetaText} dotSize={2} dotGap={0} charGap={1} />
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                  {showAchievementLayer && (
+                    <div className="full-tv-logo-layer full-tv-logo-layer-achievement">
+                      <div className="full-tv-logo-stack">
+                        <DotMatrixText text={achievementLabelText} dotSize={2} dotGap={0} charGap={1} />
+                        <DotMatrixText
+                          text={achievementTitleText}
+                          dotSize={3}
+                          dotGap={0}
+                          charGap={1}
+                          scroll
+                          maxChars={DOT_SCROLL_VISIBLE}
+                          scrollSpeed={20}
+                          scrollGap={8}
+                        />
+                        {achievementPointsText ? (
+                          <DotMatrixText text={achievementPointsText} dotSize={2} dotGap={0} charGap={1} />
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="full-tv-right">
+                  {consoleAcronym && (
+                    <div className="full-tv-display full-tv-input">
+                      <DotMatrixText
+                        className="full-tv-display-label"
+                        text="Input"
+                        dotSize={2}
+                        dotGap={0}
+                        charGap={1}
+                      />
+                      <DotMatrixText
+                        className="full-tv-display-value"
+                        text={consoleAcronym}
+                        dotSize={4}
+                        dotGap={0}
+                        charGap={1}
+                      />
+                    </div>
+                  )}
+                  <div className="full-tv-controls" aria-hidden="true">
+                    <span className="full-tv-knob" />
+                    <span className="full-tv-knob" />
+                    <span className="full-tv-knob" />
+                  </div>
+                </div>
+              </div>
             </div>
+          ) : (
+            stageFrames
           )}
-          {showGuides && showCameraFrame && !cameraDock && (
-            <div className="full-overlay-frame full-overlay-camera" style={cameraStyle}>
-              <div className="full-overlay-frame-label">Camera</div>
-            </div>
-          )}
-          <FullOverlayAchievementPopups
-            enabled={achievementsEnabled}
-            forceEnable={raTest}
-            duration={popupDuration}
-            onActiveChange={setAchievementGlow}
-          />
         </div>
         {hasRightColumn && (
           dockCameraRight ? (

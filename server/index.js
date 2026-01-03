@@ -177,6 +177,9 @@ const raProxyLimiter = raLimiter
 const raProxyCacheMs = Number(process.env.RA_GAME_CACHE_MS || 30_000)
 const raProxyCache = new Map()
 const raProxyInflight = new Map()
+const raRecentCacheMs = Number(process.env.RA_RECENT_CACHE_MS || 60_000)
+const raRecentCache = new Map()
+const raRecentInflight = new Map()
 
 function requireOverlayAuth(req, res, next) {
   if (req.session?.admin) return next()
@@ -249,6 +252,47 @@ function shortConsoleName(value) {
   if (name === 'PlayStation Portable') return 'PSP'
   if (name === 'PlayStation Vita') return 'PS Vita'
   return name
+}
+
+function collectConsoleKeys(value) {
+  const keys = new Set()
+  const raw = String(value || '').trim()
+  if (!raw) return keys
+  const add = (val) => {
+    const key = normalizeConsoleKey(val)
+    if (key) keys.add(key)
+  }
+  add(raw)
+  const short = shortConsoleName(raw)
+  if (short && short !== raw) add(short)
+  const resolved = resolveConsoleInput(raw)
+  if (resolved?.name) {
+    add(resolved.name)
+    const resolvedShort = shortConsoleName(resolved.name)
+    if (resolvedShort && resolvedShort !== resolved.name) add(resolvedShort)
+  }
+  if (resolved?.key) keys.add(resolved.key)
+  return keys
+}
+
+function matchesEventConsoles(consoles, game) {
+  if (!Array.isArray(consoles) || consoles.length === 0) return true
+  const consoleKeys = new Set()
+  consoles.forEach(value => {
+    collectConsoleKeys(value).forEach(key => consoleKeys.add(key))
+    const idKey = normalizeConsoleKey(String(value || ''))
+    if (idKey) consoleKeys.add(idKey)
+  })
+  const nameKeys = collectConsoleKeys(getConsoleName(game))
+  for (const key of nameKeys) {
+    if (consoleKeys.has(key)) return true
+  }
+  const consoleId = game?.console?.id
+  if (consoleId != null) {
+    const idKey = normalizeConsoleKey(String(consoleId))
+    if (idKey && consoleKeys.has(idKey)) return true
+  }
+  return false
 }
 
 function sanitizeText(value, maxLen) {
@@ -741,11 +785,7 @@ app.get('/overlay/stats', requireOverlayAuth, async (req, res) => {
     if (consoles.length > 0) {
       const idx = getIndex()
       const allGames = mergeWithGameLibrary(idx.games || [])
-      const filtered = allGames.filter(g => {
-        const cName = getConsoleName(g)
-        const cId = g.console?.id
-        return consoles.includes(cName) || consoles.includes(cId)
-      })
+      const filtered = allGames.filter(g => matchesEventConsoles(consoles, g))
       
       const total = filtered.length
       const completed = filtered.filter(g => g.status === 'Completed').length
@@ -1712,6 +1752,77 @@ app.get('/api/retroachievements/game/:gameId', requireOverlayAuth, async (req, r
     console.error('RetroAchievements API error:', error.message)
     const key = `${req.query.username || process.env.RA_USERNAME}:${req.params.gameId}`
     raProxyInflight.delete(key)
+    if (error.response?.status === 429) {
+      res.status(429).json({ error: 'Rate limited by RetroAchievements API' })
+    } else {
+      res.status(500).json({ error: 'RetroAchievements API request failed' })
+    }
+  }
+})
+
+app.get('/api/retroachievements/recent', requireOverlayAuth, async (req, res) => {
+  try {
+    const username = req.query.username || process.env.RA_USERNAME
+    const apiKey = req.query.apiKey || process.env.RA_API_KEY
+    const countRaw = Number(req.query.count)
+    const count = Number.isFinite(countRaw) ? Math.min(Math.max(Math.floor(countRaw), 1), 200) : 50
+
+    if (!username || !apiKey) {
+      return res.status(400).json({ error: 'username and apiKey required' })
+    }
+
+    const key = `${username}:${count}`
+    const now = Date.now()
+    const cached = raRecentCache.get(key)
+    if (cached && now - cached.ts < raRecentCacheMs) {
+      return res.json(cached.data)
+    }
+    if (raRecentInflight.has(key)) {
+      const data = await raRecentInflight.get(key)
+      return res.json(data)
+    }
+
+    const params = new URLSearchParams()
+    params.set('y', apiKey)
+    params.set('u', username)
+    params.set('c', String(count))
+    const url = `https://retroachievements.org/API/API_GetUserRecentAchievements.php?${params.toString()}`
+
+    const fetchPromise = (async () => {
+      let attempt = 0
+      let delay = 800
+      while (true) {
+        try {
+          const response = await raProxyLimiter.schedule(() => axios.get(url, { timeout: 15000 }))
+          return response.data
+        } catch (error) {
+          const status = error?.response?.status
+          if (status === 429 && attempt < LIMITS.RA_MAX_RETRIES) {
+            const retry = Number(error?.response?.headers?.['retry-after'])
+            const wait = retry ? retry * 1000 : delay
+            await new Promise(r => setTimeout(r, wait))
+            attempt++
+            delay = Math.min(delay * 2, 8000)
+            continue
+          }
+          throw error
+        }
+      }
+    })()
+
+    raRecentInflight.set(key, fetchPromise)
+    const data = await fetchPromise
+    raRecentInflight.delete(key)
+    raRecentCache.set(key, { ts: Date.now(), data })
+
+    res.json(data)
+  } catch (error) {
+    console.error('RetroAchievements recent API error:', error.message)
+    const username = req.query.username || process.env.RA_USERNAME || ''
+    const countRaw = Number(req.query.count)
+    const count = Number.isFinite(countRaw) ? Math.min(Math.max(Math.floor(countRaw), 1), 200) : 50
+    const key = `${username}:${count}`
+    raRecentInflight.delete(key)
     if (error.response?.status === 429) {
       res.status(429).json({ error: 'Rate limited by RetroAchievements API' })
     } else {

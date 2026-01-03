@@ -109,6 +109,15 @@ export const DEFAULT_OVERLAY_SETTINGS = {
     cameraOffsetX: 32,
     cameraOffsetY: 32,
     achievementCycleMs: 8000,
+    tv: {
+      enabled: true,
+      logoText: 'PANDA',
+      logoUrl: '',
+      displays: [
+        { label: 'Current', value: '{currentTime}' },
+        { label: 'Event', value: '{totalTime}' }
+      ]
+    },
     modules: {
       current: { enabled: true, position: 'left', order: 1 },
       stats: { enabled: true, position: 'left', order: 2 },
@@ -128,6 +137,14 @@ export function mergeOverlaySettings(incoming) {
   const fullIncoming = data.full || {}
   const moduleBase = fullBase.modules || {}
   const moduleIncoming = fullIncoming.modules || {}
+  const tvBase = fullBase.tv || {}
+  const tvIncoming = fullIncoming.tv || {}
+  const mergedTv = {
+    enabled: tvIncoming.enabled ?? tvBase.enabled ?? true,
+    logoText: tvIncoming.logoText ?? tvBase.logoText ?? 'PANDA',
+    logoUrl: tvIncoming.logoUrl ?? tvBase.logoUrl ?? '',
+    displays: Array.isArray(tvIncoming.displays) ? tvIncoming.displays : (tvBase.displays || [])
+  }
   const mergedModules = {
     current: mergeSection(moduleBase.current, moduleIncoming.current),
     stats: mergeSection(moduleBase.stats, moduleIncoming.stats),
@@ -146,6 +163,7 @@ export function mergeOverlaySettings(incoming) {
     badgeCarousel: mergeSection(DEFAULT_OVERLAY_SETTINGS.badgeCarousel, data.badgeCarousel),
     full: {
       ...mergeSection(fullBase, fullIncoming),
+      tv: mergedTv,
       modules: mergedModules
     }
   }

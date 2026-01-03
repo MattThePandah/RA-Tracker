@@ -51,6 +51,8 @@ export default function Overlays() {
     })
     return Array.from(set).sort()
   }, [gameState.games])
+  const tvDisplayCount = Array.isArray(settings.full?.tv?.displays) ? settings.full.tv.displays.length : 0
+  const tvDisplayLimit = 4
 
   const toggleEventConsole = (consoleName) => {
     const current = settings.global.eventConsoles || []
@@ -102,6 +104,74 @@ export default function Overlays() {
         }
       }
     }))
+  }
+
+  const updateFullTv = (key, value) => {
+    setSettings(prev => ({
+      ...prev,
+      full: {
+        ...prev.full,
+        tv: {
+          ...prev.full?.tv,
+          [key]: value
+        }
+      }
+    }))
+  }
+
+  const updateTvDisplay = (index, key, value) => {
+    setSettings(prev => {
+      const displays = Array.isArray(prev.full?.tv?.displays) ? [...prev.full.tv.displays] : []
+      const current = displays[index] || {}
+      displays[index] = { ...current, [key]: value }
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            displays
+          }
+        }
+      }
+    })
+  }
+
+  const addTvDisplay = () => {
+    setSettings(prev => {
+      const displays = Array.isArray(prev.full?.tv?.displays) ? [...prev.full.tv.displays] : []
+      if (displays.length >= tvDisplayLimit) {
+        return prev
+      }
+      displays.push({ label: 'Label', value: 'Value' })
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            displays
+          }
+        }
+      }
+    })
+  }
+
+  const removeTvDisplay = (index) => {
+    setSettings(prev => {
+      const displays = Array.isArray(prev.full?.tv?.displays) ? [...prev.full.tv.displays] : []
+      displays.splice(index, 1)
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            displays
+          }
+        }
+      }
+    })
   }
 
   const save = async () => {
@@ -231,6 +301,7 @@ export default function Overlays() {
                 <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.global.theme} onChange={e => updateSection('global', 'theme', e.target.value)}>
                   <option value="bamboo">Bamboo</option>
                   <option value="bamboo-light">Bamboo Light</option>
+                  <option value="panda">Panda TV</option>
                   <option value="midnight">Midnight</option>
                   <option value="minimal">Minimal</option>
                 </select>
@@ -448,6 +519,87 @@ export default function Overlays() {
                     </div>
                   )
                 })}
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="small fw-bold opacity-50 mb-3 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Panda TV Shell</div>
+              <div className="form-check form-switch p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 d-flex justify-content-between align-items-center gap-3">
+                <label className="form-check-label small fw-bold opacity-75" htmlFor="fullTvEnabled">Enable TV Shell</label>
+                <input
+                  className="form-check-input ms-0"
+                  type="checkbox"
+                  checked={settings.full?.tv?.enabled !== false}
+                  onChange={e => updateFullTv('enabled', e.target.checked)}
+                  id="fullTvEnabled"
+                />
+              </div>
+              <div className="text-secondary small mt-2">Only used when the global theme is set to Panda TV.</div>
+              <div className="row g-2 mt-3">
+                <div className="col-6">
+                  <label className="form-label small fw-bold opacity-50">Logo Text</label>
+                  <input
+                    className="form-control border-0 bg-panel-2 shadow-sm"
+                    value={settings.full?.tv?.logoText || ''}
+                    onChange={e => updateFullTv('logoText', e.target.value)}
+                    placeholder="PANDA"
+                  />
+                </div>
+                <div className="col-6">
+                  <label className="form-label small fw-bold opacity-50">Logo URL</label>
+                  <input
+                    className="form-control border-0 bg-panel-2 shadow-sm"
+                    value={settings.full?.tv?.logoUrl || ''}
+                    onChange={e => updateFullTv('logoUrl', e.target.value)}
+                    placeholder="https://..."
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <div className="small fw-bold opacity-50 mb-2 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Digital Displays</div>
+                <div className="d-grid gap-2">
+                  {(Array.isArray(settings.full?.tv?.displays) ? settings.full.tv.displays : []).map((display, index) => (
+                    <div className="p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10" key={`tv-display-${index}`}>
+                      <div className="row g-2 align-items-center">
+                        <div className="col-5">
+                          <label className="form-label small fw-bold opacity-50">Label</label>
+                          <input
+                            className="form-control border-0 bg-panel shadow-sm"
+                            value={display?.label || ''}
+                            onChange={e => updateTvDisplay(index, 'label', e.target.value)}
+                            placeholder="Status"
+                          />
+                        </div>
+                        <div className="col-5">
+                          <label className="form-label small fw-bold opacity-50">Value</label>
+                          <input
+                            className="form-control border-0 bg-panel shadow-sm"
+                            value={display?.value || ''}
+                            onChange={e => updateTvDisplay(index, 'value', e.target.value)}
+                            placeholder="{currentTime}"
+                          />
+                        </div>
+                        <div className="col-2 text-end">
+                          <button type="button" className="btn btn-sm btn-outline-secondary px-2 mt-4" onClick={() => removeTvDisplay(index)}>Remove</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(Array.isArray(settings.full?.tv?.displays) ? settings.full.tv.displays : []).length === 0 && (
+                    <div className="text-secondary small">No displays configured yet.</div>
+                  )}
+                </div>
+                <div className="mt-2">
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={addTvDisplay} disabled={tvDisplayCount >= tvDisplayLimit}>
+                    Add Display
+                  </button>
+                  {tvDisplayCount >= tvDisplayLimit && (
+                    <span className="text-secondary small ms-2">Limit {tvDisplayLimit} displays.</span>
+                  )}
+                </div>
+                <div className="text-secondary small mt-2">
+                  Tokens: {`{currentTime}`} {`{totalTime}`} {`{session}`} {`{event}`} {`{title}`} {`{console}`} {`{year}`} {`{publisher}`} {`{status}`}.
+                </div>
               </div>
             </div>
 

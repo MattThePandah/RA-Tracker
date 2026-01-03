@@ -252,20 +252,29 @@ export async function getUserCompletionProgress({ apiKey, username, count = 100,
   }
 }
 
-export async function getRecentAchievements({ apiKey, username, count = 50 }) {
+export async function getRecentAchievements({ apiKey, username, count = 50, signal }) {
   if (!apiKey || !username) {
     throw new Error('apiKey and username are required')
   }
   
+  const proxyBase = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+  const url = buildOverlayUrl('/api/retroachievements/recent', proxyBase)
   const params = new URLSearchParams()
-  params.set('y', apiKey)
-  params.set('u', username)
-  params.set('c', String(count))
-  
-  const url = `${RA_BASE}/API_GetUserRecentAchievements.php?${params.toString()}`
+  params.set('username', username)
+  params.set('apiKey', apiKey)
+  params.set('count', String(count))
   
   try {
-    const { data } = await axios.get(url)
+    const requestUrl = new URL(url)
+    for (const [key, value] of params.entries()) {
+      requestUrl.searchParams.set(key, value)
+    }
+    const config = {
+      timeout: 15000,
+      withCredentials: true
+    }
+    if (signal) config.signal = signal
+    const { data } = await axios.get(requestUrl.toString(), config)
     return (data || []).map(achievement => ({
       date: achievement.Date,
       hardcoreMode: achievement.HardcoreMode,

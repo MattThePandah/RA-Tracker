@@ -43,6 +43,13 @@ const initialState = {
   }
 }
 
+const RECENT_MIN_INTERVAL_MS = 15000
+const RECENT_BACKOFF_BASE_MS = 15000
+const RECENT_BACKOFF_MAX_MS = 120000
+const GAME_MIN_INTERVAL_MS = 15000
+const GAME_BACKOFF_BASE_MS = 15000
+const GAME_BACKOFF_MAX_MS = 120000
+
 function achievementReducer(state, action) {
   switch (action.type) {
     case 'SET_LOADING':
@@ -180,10 +187,19 @@ function achievementReducer(state, action) {
 
 export function AchievementProvider({ children }) {
   const [state, dispatch] = useReducer(achievementReducer, initialState)
+  const recentFetchRef = React.useRef({ lastStart: 0, cooldownUntil: 0, failures: 0 })
+  const gameFetchRef = React.useRef(new Map())
 
   // Load settings on mount
   useEffect(() => {
     try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search || '')
+        if (params.get('resetra') === '1') {
+          localStorage.removeItem(LS_ACHIEVEMENT_SETTINGS)
+          localStorage.removeItem('psfest.achievementSettings')
+        }
+      }
       let savedRaw = localStorage.getItem(LS_ACHIEVEMENT_SETTINGS)
       if (!savedRaw) {
         const legacy = localStorage.getItem('psfest.achievementSettings')
@@ -237,8 +253,8 @@ export function AchievementProvider({ children }) {
       }
     }
 
-    // Don't reload if already loading (but allow forced refreshes even with existing data)
-    if (state.loading.gameAchievements && !force) {
+    // Don't reload if already loading
+    if (state.loading.gameAchievements) {
       console.log('AchievementContext: Skipping load, already loading')
       return
     }
@@ -247,6 +263,17 @@ export function AchievementProvider({ children }) {
     if (!force && state.currentGameAchievements.length > 0) {
       return
     }
+
+    const now = Date.now()
+    const gameMeta = gameFetchRef.current.get(gameId) || { lastStart: 0, cooldownUntil: 0, failures: 0 }
+    if (now < gameMeta.cooldownUntil) {
+      return
+    }
+    if (now - gameMeta.lastStart < GAME_MIN_INTERVAL_MS) {
+      return
+    }
+    gameMeta.lastStart = now
+    gameFetchRef.current.set(gameId, gameMeta)
 
     dispatch({ type: 'SET_LOADING', key: 'gameAchievements', loading: true })
     dispatch({ type: 'CLEAR_ERROR', key: 'gameAchievements' })
@@ -296,6 +323,9 @@ export function AchievementProvider({ children }) {
         dispatch({ type: 'CLEAR_RETRY_ATTEMPTS', gameId })
         // Reset circuit breaker on successful load
         dispatch({ type: 'CIRCUIT_BREAKER_SUCCESS' })
+        gameMeta.failures = 0
+        gameMeta.cooldownUntil = 0
+        gameFetchRef.current.set(gameId, gameMeta)
       } catch (apiError) {
         clearTimeout(timeoutId)
         throw apiError
@@ -327,6 +357,10 @@ export function AchievementProvider({ children }) {
         // Schedule retry with exponential backoff (2^attempt * 1000ms, max 30s)
         const retryAttempt = (state.retryAttempts?.[gameId] || 0) + 1
         const backoffDelay = Math.min(Math.pow(2, retryAttempt) * 1000, 30000)
+
+        gameMeta.failures = retryAttempt
+        gameMeta.cooldownUntil = Date.now() + Math.min(GAME_BACKOFF_BASE_MS * Math.pow(2, retryAttempt - 1), GAME_BACKOFF_MAX_MS)
+        gameFetchRef.current.set(gameId, gameMeta)
         
         setTimeout(async () => {
           console.log(`AchievementContext: Retrying achievement load attempt ${retryAttempt} after ${backoffDelay}ms`)
@@ -360,6 +394,17 @@ export function AchievementProvider({ children }) {
       return
     }
 
+    const now = Date.now()
+    const recentMeta = recentFetchRef.current
+    if (now < recentMeta.cooldownUntil) {
+      return
+    }
+    if (now - recentMeta.lastStart < RECENT_MIN_INTERVAL_MS) {
+      return
+    }
+    recentMeta.lastStart = now
+    console.log('AchievementContext: Fetching recent achievements', { count })
+
     dispatch({ type: 'SET_LOADING', key: 'recentAchievements', loading: true })
     dispatch({ type: 'CLEAR_ERROR', key: 'recentAchievements' })
 
@@ -380,6 +425,8 @@ export function AchievementProvider({ children }) {
       
       clearTimeout(timeoutId)
       dispatch({ type: 'SET_RECENT_ACHIEVEMENTS', achievements })
+      recentMeta.failures = 0
+      recentMeta.cooldownUntil = 0
 
     } catch (error) {
       let errorMessage = error.message || 'Failed to load recent achievements'
@@ -392,6 +439,14 @@ export function AchievementProvider({ children }) {
       
       console.error('Failed to load recent achievements:', error)
       dispatch({ type: 'SET_ERROR', key: 'recentAchievements', error: errorMessage })
+      if (error.name === 'AbortError' || error.response?.status === 429 || error.response?.status >= 500) {
+        recentMeta.failures += 1
+        const backoff = Math.min(
+          RECENT_BACKOFF_BASE_MS * Math.pow(2, recentMeta.failures - 1),
+          RECENT_BACKOFF_MAX_MS
+        )
+        recentMeta.cooldownUntil = Date.now() + backoff
+      }
     } finally {
       dispatch({ type: 'SET_LOADING', key: 'recentAchievements', loading: false })
     }
