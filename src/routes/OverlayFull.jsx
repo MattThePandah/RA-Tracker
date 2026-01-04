@@ -414,9 +414,36 @@ export default function OverlayFull() {
   ]
   const tvDisplaySource = Array.isArray(tvConfig.displays) ? tvConfig.displays : defaultTvDisplays
   const tvStickerSource = Array.isArray(tvConfig.stickers) ? tvConfig.stickers : []
-  const tvStickers = tvEnabled
-    ? tvStickerSource.filter(sticker => sticker && typeof sticker.url === 'string' && sticker.url.trim())
-    : []
+  const [dynamicStickers, setDynamicStickers] = React.useState([])
+
+  // Handle dynamic stickers from StreamerBot
+  React.useEffect(() => {
+    if (!connectorEvent) return
+    if (connectorEvent.type === 'sticker' && connectorEvent.url) {
+      const newSticker = {
+        url: connectorEvent.url,
+        x: connectorEvent.x ?? (Math.random() * 90 + 5), // Random 5-95%
+        y: connectorEvent.y ?? (Math.random() * 90 + 5), // Random 5-95%
+        size: connectorEvent.size ?? (Math.random() * 15 + 10), // Random 10-25%
+        rotate: connectorEvent.rotate ?? (Math.random() * 60 - 30), // Random -30 to 30deg
+        opacity: connectorEvent.opacity ?? 1,
+        id: `${connectorEvent.type}-${Date.now()}`
+      }
+      setDynamicStickers(prev => {
+        const next = [...prev, newSticker]
+        if (next.length > 20) return next.slice(next.length - 20)
+        return next
+      })
+    }
+  }, [connectorEvent])
+
+  const allStickers = React.useMemo(() => {
+    const staticStickers = tvEnabled
+      ? tvStickerSource.filter(sticker => sticker && typeof sticker.url === 'string' && sticker.url.trim())
+      : []
+    return [...staticStickers, ...dynamicStickers]
+  }, [tvEnabled, tvStickerSource, dynamicStickers])
+
   const tvNeedsTimers = tvEnabled && tvDisplaySource.some(display => displayNeedsTimers(display))
 
   useOverlayTheme(themeName, isClean, globalConfig)
@@ -1310,9 +1337,9 @@ export default function OverlayFull() {
         <div className={`full-overlay-stage${achievementGlow ? ' achievement-glow' : ''}${tvEnabled ? ' full-overlay-stage-tv' : ''}`}>
           {tvEnabled ? (
             <div className="full-tv-shell" ref={tvShellRef}>
-              {tvStickers.length > 0 && (
+              {allStickers.length > 0 && (
                 <div className="full-tv-stickers" aria-hidden="true">
-                  {tvStickers.map((sticker, index) => {
+                  {allStickers.map((sticker, index) => {
                     const x = clampNumber(sticker?.x, 0, 100, 0)
                     const y = clampNumber(sticker?.y, 0, 100, 0)
                     const size = clampNumber(sticker?.size, 2, 40, 12)
