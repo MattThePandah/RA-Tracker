@@ -7,6 +7,7 @@ import { buildCoverUrl } from '../utils/coverUrl.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import useOverlayEvent from '../hooks/useOverlayEvent.js'
+import useOverlayConnector from '../hooks/useOverlayConnector.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 import FullOverlayAchievementPopups from '../components/FullOverlayAchievementPopups.jsx'
 import DotMatrixText from '../components/DotMatrixText.jsx'
@@ -46,6 +47,7 @@ function safeText(value) {
 
 const LOGO_SWAP_INTERVAL_MS = 60000
 const GAME_LOCK_MS = 10000
+const CONNECTOR_DEFAULT_POLL_MS = 1500
 const DOT_TEXT_MAX = 20
 const DOT_GAME_SCROLL_MAX = 64
 const DOT_GAME_SCROLL_VISIBLE = 14
@@ -54,6 +56,7 @@ const DOT_SCROLL_VISIBLE = 16
 const DOT_LABEL_MAX = 14
 const DOT_META_MAX = 18
 const DOT_ALLOWED = /[A-Z0-9:%\-\.\/ ]/
+const CONNECTOR_COLOR_ALLOWED = /^[#(),.%0-9a-zA-Z\s\-\/]+$/
 
 const TIMER_TOKENS = [
   '{current}',
@@ -164,6 +167,124 @@ function clampDotText(text, maxLen) {
   if (value.length <= maxLen) return value
   const sliceLen = Math.max(0, maxLen - 3)
   return `${value.slice(0, sliceLen).trimEnd()}...`
+}
+
+function clampNumber(value, min, max, fallback) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return fallback
+  return Math.max(min, Math.min(max, num))
+}
+
+function sanitizeCssColor(value) {
+  if (value == null) return ''
+  const cleaned = String(value).trim()
+  if (!cleaned || cleaned.length > 64) return ''
+  if (/url\s*\(|expression\s*\(/i.test(cleaned)) return ''
+  if (!CONNECTOR_COLOR_ALLOWED.test(cleaned)) return ''
+  return cleaned
+}
+
+const CONNECTOR_TYPE_ALIASES = {
+  subscription: 'sub',
+  sub: 'sub',
+  resub: 'resub',
+  resubscription: 'resub',
+  giftsub: 'gift',
+  gift: 'gift',
+  gifted: 'gift',
+  raid: 'raid',
+  follow: 'follow',
+  cheer: 'cheer',
+  bits: 'cheer',
+  superchat: 'superchat',
+  supersticker: 'superchat',
+  member: 'member',
+  membership: 'member',
+  tip: 'tip',
+  donation: 'tip',
+  donate: 'tip'
+}
+
+function normalizeConnectorType(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return 'event'
+  const key = raw.replace(/[^a-z0-9]/g, '')
+  return CONNECTOR_TYPE_ALIASES[key] || raw
+}
+
+function normalizeConnectorSource(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return 'stream'
+  if (raw.includes('twitch')) return 'twitch'
+  if (raw.includes('youtube') || raw === 'yt') return 'youtube'
+  return raw
+}
+
+function normalizeConnectorFocus(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === 'game' || raw === 'event') return raw
+  return ''
+}
+
+function formatConnectorLabel(source, type) {
+  const sourceLabel = source === 'twitch' ? 'Twitch' : source === 'youtube' ? 'YouTube' : 'Stream'
+  switch (type) {
+    case 'sub':
+      return `${sourceLabel} Sub`
+    case 'resub':
+      return `${sourceLabel} Resub`
+    case 'gift':
+      return `${sourceLabel} Gift`
+    case 'raid':
+      return `${sourceLabel} Raid`
+    case 'follow':
+      return `${sourceLabel} Follow`
+    case 'cheer':
+      return `${sourceLabel} Cheer`
+    case 'superchat':
+      return `${sourceLabel} Super`
+    case 'member':
+      return `${sourceLabel} Member`
+    case 'tip':
+      return `${sourceLabel} Tip`
+    default:
+      return `${sourceLabel} Event`
+  }
+}
+
+function resolveConnectorTheme(event, source, type) {
+  const donationTheme = { border: 'rgba(94, 207, 134, 0.7)', glow: 'rgba(94, 207, 134, 0.35)' }
+  const defaultTheme = type === 'tip'
+    ? donationTheme
+    : source === 'twitch'
+      ? { border: 'rgba(145, 70, 255, 0.7)', glow: 'rgba(145, 70, 255, 0.35)' }
+      : source === 'youtube'
+        ? { border: 'rgba(255, 70, 70, 0.7)', glow: 'rgba(255, 70, 70, 0.35)' }
+        : { border: 'rgba(102, 183, 255, 0.7)', glow: 'rgba(102, 183, 255, 0.35)' }
+  const borderOverride = sanitizeCssColor(event?.borderColor || event?.color)
+  const glowOverride = sanitizeCssColor(event?.glowColor || event?.glow)
+  const border = borderOverride || defaultTheme.border
+  const glow = glowOverride || borderOverride || defaultTheme.glow
+  return { border, glow }
+}
+
+function formatConnectorMeta(event, type) {
+  if (!event) return ''
+  const parts = []
+  const tier = safeText(event.tier)
+  if (tier) parts.push(tier)
+  const months = Number(event.months || 0)
+  if (Number.isFinite(months) && months > 0) parts.push(`${months}M`)
+  const amount = safeText(event.amount)
+  const currency = safeText(event.currency)
+  if (amount) parts.push(currency ? `${amount} ${currency}` : amount)
+  const count = Number(event.count || 0)
+  if (Number.isFinite(count) && count > 0) {
+    if (type === 'gift') parts.push(`${count} GIFTS`)
+    else if (type === 'raid') parts.push(`${count} VIEWERS`)
+    else parts.push(`${count}`)
+  }
+  return parts.join(' / ')
 }
 
 function getAchievementTime(achievement) {
@@ -277,10 +398,14 @@ export default function OverlayFull() {
   const raTest = getBoolParam(params, 'ratest', false)
   const raTestCount = getNumberParam(params, 'racount', 1, { min: 1, max: 6 })
   const logoSwapMs = getNumberParam(params, 'logoswap', LOGO_SWAP_INTERVAL_MS, { min: 5000, max: 900000 })
+  const connectorPollRaw = getNumberParam(params, 'connectorpoll', CONNECTOR_DEFAULT_POLL_MS, { min: 250, max: 10000 })
   const themeName = globalConfig.theme || 'bamboo'
   const isPandaTheme = themeName === 'panda'
   const tvConfig = fullConfig.tv || {}
+  const connectorIconMap = tvConfig.connectorIcons || {}
   const tvEnabled = isPandaTheme && tvConfig.enabled !== false
+  const connectorPollMs = tvEnabled ? connectorPollRaw : 0
+  const connectorEvent = useOverlayConnector(connectorPollMs)
   const tvLogoUrl = typeof tvConfig.logoUrl === 'string' ? tvConfig.logoUrl.trim() : ''
   const tvLogoText = (typeof tvConfig.logoText === 'string' ? tvConfig.logoText.trim() : '') || 'PANDA'
   const defaultTvDisplays = [
@@ -288,6 +413,10 @@ export default function OverlayFull() {
     { label: 'Session', value: '00:00:00' }
   ]
   const tvDisplaySource = Array.isArray(tvConfig.displays) ? tvConfig.displays : defaultTvDisplays
+  const tvStickerSource = Array.isArray(tvConfig.stickers) ? tvConfig.stickers : []
+  const tvStickers = tvEnabled
+    ? tvStickerSource.filter(sticker => sticker && typeof sticker.url === 'string' && sticker.url.trim())
+    : []
   const tvNeedsTimers = tvEnabled && tvDisplaySource.some(display => displayNeedsTimers(display))
 
   useOverlayTheme(themeName, isClean, globalConfig)
@@ -304,6 +433,8 @@ export default function OverlayFull() {
   const [centerCycleSeed, setCenterCycleSeed] = React.useState(0)
   const lastGameIdRef = React.useRef(null)
   const centerLockRef = React.useRef(0)
+  const tvShellRef = React.useRef(null)
+  const tvScreenRef = React.useRef(null)
 
   const currentEnabled = moduleConfig.current?.enabled ?? false
   const statsEnabled = moduleConfig.stats?.enabled ?? false
@@ -949,6 +1080,7 @@ export default function OverlayFull() {
   }
 
   const consoleAcronym = tvEnabled ? getConsoleAcronym(current?.console) : ''
+  const inputText = consoleAcronym ? clampDotText(sanitizeDotText(consoleAcronym), DOT_LABEL_MAX) : ' '
   const tvTitleText = tvEnabled ? clampDotText(sanitizeDotText(current?.title), DOT_GAME_SCROLL_MAX) : ''
   const gameLabelText = tvTitleText ? clampDotText(sanitizeDotText('Now Playing'), DOT_LABEL_MAX) : ''
   const gameMetaParts = []
@@ -986,6 +1118,38 @@ export default function OverlayFull() {
       return { label, value }
     })
     .filter(display => display.label || display.value)
+
+  const connectorActive = tvEnabled && !!connectorEvent
+  const connectorSource = normalizeConnectorSource(connectorEvent?.source)
+  const connectorType = normalizeConnectorType(connectorEvent?.type)
+  const connectorFocus = normalizeConnectorFocus(connectorEvent?.focus || connectorEvent?.center || connectorEvent?.mode)
+  const connectorTheme = resolveConnectorTheme(connectorEvent, connectorSource, connectorType)
+  const connectorStyle = connectorActive ? {
+    '--connector-border': connectorTheme.border,
+    '--connector-glow': connectorTheme.glow
+  } : undefined
+  const connectorLabelBase = connectorActive ? formatConnectorLabel(connectorSource, connectorType) : ''
+  const connectorTitleBase = connectorActive ? (safeText(connectorEvent?.user || connectorEvent?.title) || connectorLabelBase) : ''
+  const connectorMessageRaw = connectorActive ? safeText(connectorEvent?.message) : ''
+  const connectorMetaBase = connectorActive ? formatConnectorMeta(connectorEvent, connectorType) : ''
+  const connectorLabelText = connectorActive ? clampDotText(sanitizeDotText(connectorLabelBase), DOT_LABEL_MAX) : ''
+  const connectorTitleText = connectorActive ? clampDotText(sanitizeDotText(connectorTitleBase), DOT_SCROLL_MAX) : ''
+  const connectorMessageText = connectorActive ? clampDotText(sanitizeDotText(connectorMessageRaw), DOT_SCROLL_MAX) : ''
+  const connectorMetaText = connectorActive
+    ? (connectorMessageText || clampDotText(sanitizeDotText(connectorMetaBase), DOT_SCROLL_MAX))
+    : ''
+  const connectorMetaScroll = connectorActive && Boolean(connectorMessageText || connectorMetaBase)
+  const connectorIconBase = connectorActive
+    ? safeText(connectorEvent?.icon || connectorIconMap[connectorType] || connectorIconMap.default)
+    : ''
+  const connectorIconLeft = connectorActive
+    ? safeText(connectorEvent?.iconLeft || connectorIconMap[`${connectorType}Left`] || connectorIconMap.left || connectorIconBase)
+    : ''
+  const connectorIconRight = connectorActive
+    ? safeText(connectorEvent?.iconRight || connectorIconMap[`${connectorType}Right`] || connectorIconMap.right || connectorIconBase)
+    : ''
+  const showConnectorIconLeft = connectorActive && Boolean(connectorIconLeft)
+  const showConnectorIconRight = connectorActive && Boolean(connectorIconRight)
 
   const centerItems = React.useMemo(() => {
     if (!tvEnabled) return []
@@ -1038,7 +1202,7 @@ export default function OverlayFull() {
       centerLockRef.current = 0
       return
     }
-    if (bezelAchievement) return
+    if (bezelAchievement || connectorActive) return
     setCenterIndex(0)
     if (centerRotationItems.length <= 1) return
     const id = setInterval(() => {
@@ -1046,7 +1210,7 @@ export default function OverlayFull() {
       setCenterIndex(prev => (prev + 1) % centerRotationItems.length)
     }, logoSwapMs)
     return () => clearInterval(id)
-  }, [tvEnabled, bezelAchievement, centerRotationItems.length, logoSwapMs, centerCycleSeed])
+  }, [tvEnabled, bezelAchievement, connectorActive, centerRotationItems.length, logoSwapMs, centerCycleSeed])
 
   React.useEffect(() => {
     if (!tvEnabled) return
@@ -1061,11 +1225,47 @@ export default function OverlayFull() {
     }
   }, [tvEnabled, current?.id, gameCenterIndex])
 
+  React.useEffect(() => {
+    if (!tvEnabled) return
+    const shell = tvShellRef.current
+    const screen = tvScreenRef.current
+    if (!shell || !screen || typeof ResizeObserver === 'undefined') return
+
+    const updateCutout = () => {
+      const shellRect = shell.getBoundingClientRect()
+      const screenRect = screen.getBoundingClientRect()
+      const x = Math.max(0, screenRect.left - shellRect.left)
+      const y = Math.max(0, screenRect.top - shellRect.top)
+      const w = Math.max(0, screenRect.width)
+      const h = Math.max(0, screenRect.height)
+      shell.style.setProperty('--tv-cutout-x', `${x}px`)
+      shell.style.setProperty('--tv-cutout-y', `${y}px`)
+      shell.style.setProperty('--tv-cutout-w', `${w}px`)
+      shell.style.setProperty('--tv-cutout-h', `${h}px`)
+    }
+
+    updateCutout()
+    const observer = new ResizeObserver(updateCutout)
+    observer.observe(shell)
+    observer.observe(screen)
+    window.addEventListener('resize', updateCutout)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateCutout)
+    }
+  }, [tvEnabled, viewportWidth, viewportHeight])
+
   const activeCenter = centerRotationItems[centerIndex] || centerRotationItems[0] || { type: 'logo' }
-  const centerMode = bezelAchievement ? 'achievement' : (activeCenter?.type || 'logo')
   const showGameLayer = centerItems.some(item => item.type === 'game')
   const showEventLayer = centerItems.some(item => item.type === 'event')
   const showAchievementLayer = Boolean(bezelAchievement)
+  const centerOverride = connectorFocus === 'game'
+    ? (showGameLayer ? 'game' : null)
+    : connectorFocus === 'event'
+      ? (showEventLayer ? 'event' : null)
+      : null
+  const centerMode = centerOverride ?? (connectorActive ? 'connector' : bezelAchievement ? 'achievement' : (activeCenter?.type || 'logo'))
+  const showConnectorLayer = connectorActive && centerMode === 'connector'
 
   const stageFrames = (
     <>
@@ -1109,8 +1309,37 @@ export default function OverlayFull() {
         )}
         <div className={`full-overlay-stage${achievementGlow ? ' achievement-glow' : ''}${tvEnabled ? ' full-overlay-stage-tv' : ''}`}>
           {tvEnabled ? (
-            <div className="full-tv-shell">
-              <div className="full-tv-screen">
+            <div className="full-tv-shell" ref={tvShellRef}>
+              {tvStickers.length > 0 && (
+                <div className="full-tv-stickers" aria-hidden="true">
+                  {tvStickers.map((sticker, index) => {
+                    const x = clampNumber(sticker?.x, 0, 100, 0)
+                    const y = clampNumber(sticker?.y, 0, 100, 0)
+                    const size = clampNumber(sticker?.size, 2, 40, 12)
+                    const rotate = clampNumber(sticker?.rotate, -180, 180, 0)
+                    const opacity = clampNumber(sticker?.opacity, 0, 1, 1)
+                    const url = String(sticker.url || '').trim()
+                    if (!url) return null
+                    return (
+                      <div
+                        className="full-tv-sticker"
+                        key={`tv-sticker-${index}`}
+                        style={{
+                          left: `${x}%`,
+                          top: `${y}%`,
+                          width: `${size}%`,
+                          opacity,
+                          transform: `rotate(${rotate}deg)`,
+                          zIndex: index + 2
+                        }}
+                      >
+                        <img src={url} alt="" />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="full-tv-screen" ref={tvScreenRef}>
                 {stageFrames}
               </div>
               <div className="full-tv-footer">
@@ -1138,7 +1367,7 @@ export default function OverlayFull() {
                     </div>
                   ))}
                 </div>
-                <div className={`full-tv-logo show-${centerMode}`}>
+                <div className={`full-tv-logo show-${centerMode}`} style={connectorStyle}>
                   <div className="full-tv-logo-layer full-tv-logo-layer-logo">
                     {tvLogoUrl ? (
                       <div className="full-tv-logo-mark" style={{ '--logo-url': `url("${tvLogoUrl}")` }}>
@@ -1183,6 +1412,51 @@ export default function OverlayFull() {
                       </div>
                     </div>
                   )}
+                  {showConnectorLayer && (
+                    <div className="full-tv-logo-layer full-tv-logo-layer-connector">
+                      <div className="full-tv-logo-connector">
+                        {showConnectorIconLeft ? (
+                          <div className="full-tv-logo-side full-tv-logo-side-left">
+                            <div className="full-tv-logo-icon" style={{ '--icon-url': `url("${connectorIconLeft}")` }} />
+                          </div>
+                        ) : null}
+                        <div className="full-tv-logo-stack">
+                          {connectorLabelText ? (
+                            <DotMatrixText text={connectorLabelText} dotSize={2} dotGap={0} charGap={1} />
+                          ) : null}
+                          {connectorTitleText ? (
+                            <DotMatrixText
+                              text={connectorTitleText}
+                              dotSize={4}
+                              dotGap={0}
+                              charGap={1}
+                              scroll
+                              maxChars={DOT_SCROLL_VISIBLE}
+                              scrollSpeed={16}
+                              scrollGap={8}
+                            />
+                          ) : null}
+                          {connectorMetaText ? (
+                            <DotMatrixText
+                              text={connectorMetaText}
+                              dotSize={2}
+                              dotGap={0}
+                              charGap={1}
+                              scroll={connectorMetaScroll}
+                              maxChars={DOT_SCROLL_VISIBLE}
+                              scrollSpeed={20}
+                              scrollGap={8}
+                            />
+                          ) : null}
+                        </div>
+                        {showConnectorIconRight ? (
+                          <div className="full-tv-logo-side full-tv-logo-side-right">
+                            <div className="full-tv-logo-icon" style={{ '--icon-url': `url("${connectorIconRight}")` }} />
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
                   {showAchievementLayer && (
                     <div className="full-tv-logo-layer full-tv-logo-layer-achievement">
                       <div className="full-tv-logo-stack">
@@ -1205,24 +1479,22 @@ export default function OverlayFull() {
                   )}
                 </div>
                 <div className="full-tv-right">
-                  {consoleAcronym && (
-                    <div className="full-tv-display full-tv-input">
-                      <DotMatrixText
-                        className="full-tv-display-label"
-                        text="Input"
-                        dotSize={2}
-                        dotGap={0}
-                        charGap={1}
-                      />
-                      <DotMatrixText
-                        className="full-tv-display-value"
-                        text={consoleAcronym}
-                        dotSize={4}
-                        dotGap={0}
-                        charGap={1}
-                      />
-                    </div>
-                  )}
+                  <div className="full-tv-display full-tv-input">
+                    <DotMatrixText
+                      className="full-tv-display-label"
+                      text="Input"
+                      dotSize={2}
+                      dotGap={0}
+                      charGap={1}
+                    />
+                    <DotMatrixText
+                      className="full-tv-display-value"
+                      text={inputText}
+                      dotSize={4}
+                      dotGap={0}
+                      charGap={1}
+                    />
+                  </div>
                   <div className="full-tv-controls" aria-hidden="true">
                     <span className="full-tv-knob" />
                     <span className="full-tv-knob" />

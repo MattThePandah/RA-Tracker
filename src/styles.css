@@ -504,33 +504,91 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border-radius: 26px;
+  gap: 12px;
+  padding: var(--tv-shell-pad-y, var(--tv-shell-padding, 18px))
+    var(--tv-shell-pad-x, var(--tv-shell-padding, 18px))
+    var(--tv-shell-pad-bottom, var(--tv-shell-padding, 18px));
+  border-radius: var(--tv-shell-radius, 30px);
   background: transparent;
-  border: 1px solid var(--tv-shell-border, rgba(0, 0, 0, 0.45));
-  box-shadow: var(--tv-shell-shadow, 0 24px 50px rgba(0, 0, 0, 0.35));
+  border: none;
+  box-shadow: none;
   box-sizing: border-box;
+  overflow: hidden;
+}
+.full-tv-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--tv-shell-radius, 30px);
+  background: var(--tv-shell-bg, #2b3033);
+  border: 2px solid var(--tv-shell-border, rgba(0, 0, 0, 0.45));
+  box-shadow: var(--tv-shell-shadow, 0 24px 50px rgba(0, 0, 0, 0.35));
+  -webkit-mask:
+    linear-gradient(#000 0 0) 0 0 / 100% 100% no-repeat,
+    linear-gradient(#000 0 0) var(--tv-cutout-x, 0px) var(--tv-cutout-y, 0px) / var(--tv-cutout-w, 0px) var(--tv-cutout-h, 0px) no-repeat;
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+}
+.full-tv-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--tv-shell-radius, 30px);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 38%),
+    radial-gradient(120% 140% at 12% 0%, rgba(255, 255, 255, 0.12), transparent 55%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.04) 1px, transparent 1px, transparent 6px);
+  opacity: 0.55;
+  -webkit-mask:
+    linear-gradient(#000 0 0) 0 0 / 100% 100% no-repeat,
+    linear-gradient(#000 0 0) var(--tv-cutout-x, 0px) var(--tv-cutout-y, 0px) / var(--tv-cutout-w, 0px) var(--tv-cutout-h, 0px) no-repeat;
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+}
+.full-tv-shell > * {
+  position: relative;
+  z-index: 1;
 }
 .full-tv-screen {
   position: relative;
   flex: 1 1 auto;
-  border-radius: 16px;
-  background: transparent;
+  border-radius: var(--tv-screen-radius, 18px);
+  background: var(--tv-screen-bg, transparent);
   border: 1px solid var(--tv-screen-border, rgba(0, 0, 0, 0.65));
   overflow: hidden;
   box-shadow:
-    0 0 0 9999px var(--tv-shell-fill, rgba(42, 47, 50, 0.95)),
-    0 0 0 14px rgba(0, 0, 0, 0.65),
+    0 0 0 var(--tv-screen-lip-size, 10px) var(--tv-screen-lip, rgba(10, 12, 14, 0.94)),
+    0 16px 30px rgba(0, 0, 0, 0.35),
     inset 0 0 0 1px rgba(255, 255, 255, 0.05),
-    inset 0 0 26px rgba(0, 0, 0, 0.25);
+    inset 0 0 52px rgba(0, 0, 0, 0.4);
   z-index: 1;
+}
+.full-tv-stickers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.full-tv-sticker {
+  position: absolute;
+  transform-origin: center;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.4));
+}
+.full-tv-sticker img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 .full-tv-screen::before {
   content: '';
   position: absolute;
   inset: 0;
   background:
+    radial-gradient(140% 120% at 50% 50%, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.35)),
     radial-gradient(140% 100% at 15% 0%, rgba(255, 255, 255, 0.2), transparent 45%),
     linear-gradient(120deg, rgba(255, 255, 255, 0.12), transparent 38%);
   opacity: 0.6;
@@ -558,8 +616,10 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   padding: 2px 2px 0;
   background: var(--tv-shell-fill, #2b3033);
   border-radius: 6px;
-  border-top: 1px solid rgba(0, 0, 0, 0.5);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4);
   position: relative;
   z-index: 2;
 }
@@ -666,12 +726,69 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 .full-tv-logo.show-event .full-tv-logo-layer-event {
   opacity: 1;
 }
+.full-tv-logo.show-connector {
+  border-color: var(--connector-border, rgba(102, 183, 255, 0.7));
+  box-shadow: 0 0 18px var(--connector-glow, rgba(102, 183, 255, 0.35));
+}
+.full-tv-logo.show-connector .full-tv-logo-layer-connector {
+  opacity: 1;
+}
 .full-tv-logo.show-achievement {
   border-color: rgba(255, 205, 120, 0.7);
   box-shadow: 0 0 16px rgba(255, 205, 120, 0.35);
 }
 .full-tv-logo.show-achievement .full-tv-logo-layer-achievement {
   opacity: 1;
+}
+.full-tv-logo-connector {
+  position: relative;
+  width: 100%;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 92px;
+}
+.full-tv-logo-side {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.full-tv-logo-side-left {
+  left: 12px;
+}
+.full-tv-logo-side-right {
+  right: 12px;
+}
+.full-tv-logo-icon {
+  width: var(--connector-icon-size, 68px);
+  height: var(--connector-icon-size, 68px);
+  background-image: var(--icon-url);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  filter: drop-shadow(0 0 6px var(--connector-glow, rgba(102, 183, 255, 0.4)));
+  -webkit-mask-image: radial-gradient(circle, #000 0 1.1px, transparent 1.6px);
+  -webkit-mask-size: 3px 3px;
+  -webkit-mask-repeat: repeat;
+  -webkit-mask-position: center;
+  mask-image: radial-gradient(circle, #000 0 1.1px, transparent 1.6px);
+  mask-size: 3px 3px;
+  mask-repeat: repeat;
+  mask-position: center;
+  opacity: 0.95;
+}
+@supports not ((mask-image: url("")) or (-webkit-mask-image: url(""))) {
+  .full-tv-logo-icon {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
 }
 .full-tv-logo-stack {
   display: flex;
@@ -731,7 +848,7 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
 }
 .full-tv-input {
   min-width: 116px;
@@ -8204,18 +8321,27 @@ body.overlay-clean .full-overlay-shell.overlay-clean {
 .overlay-theme-panda {
   --overlay-bg: transparent;
   font-family: 'Bricolage Grotesque', 'Manrope', system-ui, sans-serif;
-  --tv-shell-bg: linear-gradient(180deg, #3e4346, #2b3033);
-  --tv-shell-border: rgba(0, 0, 0, 0.55);
-  --tv-shell-shadow: 0 26px 58px rgba(0, 0, 0, 0.35);
-  --tv-screen-bg: radial-gradient(140% 120% at 20% 0%, rgba(18, 25, 26, 0.6), rgba(6, 8, 9, 0.98) 60%);
-  --tv-screen-border: rgba(0, 0, 0, 0.75);
-  --tv-shell-fill: #2b3033;
+  --tv-shell-bg: linear-gradient(180deg, #40464b 0%, #31373b 45%, #262b2e 100%);
+  --tv-shell-border: rgba(0, 0, 0, 0.7);
+  --tv-shell-shadow: 0 40px 92px rgba(0, 0, 0, 0.5);
+  --tv-shell-padding: 24px;
+  --tv-shell-pad-x: 78px;
+  --tv-shell-pad-y: 30px;
+  --tv-shell-pad-bottom: 20px;
+  --tv-shell-radius: 46px;
+  --tv-screen-radius: 22px;
+  --tv-bezel: 56px;
+  --tv-screen-bg: transparent;
+  --tv-screen-border: rgba(0, 0, 0, 0.8);
+  --tv-screen-lip: rgba(12, 14, 16, 0.95);
+  --tv-screen-lip-size: 12px;
+  --tv-shell-fill: linear-gradient(180deg, #2f3538 0%, #24282b 100%);
   --tv-display-bg: #101416;
   --tv-display-border: rgba(255, 255, 255, 0.15);
   --tv-display-text: #7cff9e;
   --tv-display-dot: rgba(126, 255, 163, 0.16);
-  --tv-logo-bg: #101416;
-  --tv-logo-border: rgba(255, 255, 255, 0.15);
+  --tv-logo-bg: #0f1315;
+  --tv-logo-border: rgba(255, 255, 255, 0.18);
   --tv-logo-text: #f0f8f4;
   --tv-knob-bg: #1e2326;
   --tv-knob-border: rgba(0, 0, 0, 0.65);

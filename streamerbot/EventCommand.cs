@@ -16,12 +16,12 @@ public class CPHInline
             {
                 client.Encoding = Encoding.UTF8;
                 client.Headers["x-streamerbot-key"] = apiKey;
-                string response = client.DownloadString($"{apiBaseUrl}/api/streamerbot/leaderboard");
+                string response = client.DownloadString($"{apiBaseUrl}/api/streamerbot/event");
                 JObject data = JObject.Parse(response);
                 string message = data["message"]?.ToString();
                 if (string.IsNullOrWhiteSpace(message))
                 {
-                    message = "Leaderboard is unavailable right now.";
+                    message = "Event info is unavailable right now.";
                 }
                 CPH.SendMessage(message, true);
                 return true;
@@ -29,14 +29,14 @@ public class CPHInline
         }
         catch (WebException ex)
         {
-            CPH.SendMessage("Leaderboard service is unavailable right now.", true);
-            CPH.LogWarn($"LeaderboardCommand API Error: {ex.Message}");
+            CPH.SendMessage("Event service is unavailable right now.", true);
+            CPH.LogWarn($"EventCommand API Error: {ex.Message}");
             return false;
         }
         catch (Exception ex)
         {
-            CPH.SendMessage("Error retrieving leaderboard information.", true);
-            CPH.LogError($"LeaderboardCommand Error: {ex.Message}");
+            CPH.SendMessage("Error retrieving event information.", true);
+            CPH.LogError($"EventCommand Error: {ex.Message}");
             return false;
         }
     }

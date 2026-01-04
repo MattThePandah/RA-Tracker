@@ -122,10 +122,24 @@ const DEFAULT_OVERLAY_SETTINGS = {
       enabled: true,
       logoText: 'PANDA',
       logoUrl: '',
+      connectorIcons: {
+        default: '',
+        left: '',
+        right: '',
+        sub: '',
+        resub: '',
+        gift: '',
+        raid: '',
+        follow: '',
+        cheer: '',
+        member: '',
+        tip: ''
+      },
       displays: [
         { label: 'Current', value: '{currentTime}' },
         { label: 'Event', value: '{totalTime}' }
-      ]
+      ],
+      stickers: []
     },
     modules: {
       current: { enabled: true, position: 'left', order: 1 },
@@ -218,6 +232,36 @@ function normalizeTvDisplays(incoming, fallback) {
   const source = Array.isArray(incoming) ? incoming : baseList
   if (!source.length) return baseList
   return source.slice(0, 4).map((item, index) => normalizeTvDisplay(item, baseList[index]))
+}
+
+function normalizeTvSticker(value = {}, fallback = {}) {
+  return {
+    url: cleanText(value?.url || fallback?.url || '', 240),
+    x: clampNumber(value?.x, 0, 100, fallback?.x ?? 0),
+    y: clampNumber(value?.y, 0, 100, fallback?.y ?? 0),
+    size: clampNumber(value?.size, 2, 40, fallback?.size ?? 12),
+    rotate: clampNumber(value?.rotate, -180, 180, fallback?.rotate ?? 0),
+    opacity: clampNumber(value?.opacity, 0, 1, fallback?.opacity ?? 1)
+  }
+}
+
+function normalizeTvStickers(incoming, fallback) {
+  const baseList = Array.isArray(fallback) ? fallback : []
+  const source = Array.isArray(incoming) ? incoming : baseList
+  if (!source.length) return baseList
+  return source.slice(0, 12).map((item, index) => normalizeTvSticker(item, baseList[index]))
+}
+
+const CONNECTOR_ICON_KEYS = ['default', 'left', 'right', 'sub', 'resub', 'gift', 'raid', 'follow', 'cheer', 'member', 'tip']
+
+function normalizeConnectorIcons(incoming, fallback) {
+  const base = (fallback && typeof fallback === 'object') ? fallback : {}
+  const source = (incoming && typeof incoming === 'object') ? incoming : {}
+  const result = {}
+  CONNECTOR_ICON_KEYS.forEach(key => {
+    result[key] = cleanText(source[key] || base[key] || '', 240)
+  })
+  return result
 }
 
 function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS) {
@@ -340,7 +384,9 @@ function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS
         enabled: normalizeBoolean(incoming.full?.tv?.enabled, base.full?.tv?.enabled ?? true),
         logoText: cleanText(incoming.full?.tv?.logoText || base.full?.tv?.logoText, 32),
         logoUrl: cleanText(incoming.full?.tv?.logoUrl || base.full?.tv?.logoUrl, 200),
-        displays: normalizeTvDisplays(incoming.full?.tv?.displays, base.full?.tv?.displays)
+        connectorIcons: normalizeConnectorIcons(incoming.full?.tv?.connectorIcons, base.full?.tv?.connectorIcons),
+        displays: normalizeTvDisplays(incoming.full?.tv?.displays, base.full?.tv?.displays),
+        stickers: normalizeTvStickers(incoming.full?.tv?.stickers, base.full?.tv?.stickers)
       },
       modules: {
         current: normalizeModule(base.full.modules?.current, incoming.full?.modules?.current),
@@ -382,7 +428,11 @@ export async function updateOverlaySettings(updates = {}) {
     ...updates.full,
     tv: {
       ...current.full?.tv,
-      ...updates.full?.tv
+      ...updates.full?.tv,
+      connectorIcons: {
+        ...current.full?.tv?.connectorIcons,
+        ...updates.full?.tv?.connectorIcons
+      }
     },
     modules: {
       ...current.full?.modules,

@@ -159,9 +159,13 @@ The `v1/` folder is deprecated and no longer maintained. It remains for historic
 ## License
 
 - License: Creative Commons Attribution-NonCommercial 4.0 (CC BY-NC 4.0)
-- Summary: You may use, modify, and share this project for non‑commercial purposes, provided you give appropriate credit and link to the license. Commercial use is not permitted without prior permission.
-- Attribution example: “Based on RetroAchievements Tracker — CC BY‑NC 4.0.”
+- Summary: You may use, modify, and share this project for non-commercial purposes, provided you give appropriate credit and link to the license. Commercial use is not permitted without prior permission.
+- Attribution example: "Based on RetroAchievements Tracker - CC BY-NC 4.0."
 - Full text: see the `LICENSE` file in the repo.
+
+## Credits
+
+- Overlay inspiration: CupIsACat (streamer).
 
 ## Configuration
 

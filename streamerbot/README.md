@@ -11,6 +11,11 @@ This folder contains C# scripts for StreamerBot to create viewer-friendly Twitch
 | `!stats` | Overall progress statistics | "Progress: 47/1834 completed (2.6%) \| 3 in progress \| Top console: PS1 (25 completed)" |
 | `!console <name>` | Stats for a specific console | "PS2 Progress: 18/1395 completed (1.3%) \| 2 in progress \| Recent: Shadow of the Colossus" |
 | `!suggest <game> \| <console> \| <note>` | Submit a viewer suggestion to the public queue | "Suggestion received: Dino Crisis" |
+| `!event` | Shows the currently active event | "Event: PSFest \| PlayStation" |
+| `!leaderboard` | PSFest leaderboard summary (top consoles, fastest, top rated) | "PSFest Leaderboard: Top consoles: PS1 (10), PS2 (7), PSP (4) \| Fastest: ..." |
+
+Note: `!psfest` is deprecated. Use `!event` to pull the active event from RA Tracker.
+Tip: `!game` and `!event` also briefly focus the Panda TV center panel on the game/event slot.
 
 ### Suggestion Command Format
 Use `!suggest <game> | <console> | <note>` (console/note are optional).  
@@ -87,6 +92,51 @@ For each imported action:
 
 ### Modify Response Messages
 Edit the message strings in `server/index.js` (StreamerBot endpoints) or in each `.cs` file.
+
+### Overlay Connector Events (Full Overlay Center)
+You can push Streamer.bot events into the center of the Full Overlay (Panda TV theme) via:
+
+```
+POST http://localhost:8787/api/streamerbot/overlay-connector?key=STREAMERBOT_API_KEY
+```
+
+Example payload:
+```json
+{
+  "platform": "twitch",
+  "type": "sub",
+  "user": "Matt",
+  "tier": "Prime",
+  "months": 6,
+  "message": "Thanks for the sub!",
+  "durationMs": 12000
+}
+```
+
+Supported fields (all optional):
+- `platform` or `source`: `twitch`, `youtube`, or any string
+- `type`: `sub`, `resub`, `gift`, `raid`, `follow`, `cheer`, `superchat`, `member`, `tip`
+- `user`, `title`, `message`, `tier`, `months`, `count`, `amount`, `currency`
+- `durationMs`: how long to show this event in the center
+- Color overrides: `color` (sets border + glow), or `borderColor` and `glowColor` separately
+
+Default colors:
+- Twitch: subtle purple
+- YouTube: subtle red
+- Tips (donations): subtle green
+
+Donation example with custom glow:
+```json
+{
+  "platform": "twitch",
+  "type": "tip",
+  "user": "Matt",
+  "amount": "$10",
+  "borderColor": "rgba(94, 207, 134, 0.7)",
+  "glowColor": "rgba(94, 207, 134, 0.35)",
+  "durationMs": 12000
+}
+```
 
 ### Add Cooldowns
 In StreamerBot, you can add cooldowns to commands to prevent spam:

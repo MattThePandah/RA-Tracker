@@ -53,6 +53,8 @@ export default function Overlays() {
   }, [gameState.games])
   const tvDisplayCount = Array.isArray(settings.full?.tv?.displays) ? settings.full.tv.displays.length : 0
   const tvDisplayLimit = 4
+  const tvStickerCount = Array.isArray(settings.full?.tv?.stickers) ? settings.full.tv.stickers.length : 0
+  const tvStickerLimit = 12
 
   const toggleEventConsole = (consoleName) => {
     const current = settings.global.eventConsoles || []
@@ -168,6 +170,61 @@ export default function Overlays() {
           tv: {
             ...prev.full?.tv,
             displays
+          }
+        }
+      }
+    })
+  }
+
+  const updateTvSticker = (index, key, value) => {
+    setSettings(prev => {
+      const stickers = Array.isArray(prev.full?.tv?.stickers) ? [...prev.full.tv.stickers] : []
+      const current = stickers[index] || {}
+      stickers[index] = { ...current, [key]: value }
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            stickers
+          }
+        }
+      }
+    })
+  }
+
+  const addTvSticker = () => {
+    setSettings(prev => {
+      const stickers = Array.isArray(prev.full?.tv?.stickers) ? [...prev.full.tv.stickers] : []
+      if (stickers.length >= tvStickerLimit) {
+        return prev
+      }
+      stickers.push({ url: '', x: 6, y: 8, size: 12, rotate: 0, opacity: 1 })
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            stickers
+          }
+        }
+      }
+    })
+  }
+
+  const removeTvSticker = (index) => {
+    setSettings(prev => {
+      const stickers = Array.isArray(prev.full?.tv?.stickers) ? [...prev.full.tv.stickers] : []
+      stickers.splice(index, 1)
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            stickers
           }
         }
       }
@@ -599,6 +656,93 @@ export default function Overlays() {
                 </div>
                 <div className="text-secondary small mt-2">
                   Tokens: {`{currentTime}`} {`{totalTime}`} {`{session}`} {`{event}`} {`{title}`} {`{console}`} {`{year}`} {`{publisher}`} {`{status}`}.
+                </div>
+              </div>
+              <div className="mt-4">
+                <div className="small fw-bold opacity-50 mb-2 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>TV Stickers</div>
+                <div className="d-grid gap-2">
+                  {(Array.isArray(settings.full?.tv?.stickers) ? settings.full.tv.stickers : []).map((sticker, index) => (
+                    <div className="p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10" key={`tv-sticker-${index}`}>
+                      <div className="row g-2 align-items-center">
+                        <div className="col-10">
+                          <label className="form-label small fw-bold opacity-50">Sticker URL</label>
+                          <input
+                            className="form-control border-0 bg-panel shadow-sm"
+                            value={sticker?.url || ''}
+                            onChange={e => updateTvSticker(index, 'url', e.target.value)}
+                            placeholder="https://.../sticker.png"
+                          />
+                        </div>
+                        <div className="col-2 text-end">
+                          <button type="button" className="btn btn-sm btn-outline-secondary px-2 mt-4" onClick={() => removeTvSticker(index)}>Remove</button>
+                        </div>
+                      </div>
+                      <div className="row g-2 mt-2">
+                        <div className="col-4">
+                          <label className="form-label small fw-bold opacity-50">X%</label>
+                          <input
+                            className="form-control border-0 bg-panel shadow-sm"
+                            type="number"
+                            value={sticker?.x ?? 0}
+                            onChange={e => updateTvSticker(index, 'x', clampNumber(e.target.value, 0, 100, sticker?.x ?? 0))}
+                          />
+                        </div>
+                        <div className="col-4">
+                          <label className="form-label small fw-bold opacity-50">Y%</label>
+                          <input
+                            className="form-control border-0 bg-panel shadow-sm"
+                            type="number"
+                            value={sticker?.y ?? 0}
+                            onChange={e => updateTvSticker(index, 'y', clampNumber(e.target.value, 0, 100, sticker?.y ?? 0))}
+                          />
+                        </div>
+                        <div className="col-4">
+                          <label className="form-label small fw-bold opacity-50">Size%</label>
+                          <input
+                            className="form-control border-0 bg-panel shadow-sm"
+                            type="number"
+                            value={sticker?.size ?? 12}
+                            onChange={e => updateTvSticker(index, 'size', clampNumber(e.target.value, 2, 40, sticker?.size ?? 12))}
+                          />
+                        </div>
+                      </div>
+                      <div className="row g-2 mt-2">
+                        <div className="col-6">
+                          <label className="form-label small fw-bold opacity-50">Rotate</label>
+                          <input
+                            className="form-control border-0 bg-panel shadow-sm"
+                            type="number"
+                            value={sticker?.rotate ?? 0}
+                            onChange={e => updateTvSticker(index, 'rotate', clampNumber(e.target.value, -180, 180, sticker?.rotate ?? 0))}
+                          />
+                        </div>
+                        <div className="col-6">
+                          <label className="form-label small fw-bold opacity-50">Opacity</label>
+                          <input
+                            className="form-control border-0 bg-panel shadow-sm"
+                            type="number"
+                            step="0.05"
+                            value={sticker?.opacity ?? 1}
+                            onChange={e => updateTvSticker(index, 'opacity', clampNumber(e.target.value, 0, 1, sticker?.opacity ?? 1))}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(Array.isArray(settings.full?.tv?.stickers) ? settings.full.tv.stickers : []).length === 0 && (
+                    <div className="text-secondary small">No stickers configured yet.</div>
+                  )}
+                </div>
+                <div className="mt-2">
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={addTvSticker} disabled={tvStickerCount >= tvStickerLimit}>
+                    Add Sticker
+                  </button>
+                  {tvStickerCount >= tvStickerLimit && (
+                    <span className="text-secondary small ms-2">Limit {tvStickerLimit} stickers.</span>
+                  )}
+                </div>
+                <div className="text-secondary small mt-2">
+                  X/Y are percentages from the top-left of the TV shell. Size is width as a percent of the shell.
                 </div>
               </div>
             </div>

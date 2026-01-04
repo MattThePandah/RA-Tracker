@@ -113,10 +113,24 @@ export const DEFAULT_OVERLAY_SETTINGS = {
       enabled: true,
       logoText: 'PANDA',
       logoUrl: '',
+      connectorIcons: {
+        default: '',
+        left: '',
+        right: '',
+        sub: '',
+        resub: '',
+        gift: '',
+        raid: '',
+        follow: '',
+        cheer: '',
+        member: '',
+        tip: ''
+      },
       displays: [
         { label: 'Current', value: '{currentTime}' },
         { label: 'Event', value: '{totalTime}' }
-      ]
+      ],
+      stickers: []
     },
     modules: {
       current: { enabled: true, position: 'left', order: 1 },
@@ -143,7 +157,12 @@ export function mergeOverlaySettings(incoming) {
     enabled: tvIncoming.enabled ?? tvBase.enabled ?? true,
     logoText: tvIncoming.logoText ?? tvBase.logoText ?? 'PANDA',
     logoUrl: tvIncoming.logoUrl ?? tvBase.logoUrl ?? '',
-    displays: Array.isArray(tvIncoming.displays) ? tvIncoming.displays : (tvBase.displays || [])
+    connectorIcons: {
+      ...(tvBase.connectorIcons || {}),
+      ...(tvIncoming.connectorIcons || {})
+    },
+    displays: Array.isArray(tvIncoming.displays) ? tvIncoming.displays : (tvBase.displays || []),
+    stickers: Array.isArray(tvIncoming.stickers) ? tvIncoming.stickers : (tvBase.stickers || [])
   }
   const mergedModules = {
     current: mergeSection(moduleBase.current, moduleIncoming.current),

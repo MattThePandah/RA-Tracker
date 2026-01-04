@@ -301,6 +301,38 @@ function sanitizeText(value, maxLen) {
   return s.length > maxLen ? s.slice(0, maxLen) : s
 }
 
+function clampNumber(value, min, max, fallback) {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return fallback
+  return Math.max(min, Math.min(max, num))
+}
+
+function formatCompletionHours(value) {
+  const hours = Number(value)
+  if (!Number.isFinite(hours) || hours <= 0) return ''
+  const totalMinutes = Math.round(hours * 60)
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  if (!h && m) return `${m}m`
+  if (h && !m) return `${h}h`
+  return `${h}h ${m}m`
+}
+
+function buildEventMessage(event) {
+  if (!event) return 'No active event right now.'
+  const name = sanitizeText(event.name, 80)
+  const title = sanitizeText(event.overlayTitle, 80)
+  const subtitle = sanitizeText(event.overlaySubtitle, 120)
+  const consoleName = sanitizeText(event.console, 80)
+  const parts = []
+  if (title) parts.push(title)
+  else if (name) parts.push(name)
+  if (subtitle) parts.push(subtitle)
+  if (consoleName) parts.push(consoleName)
+  if (!parts.length) return 'No active event right now.'
+  return `Event: ${parts.join(' | ')}`
+}
+
 // Custom cover storage uses sanitized filenames for Windows compatibility.
 const CUSTOM_COVERS_DIR = path.join(process.cwd(), 'custom-covers')
 fs.mkdirSync(CUSTOM_COVERS_DIR, { recursive: true })
@@ -486,6 +518,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true })
 const TIMERS_FILE = path.join(DATA_DIR, 'timers.json')
 const CURRENT_FILE = path.join(DATA_DIR, 'overlay-current.json')
 const STATS_FILE = path.join(DATA_DIR, 'overlay-stats.json')
+const CONNECTOR_FILE = path.join(DATA_DIR, 'overlay-connector.json')
 
 function loadJSON(file, fallback) {
   try {
@@ -498,6 +531,149 @@ function saveJSON(file, data) {
   try {
     fs.writeFileSync(file, JSON.stringify(data, null, 2))
   } catch {}
+}
+
+const CONNECTOR_MAX_QUEUE = clampNumber(process.env.OVERLAY_CONNECTOR_MAX_QUEUE, 1, 100, 25)
+const CONNECTOR_DEFAULT_DURATION_MS = clampNumber(process.env.OVERLAY_CONNECTOR_DURATION_MS, 2000, 60000, 12000)
+const CONNECTOR_FOCUS_DURATION_MS = clampNumber(process.env.OVERLAY_CONNECTOR_FOCUS_MS, 2000, 60000, 10000)
+const CONNECTOR_MIN_DURATION_MS = 2000
+const CONNECTOR_MAX_DURATION_MS = 60000
+const CONNECTOR_TYPE_ALIASES = {
+  subscription: 'sub',
+  sub: 'sub',
+  resub: 'resub',
+  resubscription: 'resub',
+  giftsub: 'gift',
+  gift: 'gift',
+  gifted: 'gift',
+  raid: 'raid',
+  follow: 'follow',
+  cheer: 'cheer',
+  bits: 'cheer',
+  superchat: 'superchat',
+  supersticker: 'superchat',
+  member: 'member',
+  membership: 'member',
+  tip: 'tip',
+  donation: 'tip',
+  donate: 'tip'
+}
+
+let connectorState = loadJSON(CONNECTOR_FILE, { queue: [], updatedAt: Date.now() })
+if (!connectorState || typeof connectorState !== 'object') {
+  connectorState = { queue: [], updatedAt: Date.now() }
+}
+if (!Array.isArray(connectorState.queue)) connectorState.queue = []
+
+function saveConnectorState() {
+  connectorState.updatedAt = Date.now()
+  saveJSON(CONNECTOR_FILE, connectorState)
+}
+
+function normalizeConnectorType(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return 'event'
+  const key = raw.replace(/[^a-z0-9]/g, '')
+  return CONNECTOR_TYPE_ALIASES[key] || raw
+}
+
+function normalizeConnectorSource(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return 'stream'
+  if (raw.includes('twitch')) return 'twitch'
+  if (raw.includes('youtube') || raw === 'yt') return 'youtube'
+  return raw
+}
+
+function normalizeConnectorFocus(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === 'game' || raw === 'event') return raw
+  return ''
+}
+
+function pruneConnectorQueue(now) {
+  const before = connectorState.queue.length
+  connectorState.queue = connectorState.queue.filter(item => {
+    if (!item || !item.id) return false
+    const expiresAt = Number(item.expiresAt || 0)
+    if (expiresAt && expiresAt <= now) return false
+    return true
+  })
+  if (connectorState.queue.length !== before) {
+    saveConnectorState()
+  }
+}
+
+function buildConnectorEvent(input) {
+  if (!input || typeof input !== 'object') return null
+  const source = normalizeConnectorSource(input.source || input.platform || input.service)
+  const type = normalizeConnectorType(input.type || input.eventType || input.event || input.kind)
+  const user = sanitizeText(input.user || input.username || input.displayName || input.name, 64)
+  const title = sanitizeText(input.title || input.eventTitle, 64)
+  const message = sanitizeText(input.message || input.text || input.comment, 160)
+  const tier = sanitizeText(input.tier || input.tierName || input.level, 32)
+  const color = sanitizeText(input.color, 32)
+  const borderColor = sanitizeText(input.borderColor || input.border, 32)
+  const glowColor = sanitizeText(input.glowColor || input.glow, 32)
+  const focus = normalizeConnectorFocus(input.focus || input.center || input.centerMode || input.mode)
+  const months = clampNumber(input.months ?? input.cumulativeMonths ?? input.totalMonths, 0, 1200, 0)
+  const count = clampNumber(input.count ?? input.giftCount ?? input.viewers ?? input.viewerCount, 0, 500000, 0)
+  const amount = sanitizeText(input.amount || input.amountDisplay || input.amountText, 32)
+  const currency = sanitizeText(input.currency || input.currencyCode, 8)
+  const durationMs = clampNumber(
+    input.durationMs ?? input.duration,
+    CONNECTOR_MIN_DURATION_MS,
+    CONNECTOR_MAX_DURATION_MS,
+    CONNECTOR_DEFAULT_DURATION_MS
+  )
+  const id = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(8).toString('hex')
+  const createdAt = Date.now()
+  return {
+    id,
+    source,
+    type,
+    user,
+    title,
+    message,
+    tier,
+    color,
+    borderColor,
+    glowColor,
+    focus,
+    months,
+    count,
+    amount,
+    currency,
+    durationMs,
+    createdAt,
+    startedAt: null,
+    expiresAt: null
+  }
+}
+
+function enqueueConnectorEvent(event) {
+  if (!event) return null
+  pruneConnectorQueue(Date.now())
+  connectorState.queue.push(event)
+  if (connectorState.queue.length > CONNECTOR_MAX_QUEUE) {
+    connectorState.queue = connectorState.queue.slice(-CONNECTOR_MAX_QUEUE)
+  }
+  saveConnectorState()
+  return event
+}
+
+function getActiveConnectorEvent(now) {
+  pruneConnectorQueue(now)
+  const active = connectorState.queue[0]
+  if (!active) return null
+  if (!active.startedAt) {
+    const duration = clampNumber(active.durationMs, CONNECTOR_MIN_DURATION_MS, CONNECTOR_MAX_DURATION_MS, CONNECTOR_DEFAULT_DURATION_MS)
+    active.startedAt = now
+    active.durationMs = duration
+    active.expiresAt = now + duration
+    saveConnectorState()
+  }
+  return active
 }
 
 const GENRE_CACHE_FILE = path.join(DATA_DIR, 'igdb-genre-cache.json')
@@ -589,6 +765,14 @@ app.get('/overlay/event', requireOverlayAuth, async (req, res) => {
     res.status(500).json({ error: 'failed_to_load_event' })
   }
 })
+app.get('/overlay/connector', requireOverlayAuth, (req, res) => {
+  try {
+    const event = getActiveConnectorEvent(Date.now())
+    res.json({ event, queueDepth: connectorState.queue.length, updatedAt: connectorState.updatedAt })
+  } catch (error) {
+    res.status(500).json({ error: 'failed_to_load_connector' })
+  }
+})
 app.post('/overlay/current', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
   const g = req.body?.current
   if (g === null) {
@@ -612,6 +796,19 @@ app.post('/overlay/current', requireAdmin, requireCsrf, requireOrigin, (req, res
   overlayState.updatedAt = Date.now()
   saveJSON(CURRENT_FILE, { current: overlayState.current, updatedAt: overlayState.updatedAt })
   res.json({ ok: true, updatedAt: overlayState.updatedAt })
+})
+
+app.post('/api/streamerbot/overlay-connector', requireStreamerbotAuth, (req, res) => {
+  try {
+    const event = buildConnectorEvent(req.body || {})
+    if (!event) {
+      return res.status(400).json({ error: 'invalid_connector_event' })
+    }
+    enqueueConnectorEvent(event)
+    res.json({ ok: true, event })
+  } catch (error) {
+    res.status(500).json({ error: 'connector_enqueue_failed' })
+  }
 })
 
 // Serve cached covers statically
@@ -845,6 +1042,12 @@ app.get('/api/streamerbot/game', requireStreamerbotAuth, (req, res) => {
   const raUrl = raId ? `https://retroachievements.org/game/${raId}` : ''
   let message = `Currently playing: ${title} (${consoleName})`
   if (raUrl) message += ` | RetroAchievements: ${raUrl}`
+  try {
+    enqueueConnectorEvent(buildConnectorEvent({
+      focus: 'game',
+      durationMs: CONNECTOR_FOCUS_DURATION_MS
+    }))
+  } catch {}
   res.json({
     ok: true,
     message,
@@ -934,6 +1137,94 @@ app.get('/api/streamerbot/stats', requireStreamerbotAuth, (req, res) => {
       inProgress: inProgress.length
     },
     topConsole: topConsole ? { name: topConsole[0], count: consoleCount } : null
+  })
+})
+
+app.get('/api/streamerbot/event', requireStreamerbotAuth, async (req, res) => {
+  try {
+    if (!activeEvent) {
+      await refreshActiveEventFromStore()
+    }
+    const message = buildEventMessage(activeEvent)
+    try {
+      enqueueConnectorEvent(buildConnectorEvent({
+        focus: 'event',
+        durationMs: CONNECTOR_FOCUS_DURATION_MS
+      }))
+    } catch {}
+    res.json({ ok: true, message, event: activeEvent || null })
+  } catch (error) {
+    res.status(500).json({ error: 'event_failed' })
+  }
+})
+
+// Deprecated: keep for backwards compatibility with older Streamer.bot actions.
+app.get('/api/streamerbot/psfest', requireStreamerbotAuth, async (req, res) => {
+  try {
+    if (!activeEvent) {
+      await refreshActiveEventFromStore()
+    }
+    const message = buildEventMessage(activeEvent)
+    res.json({ ok: true, message, event: activeEvent || null, deprecated: true })
+  } catch (error) {
+    res.status(500).json({ error: 'event_failed' })
+  }
+})
+
+app.get('/api/streamerbot/leaderboard', requireStreamerbotAuth, (req, res) => {
+  const idx = getIndex()
+  const games = mergeWithGameLibrary(idx.games || [])
+  const completed = games.filter(g => g.status === 'Completed')
+
+  if (!completed.length) {
+    return res.json({
+      ok: true,
+      message: 'No completed games yet! The leaderboard awaits your first conquest.'
+    })
+  }
+
+  const consoleCounts = completed.reduce((acc, game) => {
+    const name = getConsoleName(game) || 'Unknown'
+    acc[name] = (acc[name] || 0) + 1
+    return acc
+  }, {})
+
+  const topConsoles = Object.entries(consoleCounts)
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1]
+      return String(a[0]).localeCompare(String(b[0]))
+    })
+    .slice(0, 3)
+
+  const fastest = completed
+    .filter(g => Number(g.completion_time) > 0)
+    .sort((a, b) => Number(a.completion_time || 0) - Number(b.completion_time || 0))[0]
+
+  const topRated = completed
+    .filter(g => Number(g.rating) > 0)
+    .sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0))[0]
+
+  let message = 'PSFest Leaderboard:'
+  if (topConsoles.length) {
+    const consoleStats = topConsoles.map(([name, count]) => `${shortConsoleName(name)} (${count})`)
+    message += ` Top consoles: ${consoleStats.join(', ')}`
+  }
+  if (fastest?.title) {
+    const timeLabel = formatCompletionHours(fastest.completion_time) || `${Number(fastest.completion_time || 0).toFixed(1)}h`
+    message += ` | Fastest: ${sanitizeText(fastest.title, 120)} (${timeLabel})`
+  }
+  if (topRated?.title) {
+    const ratingValue = Number(topRated.rating || 0)
+    const ratingLabel = Number.isFinite(ratingValue) ? ratingValue.toFixed(1) : String(topRated.rating || '0')
+    message += ` | Top rated: ${sanitizeText(topRated.title, 120)} (${ratingLabel}/10)`
+  }
+
+  res.json({
+    ok: true,
+    message,
+    topConsoles: topConsoles.map(([name, count]) => ({ name, count })),
+    fastest: fastest ? { id: fastest.id, title: fastest.title, completion_time: fastest.completion_time } : null,
+    topRated: topRated ? { id: topRated.id, title: topRated.title, rating: topRated.rating } : null
   })
 })
 
