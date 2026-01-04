@@ -1261,10 +1261,12 @@ export default function OverlayFull() {
     const updateCutout = () => {
       const shellRect = shell.getBoundingClientRect()
       const screenRect = screen.getBoundingClientRect()
-      const x = Math.max(0, screenRect.left - shellRect.left)
-      const y = Math.max(0, screenRect.top - shellRect.top)
-      const w = Math.max(0, screenRect.width)
-      const h = Math.max(0, screenRect.height)
+      // Make the cutout slightly smaller (overlap by 1px) to prevent sub-pixel gaps
+      const overlap = 1
+      const x = Math.max(0, screenRect.left - shellRect.left + overlap)
+      const y = Math.max(0, screenRect.top - shellRect.top + overlap)
+      const w = Math.max(0, screenRect.width - (overlap * 2))
+      const h = Math.max(0, screenRect.height - (overlap * 2))
       shell.style.setProperty('--tv-cutout-x', `${x}px`)
       shell.style.setProperty('--tv-cutout-y', `${y}px`)
       shell.style.setProperty('--tv-cutout-w', `${w}px`)
@@ -1506,6 +1508,9 @@ export default function OverlayFull() {
                   )}
                 </div>
                 <div className="full-tv-right">
+                  <div className="full-tv-speaker">
+                    <span /><span /><span /><span /><span /><span />
+                  </div>
                   <div className="full-tv-display full-tv-input">
                     <DotMatrixText
                       className="full-tv-display-label"
