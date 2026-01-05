@@ -453,7 +453,7 @@ export default function OverlayFull() {
   const [current, setCurrent] = React.useState(null)
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
   const [timers, setTimers] = React.useState({ currentGameTime: '00:00:00', totalTime: '000:00:00' })
-  const overlayEvent = useOverlayEvent(15000)
+  const overlayEvent = useOverlayEvent(2000)
   const eventTitle = overlayEvent?.overlayTitle || overlayEvent?.name || ''
   const eventSubtitle = overlayEvent?.overlaySubtitle || overlayEvent?.console || ''
   const [centerIndex, setCenterIndex] = React.useState(0)
@@ -462,6 +462,10 @@ export default function OverlayFull() {
   const centerLockRef = React.useRef(0)
   const tvShellRef = React.useRef(null)
   const tvScreenRef = React.useRef(null)
+  
+  // TV Power state: ON if game is live OR event is active
+  const isTvPowered = !!current || !!eventTitle
+  const tvPowerClass = isTvPowered ? 'power-on' : 'power-off'
 
   const currentEnabled = moduleConfig.current?.enabled ?? false
   const statsEnabled = moduleConfig.stats?.enabled ?? false
@@ -1339,38 +1343,26 @@ export default function OverlayFull() {
         <div className={`full-overlay-stage${achievementGlow ? ' achievement-glow' : ''}${tvEnabled ? ' full-overlay-stage-tv' : ''}`}>
           {tvEnabled ? (
             <div className="full-tv-shell" ref={tvShellRef}>
-              {allStickers.length > 0 && (
-                <div className="full-tv-stickers" aria-hidden="true">
-                  {allStickers.map((sticker, index) => {
-                    const x = clampNumber(sticker?.x, 0, 100, 0)
-                    const y = clampNumber(sticker?.y, 0, 100, 0)
-                    const size = clampNumber(sticker?.size, 2, 40, 12)
-                    const rotate = clampNumber(sticker?.rotate, -180, 180, 0)
-                    const opacity = clampNumber(sticker?.opacity, 0, 1, 1)
-                    const url = String(sticker.url || '').trim()
-                    if (!url) return null
-                    return (
-                      <div
-                        className="full-tv-sticker"
-                        key={`tv-sticker-${index}`}
-                        style={{
-                          left: `${x}%`,
-                          top: `${y}%`,
-                          width: `${size}%`,
-                          opacity,
-                          transform: `rotate(${rotate}deg)`,
-                          zIndex: index + 2
-                        }}
-                      >
-                        <img src={url} alt="" />
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
               <div className="full-tv-screen" ref={tvScreenRef}>
-                {stageFrames}
+                <div className={`tv-screen-content ${tvPowerClass}`}>
+                  {current && stageFrames}
+                </div>
+
+                {!current && eventTitle && (
+                  <div className="tv-no-signal">
+                    <div className="tv-static-snow" />
+                    <div className="tv-hum-bar" />
+                    <div className="tv-no-signal-osd">
+                      <div className="tv-osd-line">NO SIGNAL</div>
+                      <div className="tv-osd-channel">VIDEO 1</div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="tv-shutter" />
+                <div className="tv-crt-line" />
               </div>
+
               <div className="full-tv-footer">
                 <div className="full-tv-footer-section left">
                   <div className="full-tv-speaker circular">
@@ -1382,28 +1374,33 @@ export default function OverlayFull() {
                     <span className="tv-power-label">POWER</span>
                   </div>
                   <div className="full-tv-displays">
-                    {tvDisplays.map((display, index) => (
-                      <div className="full-tv-display" key={`tv-display-${index}`}>
-                        {display.label && (
-                          <DotMatrixText
-                            className="full-tv-display-label"
-                            text={display.label}
-                            dotSize={2}
-                            dotGap={0}
-                            charGap={1}
-                          />
-                        )}
-                        {display.value && (
+                    {tvDisplays.map((display, index) => {
+                      const label = display.label?.toLowerCase() || ''
+                      const isCurrent = label.includes('current') || label.includes('session')
+                      const isEvent = label.includes('event')
+                      const showValue = isEvent ? !!eventTitle : (current || !isCurrent)
+
+                      return (
+                        <div className="full-tv-display" key={`tv-display-${index}`}>
+                          {display.label && (
+                            <DotMatrixText
+                              className="full-tv-display-label"
+                              text={display.label}
+                              dotSize={2}
+                              dotGap={0}
+                              charGap={1}
+                            />
+                          )}
                           <DotMatrixText
                             className="full-tv-display-value"
-                            text={display.value}
+                            text={showValue ? display.value : ' '}
                             dotSize={3}
                             dotGap={0}
                             charGap={1}
                           />
-                        )}
-                      </div>
-                    ))}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
 

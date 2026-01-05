@@ -48,6 +48,48 @@ export default function Dashboard() {
   const [entryTimestamp, setEntryTimestamp] = React.useState('')
   const [entryType, setEntryType] = React.useState('manual')
   const [entryStatus, setEntryStatus] = React.useState('')
+  const [events, setEvents] = React.useState([])
+  const [activeEventId, setActiveEventId] = React.useState(null)
+  const [eventStatus, setEventStatus] = React.useState('')
+
+  const loadEvents = React.useCallback(async () => {
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      const res = await adminFetch(`${base}/api/admin/events`)
+      if (res.ok) {
+        const data = await res.json()
+        setEvents(Array.isArray(data.events) ? data.events : [])
+        setActiveEventId(data.activeEventId || null)
+      }
+    } catch {}
+  }, [])
+
+  React.useEffect(() => {
+    loadEvents()
+  }, [loadEvents])
+
+  const handleSetActiveEvent = async (eventId) => {
+    setEventStatus('Updating...')
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      const res = await adminFetch(`${base}/api/admin/events/active`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventId: eventId || null })
+      })
+      if (res.ok) {
+        setActiveEventId(eventId || null)
+        setEventStatus('Saved.')
+        setTimeout(() => setEventStatus(''), 2000)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setEventStatus(`Error: ${data.error || 'Failed'}`)
+      }
+    } catch (err) {
+      console.error('Failed to update active event:', err)
+      setEventStatus('Network error.')
+    }
+  }
 
   React.useEffect(() => {
     let mounted = true
@@ -414,6 +456,40 @@ export default function Dashboard() {
                 ) : (
                   <div className="text-secondary">Select a current game to unlock studio tracking.</div>
                 )}
+              </div>
+            </div>
+
+            <div className="col-lg-6">
+              <div className="card bg-panel p-3 h-100">
+                <h5 className="h6 mb-3">Broadcast Mode</h5>
+                <div className="mb-3">
+                  <label className="form-label small text-secondary">Active Event (No game = BRB Screen)</label>
+                  <select 
+                    className="form-select form-select-sm" 
+                    value={activeEventId || ''} 
+                    onChange={(e) => handleSetActiveEvent(e.target.value)}
+                  >
+                    <option value="">None (TV Power Off)</option>
+                    {events.map(event => (
+                      <option key={event.id} value={event.id}>{event.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="d-flex gap-2 align-items-center">
+                  <button 
+                    className={`btn btn-sm ${activeEventId ? 'btn-outline-danger' : 'btn-outline-secondary disabled'}`}
+                    onClick={() => handleSetActiveEvent(null)}
+                  >
+                    Clear Active Event
+                  </button>
+                  <Link className="btn btn-sm btn-outline-light" to="/admin/events">Manage Profiles</Link>
+                  {eventStatus && <span className="ms-auto text-info small">{eventStatus}</span>}
+                </div>
+                <div className="text-secondary small mt-3">
+                  {activeEventId 
+                    ? "Event mode is ON. TV will show 'No Signal' bars if no game is Live." 
+                    : "Event mode is OFF. TV will power down if no game is Live."}
+                </div>
               </div>
             </div>
 

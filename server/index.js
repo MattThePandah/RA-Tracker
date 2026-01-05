@@ -1676,8 +1676,7 @@ if (timerStateLoaded) {
 }
 
 async function switchActiveEvent(eventId) {
-  const id = String(eventId || '').trim()
-  if (!id) throw new Error('Event ID is required')
+  const id = eventId ? String(eventId).trim() : null
   if (activeEventId && id === activeEventId) return activeEvent
 
   await persistTimerState({ wait: true })

@@ -152,45 +152,46 @@ export async function listEvents() {
 export async function getActiveEvent() {
   if (!isPgEnabled()) {
     const data = loadJson(EVENTS_FILE, { events: [], activeEventId: null })
-    const events = Array.isArray(data.events) ? data.events : []
-    if (!events.length) {
-      const now = Date.now()
-      const id = makeId()
-      const next = { id, ...DEFAULT_EVENT, createdAt: now, updatedAt: now }
-      const updated = { events: [next], activeEventId: id }
-      saveJson(EVENTS_FILE, updated)
-      return next
+    if (data.activeEventId) {
+      const found = (data.events || []).find(e => e.id === data.activeEventId)
+      if (found) return found
     }
-    const activeId = data.activeEventId || events[0]?.id
-    return events.find(event => event.id === activeId) || events[0]
+    return null
   }
-
   const state = await query('select active_event_id from event_state where id = 1')
-  const activeId = state.rows[0]?.active_event_id || null
+  const activeId = state.rows[0]?.active_event_id
   if (activeId) {
     const found = await query('select * from events where id = $1', [activeId])
     if (found.rows[0]) return mapEventRow(found.rows[0])
   }
-  const fallback = await query('select * from events order by created_at desc limit 1')
-  return fallback.rows[0] ? mapEventRow(fallback.rows[0]) : null
+  return null
 }
 
 export async function setActiveEvent(eventId) {
-  const id = String(eventId || '').trim()
-  if (!id) throw new Error('Event ID is required')
+  const id = eventId ? String(eventId).trim() : null
   if (!isPgEnabled()) {
     const data = loadJson(EVENTS_FILE, { events: [], activeEventId: null })
-    const events = Array.isArray(data.events) ? data.events : []
-    const found = events.find(event => event.id === id)
-    if (!found) throw new Error('Event not found')
-    data.activeEventId = id
+    if (id) {
+      const events = Array.isArray(data.events) ? data.events : []
+      const found = events.find(event => event.id === id)
+      if (!found) throw new Error('Event not found')
+      data.activeEventId = id
+    } else {
+      data.activeEventId = null
+    }
     saveJson(EVENTS_FILE, data)
-    return found
+    return id ? (data.events.find(e => e.id === id) || null) : null
   }
-  const result = await query('select * from events where id = $1', [id])
-  if (!result.rows[0]) throw new Error('Event not found')
-  await query('update event_state set active_event_id = $1 where id = 1', [id])
-  return mapEventRow(result.rows[0])
+  
+  if (id) {
+    const result = await query('select * from events where id = $1', [id])
+    if (!result.rows[0]) throw new Error('Event not found')
+    await query('update event_state set active_event_id = $1 where id = 1', [id])
+    return mapEventRow(result.rows[0])
+  } else {
+    await query('update event_state set active_event_id = NULL where id = 1')
+    return null
+  }
 }
 
 export async function createEvent(input) {
