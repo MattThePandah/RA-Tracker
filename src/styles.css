@@ -677,22 +677,23 @@ body { font-family: 'Manrope', system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 }
 
 .full-tv-logo {
-  min-width: 380px;
+  min-width: 320px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px 42px;
-  border-radius: 6px;
+  padding: 8px 32px;
+  border-radius: 4px;
   background: var(--tv-logo-bg, #111416);
-  border: 1px solid var(--tv-logo-border, rgba(255, 255, 255, 0.15));
-  color: var(--tv-logo-text, #f3f7f5);
+  border: 1px solid var(--tv-logo-border, rgba(255, 255, 255, 0.1));
+  color: var(--tv-logo-text, rgba(255,255,255,0.25));
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  font-weight: 700;
-  font-size: 13px;
+  letter-spacing: 0.3em;
+  font-weight: 900;
+  font-size: 11px;
   position: relative;
   overflow: hidden;
-  min-height: 90px;
+  min-height: 70px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
 }
 .full-tv-logo-layer {
   position: absolute;
@@ -8314,21 +8315,21 @@ body.overlay-clean .full-overlay-shell.overlay-clean {
   --tv-shell-bg: linear-gradient(180deg, #40464b 0%, #31373b 45%, #262b2e 100%);
   --tv-shell-border: rgba(0, 0, 0, 0.7);
   --tv-shell-shadow: 0 40px 92px rgba(0, 0, 0, 0.5);
-  --tv-shell-padding: 24px;
-  --tv-shell-pad-x: 78px;
-  --tv-shell-pad-y: 30px;
-  --tv-shell-pad-bottom: 20px;
-  --tv-shell-radius: 46px;
+  --tv-shell-padding: 32px;
+  --tv-shell-pad-x: 92px;
+  --tv-shell-pad-y: 40px;
+  --tv-shell-pad-bottom: 24px;
+  --tv-shell-radius: 56px;
+  --tv-screen-lip-top: #060708;
+  --tv-screen-lip-left: #0a0b0c;
+  --tv-screen-lip-right: #1a1c1e;
+  --tv-screen-lip-bottom: #24272a;
+  --tv-screen-lip-size: 32px;
   --tv-screen-radius: 0px;
-  --tv-bezel: 56px;
-  --tv-screen-bg: transparent;
-  --tv-screen-border: #000000;
-  --tv-screen-lip: #0c0e10;
-  --tv-screen-lip-size: 16px;
-  --tv-screen-shadow: inset 0 0 20px rgba(0,0,0,1), 0 0 0 1px #000;
-  --tv-screen-overlay-opacity: 0.2;
-  --tv-screen-glare-opacity: 0.3;
-  --tv-screen-vignette: 0.4;
+  --tv-screen-shadow: inset 0 0 60px rgba(0,0,0,0.9);
+  --tv-screen-overlay-opacity: 0.25;
+  --tv-screen-glare-opacity: 0.35;
+  --tv-screen-vignette: 0.45;
   --tv-shell-fill: linear-gradient(180deg, #2f3538 0%, #24282b 100%);
   --tv-display-bg: #101416;
   --tv-display-border: rgba(255, 255, 255, 0.15);
@@ -8379,6 +8380,182 @@ body.overlay-clean .full-overlay-shell.overlay-clean {
 .overlay-theme-panda .full-achievement-item.locked .full-achievement-points,
 .overlay-theme-panda .full-achievement-item.locked .full-achievement-points-label {
   color: #151817;
+}
+
+/* TV Footer Layout */
+.full-tv-footer {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 0;
+  padding: 16px 32px;
+  background: #1d1e20;
+  border-top: 1px solid #000;
+  border-radius: 0 0 12px 12px;
+  margin-top: -4px;
+  min-height: 140px;
+  position: relative;
+  z-index: 2;
+}
+
+.full-tv-footer-section {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex: 0 0 auto;
+  padding: 0 16px;
+}
+
+.full-tv-footer-section.left {
+  border-right: 1px solid rgba(0,0,0,0.4);
+}
+
+.full-tv-footer-section.right {
+  border-left: 1px solid rgba(0,0,0,0.4);
+}
+
+.full-tv-footer-center {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 32px;
+}
+
+/* Central Hero / Notification Area */
+.full-tv-logo {
+  width: 100%;
+  max-width: 920px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 40px;
+  border-radius: 8px;
+  background: #0a0c0d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--tv-logo-text, rgba(255,255,255,0.25));
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-weight: 900;
+  font-size: 12px;
+  position: relative;
+  overflow: hidden;
+  min-height: 100px;
+  box-shadow: 
+    inset 0 2px 8px rgba(0,0,0,0.9),
+    0 1px 0 rgba(255,255,255,0.03);
+}
+
+/* Circular Speaker Grill Styles */
+.full-tv-speaker.circular {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #2a2d30, #1a1c1e);
+  border: 1px solid rgba(0,0,0,0.8);
+  box-shadow: 
+    inset 0 4px 10px rgba(0,0,0,0.8),
+    0 1px 0 rgba(255,255,255,0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.speaker-mesh {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background-image: radial-gradient(#000 1.5px, transparent 1.5px);
+  background-size: 4px 4px;
+  background-position: center;
+  background-color: #080808;
+  box-shadow: inset 0 3px 6px rgba(0,0,0,0.9);
+  opacity: 0.95;
+}
+
+/* Power Button & Indicators */
+.tv-power-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.tv-power-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #3a3f44, #1a1c1e);
+  border: 1px solid rgba(0,0,0,0.8);
+  box-shadow: 
+    0 4px 8px rgba(0,0,0,0.6),
+    inset 0 1px 2px rgba(255,255,255,0.1);
+  position: relative;
+}
+.tv-power-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.5);
+}
+.tv-power-led {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.5);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.8);
+  transition: background 0.4s ease, box-shadow 0.4s ease;
+}
+.tv-power-led.active {
+  background: #33ff66;
+  box-shadow: 0 0 8px #00ff33, inset 0 1px 2px rgba(200,255,200,0.5);
+}
+.tv-power-led.standby {
+  background: #ff3333;
+  box-shadow: 0 0 8px #ff0000, inset 0 1px 2px rgba(255,200,200,0.5);
+}
+.tv-power-label {
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  color: rgba(255,255,255,0.25);
+  font-weight: 900;
+}
+
+/* Side-Aligned Displays */
+.full-tv-displays {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 130px;
+  flex: 0 0 auto;
+}
+.full-tv-display {
+  padding: 6px 12px;
+  min-width: 110px;
+}
+
+.full-tv-input-section {
+  min-width: 130px;
+  flex: 0 0 auto;
+  margin-left: 8px;
+}
+
+/* 3D Bezel Screen Effect */
+.full-tv-screen {
+  border-top: var(--tv-screen-lip-size, 16px) solid var(--tv-screen-lip-top, #08090a);
+  border-left: var(--tv-screen-lip-size, 16px) solid var(--tv-screen-lip-left, #0a0b0c);
+  border-right: var(--tv-screen-lip-size, 16px) solid var(--tv-screen-lip-right, #222528);
+  border-bottom: calc(var(--tv-screen-lip-size, 16px) * 1.5) solid var(--tv-screen-lip-bottom, #2a2d31);
+  box-shadow: 
+    inset 0 4px 12px rgba(0,0,0,0.9),
+    inset 4px 0 8px rgba(0,0,0,0.7),
+    inset -1px -1px 0 rgba(255,255,255,0.1),
+    0 0 0 1px #000;
 }
 
 

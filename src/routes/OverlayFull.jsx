@@ -1372,165 +1372,176 @@ export default function OverlayFull() {
                 {stageFrames}
               </div>
               <div className="full-tv-footer">
-                <div className="full-tv-displays">
-                  {tvDisplays.map((display, index) => (
-                    <div className="full-tv-display" key={`tv-display-${index}`}>
-                      {display.label && (
-                        <DotMatrixText
-                          className="full-tv-display-label"
-                          text={display.label}
-                          dotSize={2}
-                          dotGap={0}
-                          charGap={1}
-                        />
-                      )}
-                      {display.value && (
-                        <DotMatrixText
-                          className="full-tv-display-value"
-                          text={display.value}
-                          dotSize={3}
-                          dotGap={0}
-                          charGap={1}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className={`full-tv-logo show-${centerMode}`} style={connectorStyle}>
-                  <div className="full-tv-logo-layer full-tv-logo-layer-logo">
-                    {tvLogoUrl ? (
-                      <div className="full-tv-logo-mark" style={{ '--logo-url': `url("${tvLogoUrl}")` }}>
-                        <img src={tvLogoUrl} alt="Logo" />
-                      </div>
-                    ) : (
-                      <span>{tvLogoText}</span>
-                    )}
+                <div className="full-tv-footer-section left">
+                  <div className="full-tv-speaker circular">
+                    <span className="speaker-mesh" />
                   </div>
-                  {showGameLayer && (
-                    <div className="full-tv-logo-layer full-tv-logo-layer-game">
-                      <div className="full-tv-logo-stack">
-                        {activeCenter.type === 'game' && activeCenter.label ? (
-                          <DotMatrixText text={activeCenter.label} dotSize={2} dotGap={0} charGap={1} />
-                        ) : (
-                          <DotMatrixText text={gameLabelText} dotSize={2} dotGap={0} charGap={1} />
+                  <div className="tv-power-group">
+                    <div className="tv-power-btn" />
+                    <div className={`tv-power-led ${current ? 'active' : 'standby'}`} />
+                    <span className="tv-power-label">POWER</span>
+                  </div>
+                  <div className="full-tv-displays">
+                    {tvDisplays.map((display, index) => (
+                      <div className="full-tv-display" key={`tv-display-${index}`}>
+                        {display.label && (
+                          <DotMatrixText
+                            className="full-tv-display-label"
+                            text={display.label}
+                            dotSize={2}
+                            dotGap={0}
+                            charGap={1}
+                          />
                         )}
-                        <DotMatrixText
-                          text={tvTitleText}
-                          dotSize={4}
-                          dotGap={0}
-                          charGap={1}
-                          scroll
-                          maxChars={DOT_GAME_SCROLL_VISIBLE}
-                          scrollSpeed={14}
-                          scrollGap={8}
-                        />
-                        {gameMetaText ? (
-                          <DotMatrixText text={gameMetaText} dotSize={2} dotGap={0} charGap={1} />
-                        ) : null}
+                        {display.value && (
+                          <DotMatrixText
+                            className="full-tv-display-value"
+                            text={display.value}
+                            dotSize={3}
+                            dotGap={0}
+                            charGap={1}
+                          />
+                        )}
                       </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="full-tv-footer-center">
+                  <div className={`full-tv-logo show-${centerMode}`} style={connectorStyle}>
+                    <div className="full-tv-logo-layer full-tv-logo-layer-logo">
+                      {tvLogoUrl ? (
+                        <div className="full-tv-logo-mark" style={{ '--logo-url': `url("${tvLogoUrl}")` }}>
+                          <img src={tvLogoUrl} alt="Logo" />
+                        </div>
+                      ) : (
+                        <span>{tvLogoText}</span>
+                      )}
                     </div>
-                  )}
-                  {showEventLayer && (
-                    <div className="full-tv-logo-layer full-tv-logo-layer-event">
-                      <div className="full-tv-logo-stack">
-                        <DotMatrixText text={eventLabelText} dotSize={2} dotGap={0} charGap={1} />
-                        <DotMatrixText text={eventPercentText} dotSize={4} dotGap={0} charGap={1} />
-                        {eventMetaText ? (
-                          <DotMatrixText text={eventMetaText} dotSize={2} dotGap={0} charGap={1} />
-                        ) : null}
-                      </div>
-                    </div>
-                  )}
-                  {showConnectorLayer && (
-                    <div className="full-tv-logo-layer full-tv-logo-layer-connector">
-                      <div className="full-tv-logo-connector">
-                        {showConnectorIconLeft ? (
-                          <div className="full-tv-logo-side full-tv-logo-side-left">
-                            <div className="full-tv-logo-icon" style={{ '--icon-url': `url("${connectorIconLeft}")` }} />
-                          </div>
-                        ) : null}
+                    {showGameLayer && (
+                      <div className="full-tv-logo-layer full-tv-logo-layer-game">
                         <div className="full-tv-logo-stack">
-                          {connectorLabelText ? (
-                            <DotMatrixText text={connectorLabelText} dotSize={2} dotGap={0} charGap={1} />
-                          ) : null}
-                          {connectorTitleText ? (
-                            <DotMatrixText
-                              text={connectorTitleText}
-                              dotSize={4}
-                              dotGap={0}
-                              charGap={1}
-                              scroll
-                              maxChars={DOT_SCROLL_VISIBLE}
-                              scrollSpeed={16}
-                              scrollGap={8}
-                            />
-                          ) : null}
-                          {connectorMetaText ? (
-                            <DotMatrixText
-                              text={connectorMetaText}
-                              dotSize={2}
-                              dotGap={0}
-                              charGap={1}
-                              scroll={connectorMetaScroll}
-                              maxChars={DOT_SCROLL_VISIBLE}
-                              scrollSpeed={20}
-                              scrollGap={8}
-                            />
+                          {activeCenter.type === 'game' && activeCenter.label ? (
+                            <DotMatrixText text={activeCenter.label} dotSize={2} dotGap={0} charGap={1} />
+                          ) : (
+                            <DotMatrixText text={gameLabelText} dotSize={2} dotGap={0} charGap={1} />
+                          )}
+                          <DotMatrixText
+                            text={tvTitleText}
+                            dotSize={4}
+                            dotGap={0}
+                            charGap={1}
+                            scroll
+                            maxChars={DOT_GAME_SCROLL_VISIBLE}
+                            scrollSpeed={14}
+                            scrollGap={8}
+                          />
+                          {gameMetaText ? (
+                            <DotMatrixText text={gameMetaText} dotSize={2} dotGap={0} charGap={1} />
                           ) : null}
                         </div>
-                        {showConnectorIconRight ? (
-                          <div className="full-tv-logo-side full-tv-logo-side-right">
-                            <div className="full-tv-logo-icon" style={{ '--icon-url': `url("${connectorIconRight}")` }} />
+                      </div>
+                    )}
+                    {showEventLayer && (
+                      <div className="full-tv-logo-layer full-tv-logo-layer-event">
+                        <div className="full-tv-logo-stack">
+                          <DotMatrixText text={eventLabelText} dotSize={2} dotGap={0} charGap={1} />
+                          <DotMatrixText text={eventPercentText} dotSize={4} dotGap={0} charGap={1} />
+                          {eventMetaText ? (
+                            <DotMatrixText text={eventMetaText} dotSize={2} dotGap={0} charGap={1} />
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
+                    {showConnectorLayer && (
+                      <div className="full-tv-logo-layer full-tv-logo-layer-connector">
+                        <div className="full-tv-logo-connector">
+                          {showConnectorIconLeft ? (
+                            <div className="full-tv-logo-side full-tv-logo-side-left">
+                              <div className="full-tv-logo-icon" style={{ '--icon-url': `url("${connectorIconLeft}")` }} />
+                            </div>
+                          ) : null}
+                          <div className="full-tv-logo-stack">
+                            {connectorLabelText ? (
+                              <DotMatrixText text={connectorLabelText} dotSize={2} dotGap={0} charGap={1} />
+                            ) : null}
+                            {connectorTitleText ? (
+                              <DotMatrixText
+                                text={connectorTitleText}
+                                dotSize={4}
+                                dotGap={0}
+                                charGap={1}
+                                scroll
+                                maxChars={DOT_SCROLL_VISIBLE}
+                                scrollSpeed={16}
+                                scrollGap={8}
+                              />
+                            ) : null}
+                            {connectorMetaText ? (
+                              <DotMatrixText
+                                text={connectorMetaText}
+                                dotSize={2}
+                                dotGap={0}
+                                charGap={1}
+                                scroll={connectorMetaScroll}
+                                maxChars={DOT_SCROLL_VISIBLE}
+                                scrollSpeed={20}
+                                scrollGap={8}
+                              />
+                            ) : null}
                           </div>
-                        ) : null}
+                          {showConnectorIconRight ? (
+                            <div className="full-tv-logo-side full-tv-logo-side-right">
+                              <div className="full-tv-logo-icon" style={{ '--icon-url': `url("${connectorIconRight}")` }} />
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {showAchievementLayer && (
-                    <div className="full-tv-logo-layer full-tv-logo-layer-achievement">
-                      <div className="full-tv-logo-stack">
-                        <DotMatrixText text={achievementLabelText} dotSize={2} dotGap={0} charGap={1} />
-                        <DotMatrixText
-                          text={achievementTitleText}
-                          dotSize={3}
-                          dotGap={0}
-                          charGap={1}
-                          scroll
-                          maxChars={DOT_SCROLL_VISIBLE}
-                          scrollSpeed={20}
-                          scrollGap={8}
-                        />
-                        {achievementPointsText ? (
-                          <DotMatrixText text={achievementPointsText} dotSize={2} dotGap={0} charGap={1} />
-                        ) : null}
+                    )}
+                    {showAchievementLayer && (
+                      <div className="full-tv-logo-layer full-tv-logo-layer-achievement">
+                        <div className="full-tv-logo-stack">
+                          <DotMatrixText text={achievementLabelText} dotSize={2} dotGap={0} charGap={1} />
+                          <DotMatrixText
+                            text={achievementTitleText}
+                            dotSize={3}
+                            dotGap={0}
+                            charGap={1}
+                            scroll
+                            maxChars={DOT_SCROLL_VISIBLE}
+                            scrollSpeed={20}
+                            scrollGap={8}
+                          />
+                          {achievementPointsText ? (
+                            <DotMatrixText text={achievementPointsText} dotSize={2} dotGap={0} charGap={1} />
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-                <div className="full-tv-right">
-                  <div className="full-tv-speaker">
-                    <span /><span /><span /><span /><span /><span />
+
+                <div className="full-tv-footer-section right">
+                  <div className="full-tv-input-section">
+                    <div className="full-tv-display full-tv-input">
+                      <DotMatrixText
+                        className="full-tv-display-label"
+                        text="Input"
+                        dotSize={2}
+                        dotGap={0}
+                        charGap={1}
+                      />
+                      <DotMatrixText
+                        className="full-tv-display-value"
+                        text={inputText}
+                        dotSize={4}
+                        dotGap={0}
+                        charGap={1}
+                      />
+                    </div>
                   </div>
-                  <div className="full-tv-display full-tv-input">
-                    <DotMatrixText
-                      className="full-tv-display-label"
-                      text="Input"
-                      dotSize={2}
-                      dotGap={0}
-                      charGap={1}
-                    />
-                    <DotMatrixText
-                      className="full-tv-display-value"
-                      text={inputText}
-                      dotSize={4}
-                      dotGap={0}
-                      charGap={1}
-                    />
-                  </div>
-                  <div className="full-tv-controls" aria-hidden="true">
-                    <span className="full-tv-knob" />
-                    <span className="full-tv-knob" />
-                    <span className="full-tv-knob" />
+                  <div className="full-tv-speaker circular">
+                    <span className="speaker-mesh" />
                   </div>
                 </div>
               </div>
