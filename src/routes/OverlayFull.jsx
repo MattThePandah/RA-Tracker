@@ -1370,7 +1370,7 @@ export default function OverlayFull() {
                   </div>
                   <div className="tv-power-group">
                     <div className="tv-power-btn" />
-                    <div className={`tv-power-led ${current ? 'active' : 'standby'}`} />
+                    <div className={`tv-power-led ${isTvPowered ? 'active' : 'standby'}`} />
                     <span className="tv-power-label">POWER</span>
                   </div>
                   <div className="full-tv-displays">
