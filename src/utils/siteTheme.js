@@ -324,7 +324,7 @@ export function applySiteTheme(rawTheme) {
     '--admin-border': theme.admin.border
   }
 
-  const adminTarget = document.querySelector('.admin-shell')
+  const adminTarget = document.querySelector('.admin-layout')
   if (adminTarget) {
     applyVars(adminTarget, adminVars)
     const brandRgb = hexToRgb(theme.admin.brand)

@@ -156,21 +156,61 @@ function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, se
           <div className="small text-secondary mt-1">Completion: {completionLabel}</div>
         )}
       </div>
-      <div className="card-footer d-flex gap-1 p-2">
-        <button className="btn btn-sm btn-outline-light" onClick={() => {
-          const updatedGame = { ...game, status: 'In Progress', date_started: game.date_started ?? new Date().toISOString() }
-          onQuick(updatedGame)
-        }}>Set Current</button>
-        <button className="btn btn-sm btn-outline-success" onClick={() => onQuick({ ...game, status: 'Completed', date_finished: new Date().toISOString() })}>Complete</button>
-        <button className="btn btn-sm btn-outline-danger" onClick={() => onQuick({ ...game, status: 'DNF', date_finished: game.date_finished ?? new Date().toISOString() })}>DNF</button>
-        <button className="btn btn-sm btn-outline-info" onClick={() => onOpenDetail(game)}>Details</button>
-        <button
-          className="btn btn-sm btn-outline-warning"
-          onClick={() => onFetchCover(game)}
-          disabled={fetchingCover}
-        >
-          {fetchingCover ? 'Fetching...' : 'Fetch Cover'}
-        </button>
+      <div className="card-footer p-2 bg-dark bg-opacity-25 border-top border-secondary border-opacity-10">
+        <div className="d-flex gap-1">
+          <button 
+            className="btn btn-xs btn-brand text-dark fw-bold flex-grow-1" 
+            style={{ fontSize: '0.7rem', padding: '4px 2px' }}
+            onClick={() => {
+              const updatedGame = { ...game, status: 'In Progress', date_started: game.date_started ?? new Date().toISOString() }
+              onQuick(updatedGame)
+            }}
+            title="Set as currently playing"
+          >
+            PLAY
+          </button>
+          <div className="btn-group flex-grow-1">
+            <button 
+              className="btn btn-xs btn-outline-success d-flex align-items-center justify-content-center gap-1" 
+              style={{ fontSize: '0.65rem', padding: '4px 2px' }}
+              onClick={() => onQuick({ ...game, status: 'Completed', date_finished: new Date().toISOString() })}
+              title="Mark as Completed"
+            >
+              <i className="bi bi-check-lg"></i>
+              <span>DONE</span>
+            </button>
+            <button 
+              className="btn btn-xs btn-outline-danger d-flex align-items-center justify-content-center gap-1" 
+              style={{ fontSize: '0.65rem', padding: '4px 2px' }}
+              onClick={() => onQuick({ ...game, status: 'DNF', date_finished: game.date_finished ?? new Date().toISOString() })}
+              title="Mark as DNF (Did Not Finish)"
+            >
+              <i className="bi bi-x-lg"></i>
+              <span>DNF</span>
+            </button>
+          </div>
+          <div className="dropdown flex-shrink-0">
+            <button 
+              className="btn btn-xs btn-outline-light dropdown-toggle hide-caret" 
+              data-bs-toggle="dropdown" 
+              style={{ fontSize: '0.7rem', padding: '4px 6px' }}
+            >
+              <i className="bi bi-three-dots-vertical"></i>
+            </button>
+            <ul className="dropdown-menu dropdown-menu-end dropdown-menu-dark shadow-lg border-secondary border-opacity-20" style={{ fontSize: '0.85rem' }}>
+              <li>
+                <button className="dropdown-item" onClick={() => onOpenDetail(game)}>
+                  <i className="bi bi-info-circle me-2"></i>Full Details
+                </button>
+              </li>
+              <li>
+                <button className="dropdown-item" onClick={() => onFetchCover(game)} disabled={fetchingCover}>
+                  <i className="bi bi-image me-2"></i>{fetchingCover ? 'Fetching...' : 'Refresh Cover'}
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -602,40 +642,79 @@ export default function Library() {
 
   return (
     <div className="p-3">
-      <div className="d-flex flex-wrap gap-2 align-items-end mb-3">
-        <div className="me-auto">
-          <h2 className="h4 mb-0">Game Library</h2>
-          <div className="text-secondary small">
-            Showing {paginatedGames.length} of {filtered.length} games
-            {totalPages > 1 && ` • Page ${currentPage} of ${totalPages}`}
+      <div className="card bg-panel p-3 mb-4 border-0 shadow-sm">
+        <div className="d-flex flex-wrap gap-3 align-items-center">
+          <div className="me-auto">
+            <h2 className="h4 mb-1">Game Library</h2>
+            <div className="text-secondary small">
+              <strong>{filtered.length}</strong> games found
+              {totalPages > 1 && ` \u2022 Page ${currentPage} of ${totalPages}`}
+            </div>
+          </div>
+          
+          <div className="d-flex flex-wrap gap-2 align-items-center">
+            <div className="input-group input-group-sm" style={{ width: '240px' }}>
+              <span className="input-group-text bg-dark border-secondary border-opacity-20 text-secondary">
+                <i className="bi bi-search"></i>
+              </span>
+              <input 
+                className="form-control bg-dark border-secondary border-opacity-20 text-light" 
+                placeholder="Search library..." 
+                value={q} 
+                onChange={e => setQ(e.target.value)} 
+              />
+            </div>
+
+            <select className="form-select form-select-sm bg-dark border-secondary border-opacity-20 text-light w-auto" value={consoleFilter} onChange={e=>setConsoleFilter(e.target.value)}>
+              <option value="All">All Consoles</option>
+              {consoles.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+
+            <select className="form-select form-select-sm bg-dark border-secondary border-opacity-20 text-light w-auto" value={status} onChange={e=>setStatus(e.target.value)}>
+              <option value="All">All Status</option>
+              <option>Not Started</option>
+              <option>In Progress</option>
+              <option>Completed</option>
+              <option>DNF</option>
+            </select>
+
+            <div className="btn-group btn-group-sm">
+              <button 
+                className={`btn ${view==='grid'?'btn-brand text-dark':'btn-outline-light'} d-flex align-items-center gap-1`} 
+                onClick={()=>setView('grid')}
+              >
+                <i className="bi bi-grid-3x3-gap"></i>
+                <span>Grid</span>
+              </button>
+              <button 
+                className={`btn ${view==='list'?'btn-brand text-dark':'btn-outline-light'} d-flex align-items-center gap-1`} 
+                onClick={()=>setView('list')}
+              >
+                <i className="bi bi-list-task"></i>
+                <span>List</span>
+              </button>
+            </div>
+
+            <button
+              className={`btn btn-sm ${selectionMode ? 'btn-success' : 'btn-outline-success'} d-flex align-items-center gap-1`}
+              onClick={toggleSelectionMode}
+            >
+              <i className="bi bi-check2-square"></i>
+              <span>{selectionMode ? 'Finish Bulk' : 'Bulk Mode'}</span>
+            </button>
           </div>
         </div>
-        <input className="form-control form-control-sm w-auto" placeholder="Search..." value={q} onChange={e => setQ(e.target.value)} />
-        <select className="form-select form-select-sm w-auto" value={consoleFilter} onChange={e=>setConsoleFilter(e.target.value)}>
-          <option>All</option>
-          {consoles.map(c => <option key={c}>{c}</option>)}
-        </select>
-        <select className="form-select form-select-sm w-auto" value={status} onChange={e=>setStatus(e.target.value)}>
-          <option>All</option>
-          <option>Not Started</option>
-          <option>In Progress</option>
-          <option>Completed</option>
-          <option>DNF</option>
-        </select>
-        <div className="form-check form-switch">
-          <input className="form-check-input" type="checkbox" checked={hideBonus} onChange={e=>setHideBonus(e.target.checked)} id="hideBonus" />
-          <label className="form-check-label" htmlFor="hideBonus">Hide Bonus</label>
+        
+        <div className="d-flex gap-3 mt-3 pt-3 border-top border-secondary border-opacity-10 align-items-center">
+          <div className="form-check form-switch mb-0">
+            <input className="form-check-input" type="checkbox" checked={hideBonus} onChange={e=>setHideBonus(e.target.checked)} id="hideBonus" />
+            <label className="form-check-label small text-secondary" htmlFor="hideBonus">Hide Bonus subsets</label>
+          </div>
+          
+          <div className="ms-auto small text-secondary">
+            Displaying {paginatedGames.length} per page
+          </div>
         </div>
-        <div className="btn-group">
-          <button className={`btn btn-sm ${view==='grid'?'btn-primary':'btn-outline-primary'}`} onClick={()=>setView('grid')}>Grid</button>
-          <button className={`btn btn-sm ${view==='list'?'btn-primary':'btn-outline-primary'}`} onClick={()=>setView('list')}>List</button>
-        </div>
-        <button
-          className={`btn btn-sm ${selectionMode ? 'btn-success' : 'btn-outline-success'}`}
-          onClick={toggleSelectionMode}
-        >
-          {selectionMode ? 'Selection On' : 'Selection Mode'}
-        </button>
       </div>
       {coverFetchMessage && <div className="text-warning small mb-2">{coverFetchMessage}</div>}
 

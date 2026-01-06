@@ -5,6 +5,7 @@ import axios from 'axios'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import { exec, execSync } from 'child_process'
 import helmet from 'helmet'
 import session from 'express-session'
 import rateLimit from 'express-rate-limit'
@@ -467,7 +468,7 @@ app.post('/igdb/search', requireAdmin, requireCsrf, requireOrigin, async (req, r
     }
     // Prefer platform match; request cover image_id, first_release_date, and publisher via involved_companies
     const where = platformId ? `where platforms = (${platformId});` : ''
-    const body = `fields name,cover.image_id,first_release_date,platforms.name,involved_companies.company.name,involved_companies.publisher; search "${q.replace('"','')}"; ${where} limit 5;`
+    const body = `fields name,cover.image_id,first_release_date,platforms.name,involved_companies.company.name,involved_companies.publisher; search "${q.replace('"', '')}"; ${where} limit 5;`
     const { data } = await axios.post('https://api.igdb.com/v4/games', body, { headers })
     const mapped = data.map(g => {
       let publisher_name = null
@@ -479,7 +480,7 @@ app.post('/igdb/search', requireAdmin, requireCsrf, requireOrigin, async (req, r
           const firstCo = ics.find(ic => ic && ic.company && ic.company.name)
           if (firstCo && firstCo.company && firstCo.company.name) publisher_name = firstCo.company.name
         }
-      } catch {}
+      } catch { }
       return ({
         id: g.id,
         name: g.name,
@@ -510,7 +511,71 @@ app.get('/image', async (req, res) => {
 })
 
 // Minimal in-memory overlay state for OBS Browser Source
-const overlayState = { current: null, updatedAt: Date.now() }
+const overlayState = {
+  current: null,
+  startingSoon: false,
+  startingSoonEndTime: null,
+  updatedAt: Date.now()
+}
+
+const TRAILERS_DIR = path.join(process.cwd(), 'trailers')
+fs.mkdirSync(TRAILERS_DIR, { recursive: true })
+const FFMPEG_PATH = (process.env.FFMPEG_PATH || '').trim()
+const FFMPEG_LOCATION = (() => {
+  if (!FFMPEG_PATH) return ''
+  if (fs.existsSync(FFMPEG_PATH)) return FFMPEG_PATH
+  const candidate = path.join(FFMPEG_PATH, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
+  if (fs.existsSync(candidate)) return FFMPEG_PATH
+  console.warn(`[Startup] FFMPEG_PATH set but not found: ${FFMPEG_PATH}`)
+  return ''
+})()
+const FFMPEG_AVAILABLE = (() => {
+  if (FFMPEG_LOCATION) return true
+  const command = process.platform === 'win32' ? 'where ffmpeg' : 'command -v ffmpeg'
+  try {
+    execSync(command, { stdio: 'ignore' })
+    return true
+  } catch {
+    return false
+  }
+})()
+const FFMPEG_LOCATION_ARG = FFMPEG_LOCATION ? ` --ffmpeg-location "${FFMPEG_LOCATION}"` : ''
+if (!FFMPEG_AVAILABLE) {
+  console.warn('[Startup] ffmpeg not found; trailer downloads will use combined formats only.')
+}
+const TRAILER_EXTENSIONS = /\.(mp4|webm|mov|mkv)$/i
+const TRAILERS_ROOT = path.resolve(TRAILERS_DIR)
+function getTrailerUrlPath(relativePath) {
+  return relativePath
+    .split(path.sep)
+    .map(segment => encodeURIComponent(segment))
+    .join('/')
+}
+function listTrailerFiles(dir, relativeBase = '') {
+  let results = []
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue
+    const absolutePath = path.join(dir, entry.name)
+    const relativePath = relativeBase ? path.join(relativeBase, entry.name) : entry.name
+    if (entry.isDirectory()) {
+      results = results.concat(listTrailerFiles(absolutePath, relativePath))
+    } else if (entry.isFile() && TRAILER_EXTENSIONS.test(entry.name)) {
+      results.push({ name: relativePath, path: absolutePath })
+    }
+  }
+  return results
+}
+function resolveTrailerPath(name) {
+  const normalized = String(name || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+  if (!normalized || normalized.includes('..')) return null
+  const filePath = path.join(TRAILERS_DIR, normalized)
+  const resolved = path.resolve(filePath)
+  if (resolved !== TRAILERS_ROOT && !resolved.startsWith(`${TRAILERS_ROOT}${path.sep}`)) return null
+  return filePath
+}
 
 // Simple JSON persistence for resilience across server restarts
 const DATA_DIR = path.join(process.cwd(), 'server', 'data')
@@ -530,7 +595,7 @@ function loadJSON(file, fallback) {
 function saveJSON(file, data) {
   try {
     fs.writeFileSync(file, JSON.stringify(data, null, 2))
-  } catch {}
+  } catch { }
 }
 
 const CONNECTOR_MAX_QUEUE = clampNumber(process.env.OVERLAY_CONNECTOR_MAX_QUEUE, 1, 100, 25)
@@ -725,7 +790,7 @@ try {
     overlayState.current = persistedCurrent.current || null
     overlayState.updatedAt = persistedCurrent.updatedAt || Date.now()
   }
-} catch {}
+} catch { }
 
 // Deprecated: kept for backward compat, but returns minimal data
 app.get('/overlay/state', requireOverlayAuth, (req, res) => {
@@ -753,8 +818,163 @@ app.post('/overlay/state', requireAdmin, requireCsrf, requireOrigin, (req, res) 
 
 // New minimal current endpoint (preferred)
 app.get('/overlay/current', requireOverlayAuth, (req, res) => {
-  res.json({ current: overlayState.current, updatedAt: overlayState.updatedAt })
+  res.json({
+    current: overlayState.current,
+    startingSoon: overlayState.startingSoon,
+    startingSoonEndTime: overlayState.startingSoonEndTime,
+    updatedAt: overlayState.updatedAt
+  })
 })
+
+app.get('/overlay/trailers', requireOverlayAuth, (req, res) => {
+  try {
+    const baseUrl = `${req.protocol}://${req.get('host')}`
+    const files = listTrailerFiles(TRAILERS_DIR)
+      .map(file => ({
+        name: file.name.split(path.sep).join('/'),
+        url: `${baseUrl}/trailers/${getTrailerUrlPath(file.name)}`
+      }))
+
+    // Shuffle trailers
+    for (let i = files.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [files[i], files[j]] = [files[j], files[i]];
+    }
+
+    res.json(files)
+  } catch (error) {
+    res.status(500).json({ error: 'failed_to_list_trailers' })
+  }
+})
+
+app.get('/api/admin/trailers', requireAdmin, (req, res) => {
+  try {
+    const baseUrl = `${req.protocol}://${req.get('host')}`
+    const files = listTrailerFiles(TRAILERS_DIR)
+      .map(file => ({
+        name: file.name.split(path.sep).join('/'),
+        size: fs.statSync(file.path).size,
+        url: `${baseUrl}/trailers/${getTrailerUrlPath(file.name)}`
+      }))
+    res.json(files)
+  } catch (error) {
+    res.status(500).json({ error: 'failed_to_list_trailers' })
+  }
+})
+
+app.delete('/api/admin/trailers/:name', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  try {
+    const name = req.params.name || ''
+    const filePath = resolveTrailerPath(name)
+    if (!filePath) return res.status(400).json({ error: 'invalid_trailer_path' })
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+      return res.json({ ok: true })
+    }
+    res.status(404).json({ error: 'trailer_not_found' })
+  } catch (error) {
+    res.status(500).json({ error: 'failed_to_delete_trailer' })
+  }
+})
+
+app.post('/api/admin/trailers/download', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  const { url } = req.body || {}
+  if (!url) return res.status(400).json({ error: 'url required' })
+
+  // Basic validation to prevent command injection
+  if (!url.startsWith('http')) return res.status(400).json({ error: 'invalid url' })
+
+  // Run yt-dlp. Note: requires yt-dlp to be installed on the system path
+  const format = FFMPEG_AVAILABLE
+    ? 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a][acodec^=mp4a]/bestvideo+bestaudio/best'
+    : 'best[ext=mp4][vcodec^=avc1][acodec^=mp4a]/best[ext=mp4]/best'
+  const transcodeArgs = FFMPEG_AVAILABLE
+    ? ' --merge-output-format mp4 --recode-video mp4 --postprocessor-args "ffmpeg:-c:v libx264 -c:a aac -movflags +faststart"'
+    : ''
+
+  // Use forward slashes for yt-dlp output path even on Windows to avoid escape issues
+  const outPath = path.join(TRAILERS_DIR, '%(title)s.%(ext)s').replace(/\\/g, '/')
+  const command = `yt-dlp --no-playlist --restrict-filenames -f "${format}"${FFMPEG_LOCATION_ARG}${transcodeArgs} -o "${outPath}" "${url.replace(/"/g, '')}"`
+
+  console.log(`[Trailers] Starting download: ${url}`)
+
+  // Execute in background
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      console.error('[Trailers] Download failed:', error)
+      console.error('[Trailers] stderr:', stderr)
+      return
+    }
+    console.log(`[Trailers] Download finished: ${url}`)
+  })
+
+  // Return immediately so the UI doesn't hang
+  res.json({ ok: true, message: 'download_started' })
+})
+
+app.post('/api/admin/trailers/search', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  const { q } = req.body || {}
+  if (!q) return res.json([])
+
+  const command = `yt-dlp --print-json --flat-playlist --no-playlist "ytsearch5:${q.replace(/"/g, '')}"`
+
+  exec(command, (error, stdout, stderr) => {
+    if (error && !stdout) {
+      console.error('yt-dlp search error:', error)
+      return res.status(500).json({ error: 'search_failed', details: stderr })
+    }
+
+    try {
+      const results = stdout.trim().split('\n').filter(Boolean).map(line => {
+        try {
+          const item = JSON.parse(line)
+          return {
+            id: item.id,
+            title: item.title,
+            url: item.url || `https://www.youtube.com/watch?v=${item.id}`,
+            thumbnail: item.thumbnails?.[0]?.url || item.thumbnail || null,
+            duration: item.duration_string || null,
+            uploader: item.uploader || null
+          }
+        } catch { return null }
+      }).filter(Boolean)
+
+      res.json(results)
+    } catch (e) {
+      res.status(500).json({ error: 'parse_failed' })
+    }
+  })
+})
+
+
+app.use('/trailers', express.static(TRAILERS_DIR, {
+  setHeaders: (res, filePath) => {
+    const ext = path.extname(filePath).toLowerCase()
+    if (ext === '.mp4') {
+      res.setHeader('Content-Type', 'video/mp4')
+    } else if (ext === '.webm') {
+      res.setHeader('Content-Type', 'video/webm')
+    } else if (ext === '.mov') {
+      res.setHeader('Content-Type', 'video/quicktime')
+    } else if (ext === '.mkv') {
+      res.setHeader('Content-Type', 'video/x-matroska')
+    }
+  }
+}))
+
+app.post('/overlay/starting-soon', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  const { enabled, endTime } = req.body || {}
+  overlayState.startingSoon = !!enabled
+  overlayState.startingSoonEndTime = endTime ? Number(endTime) : null
+  overlayState.updatedAt = Date.now()
+  res.json({
+    ok: true,
+    startingSoon: overlayState.startingSoon,
+    startingSoonEndTime: overlayState.startingSoonEndTime,
+    updatedAt: overlayState.updatedAt
+  })
+})
+
 app.get('/overlay/event', requireOverlayAuth, async (req, res) => {
   try {
     if (!activeEvent) {
@@ -890,9 +1110,9 @@ app.post('/api/sample-games', requireAdmin, requireCsrf, requireOrigin, (req, re
     if (!Array.isArray(games)) {
       return res.status(400).json({ error: 'games array required' })
     }
-    
+
     let filtered = games
-    
+
     // Apply filters
     if (filters.console && filters.console !== 'All') {
       filtered = filtered.filter(g => g.console === filters.console)
@@ -907,22 +1127,22 @@ app.post('/api/sample-games', requireAdmin, requireCsrf, requireOrigin, (req, re
     if (filters.hasCovers) {
       filtered = filtered.filter(g => g.image_url)
     }
-    
+
     // Random sample from filtered pool
     const sample = []
     const pool = [...filtered] // Copy so we don't mutate original
     const targetSize = Math.min(sampleSize, pool.length)
-    
+
     for (let i = 0; i < targetSize; i++) {
       const randomIdx = Math.floor(Math.random() * pool.length)
       sample.push(pool.splice(randomIdx, 1)[0])
     }
-    
+
     // Pad with nulls if we don't have enough games (for consistent 16 slots)
     while (sample.length < sampleSize) {
       sample.push(null)
     }
-    
+
     res.json({
       sample,
       poolSize: filtered.length,
@@ -945,10 +1165,10 @@ app.post('/overlay/spin', requireAdmin, requireCsrf, requireOrigin, (req, res) =
   if (!Array.isArray(sample) || typeof targetIdx !== 'number') {
     return res.status(400).json({ error: 'sample[] and targetIdx required' })
   }
-  overlaySpin = { 
-    ts: Date.now(), 
-    sample, 
-    targetIdx, 
+  overlaySpin = {
+    ts: Date.now(),
+    sample,
+    targetIdx,
     durationMs: Number(durationMs) || 9000,
     poolSize: poolSize || 0
   }
@@ -978,16 +1198,16 @@ app.get('/overlay/stats', requireOverlayAuth, async (req, res) => {
     const settings = await getOverlaySettings()
     const eventConsoles = Array.isArray(activeEvent?.consoles) ? activeEvent.consoles : []
     const consoles = eventConsoles.length > 0 ? eventConsoles : (settings.global?.eventConsoles || [])
-    
+
     if (consoles.length > 0) {
       const idx = getIndex()
       const allGames = mergeWithGameLibrary(idx.games || [])
       const filtered = allGames.filter(g => matchesEventConsoles(consoles, g))
-      
+
       const total = filtered.length
       const completed = filtered.filter(g => g.status === 'Completed').length
       const percent = total ? Math.round((completed / total) * 100) : 0
-      
+
       return res.json({
         total,
         completed,
@@ -999,7 +1219,7 @@ app.get('/overlay/stats', requireOverlayAuth, async (req, res) => {
   } catch (e) {
     console.error('[Stats] Dynamic calculation failed:', e.message)
   }
-  
+
   res.json(overlayStats)
 })
 app.post('/overlay/stats', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
@@ -1047,7 +1267,7 @@ app.get('/api/streamerbot/game', requireStreamerbotAuth, (req, res) => {
       focus: 'game',
       durationMs: CONNECTOR_FOCUS_DURATION_MS
     }))
-  } catch {}
+  } catch { }
   res.json({
     ok: true,
     message,
@@ -1151,7 +1371,7 @@ app.get('/api/streamerbot/event', requireStreamerbotAuth, async (req, res) => {
         focus: 'event',
         durationMs: CONNECTOR_FOCUS_DURATION_MS
       }))
-    } catch {}
+    } catch { }
     res.json({ ok: true, message, event: activeEvent || null })
   } catch (error) {
     res.status(500).json({ error: 'event_failed' })
@@ -1327,7 +1547,7 @@ app.get('/api/stats/pulse', requireAdmin, async (req, res) => {
       await refreshGenresForGames(candidates, 8)
       return res.json(buildPulseStats(range))
     }
-    refreshGenresForGames(candidates, 2).catch(() => {})
+    refreshGenresForGames(candidates, 2).catch(() => { })
     res.json(stats)
   } catch (error) {
     res.status(500).json({ error: 'pulse_stats_failed' })
@@ -1516,7 +1736,7 @@ async function refreshGenresForGames(candidates, limit = 3) {
       const match = results.find(r => Array.isArray(r.genre_names) && r.genre_names.length) || results[0]
       const genres = Array.isArray(match?.genre_names) ? match.genre_names : []
       setCachedGenres(game.id, genres)
-    } catch {}
+    } catch { }
   }
 }
 
@@ -1629,7 +1849,7 @@ if (!timerStateLoaded) {
     }
   } catch (primaryError) {
     console.warn('Failed to load primary timer state:', primaryError.message)
-    
+
     // Try to load from backup
     try {
       const backupFile = TIMERS_FILE.replace('.json', '.backup.json')
@@ -1638,7 +1858,7 @@ if (!timerStateLoaded) {
         timerState = { ...timerState, ...backupTimers }
         timerStateLoaded = true
         console.log('Timer state recovered from backup file')
-        
+
         // Save backup as primary to fix corruption
         try {
           delete backupTimers.isBackup
@@ -1711,7 +1931,7 @@ try {
       console.log(`[History] Backfilled ${result.added} entries from legacy timer totals.`)
     }
   }
-} catch {}
+} catch { }
 
 app.get('/overlay/timers', requireOverlayAuth, (req, res) => {
   const now = Date.now()
@@ -1812,7 +2032,7 @@ app.post('/overlay/timers', requireAdmin, requireCsrf, requireOrigin, async (req
         duration: entry.durationSec,
         eventType
       })
-    } catch {}
+    } catch { }
   }
 
   // Back-compat support (legacy fields)
@@ -1913,11 +2133,11 @@ function formatTime(seconds, longHours = false) {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
   const secs = seconds % 60
-  
-  const hourStr = longHours && hours >= 100 ? 
-    hours.toString().padStart(3, '0') : 
+
+  const hourStr = longHours && hours >= 100 ?
+    hours.toString().padStart(3, '0') :
     hours.toString().padStart(2, '0')
-  
+
   return `${hourStr}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
 }
 
@@ -1930,7 +2150,7 @@ app.post('/wheel/spin', requireAdmin, requireCsrf, requireOrigin, (req, res) => 
     const turns = Math.max(3, Math.min(Number(req.body?.turns) || 10, 30))
     let sample = []
     let poolSize = 0
-    
+
     if (Array.isArray(req.body?.sample) && req.body.sample.length) {
       // Client provided sample of games (preferred: minimal payload)
       sample = req.body.sample.slice(0, slotCount)
@@ -1966,7 +2186,7 @@ app.post('/wheel/spin', requireAdmin, requireCsrf, requireOrigin, (req, res) => 
       sampleHash
     }
 
-  res.json(overlaySpin)
+    res.json(overlaySpin)
   } catch (e) {
     console.error('wheel/spin error', e)
     res.status(500).json({ error: 'failed to start spin' })
@@ -2029,7 +2249,7 @@ app.get('/api/retroachievements/game/:gameId', requireOverlayAuth, async (req, r
     const data = await fetchPromise
     raProxyInflight.delete(key)
     raProxyCache.set(key, { ts: Date.now(), data })
-    
+
     if (data && data.Achievements) {
       const achCount = Object.keys(data.Achievements).length
       console.log(`[RA Proxy] Fetched ${achCount} achievements for game ${gameId}`)
@@ -2241,10 +2461,10 @@ app.get('/api/public/search-games', searchLimiter, async (req, res) => {
   try {
     const q = String(req.query.q || '').trim().toLowerCase()
     if (!q) return res.json({ results: [] })
-    
+
     const idx = getIndex()
     const games = idx.games || []
-    
+
     const matches = games
       .filter(g => g.title.toLowerCase().includes(q))
       .slice(0, 10)
@@ -2253,7 +2473,7 @@ app.get('/api/public/search-games', searchLimiter, async (req, res) => {
         title: g.title,
         console: (g.console && typeof g.console === 'object') ? g.console.name : g.console
       }))
-      
+
     res.json({ results: matches })
   } catch (error) {
     res.status(500).json({ error: 'search_failed' })
@@ -2386,7 +2606,7 @@ app.get('/api/public/stream-status', async (req, res) => {
         }
         streamLiveState.youtube = youtube.isLive
       }
-    } catch {}
+    } catch { }
 
     const payload = { twitch, youtube, updatedAt: now }
     streamCache.ts = now
@@ -2503,7 +2723,7 @@ app.post('/api/public/suggestions', async (req, res, next) => {
     try {
       const settings = getUserSettings()
       await notifier.suggestionReceived(suggestion, settings?.notifications || {})
-    } catch {}
+    } catch { }
     res.json(suggestion)
   } catch (error) {
     res.status(400).json({ error: error.message })
@@ -2545,37 +2765,37 @@ app.get('/api/admin/public-settings', requireAdmin, async (req, res) => {
   }
 })
 
-  app.post('/api/admin/public-settings', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
-    try {
-      const updates = {}
-      if ('suggestions_open' in req.body) {
-        updates.suggestions_open = !!req.body.suggestions_open
+app.post('/api/admin/public-settings', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+  try {
+    const updates = {}
+    if ('suggestions_open' in req.body) {
+      updates.suggestions_open = !!req.body.suggestions_open
     }
     if ('max_open' in req.body) {
       const maxOpen = Number(req.body.max_open)
       updates.max_open = Number.isFinite(maxOpen) ? Math.max(0, Math.min(1000, maxOpen)) : 0
     }
-      if ('console_limits' in req.body) {
-        if (req.body.console_limits && typeof req.body.console_limits === 'object') {
-          const normalized = {}
-          for (const [key, value] of Object.entries(req.body.console_limits)) {
-            const cleanKey = String(key || '').trim().toLowerCase()
-            if (!cleanKey) continue
-            const limit = Number(value)
-            normalized[cleanKey] = Number.isFinite(limit) ? Math.max(0, Math.min(1000, limit)) : 0
-          }
-          updates.console_limits = normalized
-        } else {
-          updates.console_limits = {}
+    if ('console_limits' in req.body) {
+      if (req.body.console_limits && typeof req.body.console_limits === 'object') {
+        const normalized = {}
+        for (const [key, value] of Object.entries(req.body.console_limits)) {
+          const cleanKey = String(key || '').trim().toLowerCase()
+          if (!cleanKey) continue
+          const limit = Number(value)
+          normalized[cleanKey] = Number.isFinite(limit) ? Math.max(0, Math.min(1000, limit)) : 0
         }
+        updates.console_limits = normalized
+      } else {
+        updates.console_limits = {}
       }
-      if ('site' in req.body) {
-        updates.site = req.body.site || {}
-      }
-      const updated = await updatePublicSettings(updates)
-      res.json(updated)
-    } catch (error) {
-      res.status(500).json({ error: error.message })
+    }
+    if ('site' in req.body) {
+      updates.site = req.body.site || {}
+    }
+    const updated = await updatePublicSettings(updates)
+    res.json(updated)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
   }
 })
 
@@ -2684,7 +2904,7 @@ app.listen(port, () => {
     console.log('[Overlay] Data dir:', DATA_DIR)
     console.log('[Overlay] Timers file:', TIMERS_FILE)
     console.log('[Overlay] Current file:', CURRENT_FILE)
-  } catch {}
+  } catch { }
   try {
     if (FLAGS.LIBRARY_BUILD_ON_START) {
       console.log('[Startup] Library build on start enabled; starting job...')
@@ -2744,8 +2964,8 @@ setInterval(() => {
       timerState.updatedAt = now
 
       // Save primary state
-      persistTimerState().catch(() => {})
-      
+      persistTimerState().catch(() => { })
+
       // Create backup with timestamp for crash recovery
       try {
         const backupState = {
@@ -2764,10 +2984,10 @@ setInterval(() => {
 // Graceful shutdown: checkpoint timers with enhanced error handling
 const gracefulShutdown = async (signal) => {
   console.log(`Received ${signal}, performing graceful shutdown...`)
-  
+
   try {
     const now = Date.now()
-    
+
     // Checkpoint any running timer state
     if (timerState.running && timerState.currentStartedAt && timerState.currentGameId) {
       const deltaSec = Math.floor((now - timerState.currentStartedAt) / 1000)
@@ -2781,7 +3001,7 @@ const gracefulShutdown = async (signal) => {
       timerState.currentStartedAt = now
       timerState.updatedAt = now
     }
-    
+
     // Save state with retry logic
     let saveAttempts = 3
     while (saveAttempts > 0) {
@@ -2804,7 +3024,7 @@ const gracefulShutdown = async (signal) => {
         }
       }
     }
-    
+
   } catch (error) {
     console.error('Graceful shutdown error:', error.message)
   } finally {
@@ -2845,8 +3065,8 @@ process.on('uncaughtException', (error) => {
       timerState.updatedAt = now
     }
 
-    persistTimerState({ wait: false }).catch(() => {})
-    
+    persistTimerState({ wait: false }).catch(() => { })
+
     const crashFile = TIMERS_FILE.replace('.json', '.crash.json')
     saveJSON(crashFile, { ...timerState, isCrashBackup: true, crashTime: now, crashError: error.message })
     console.log('Crash backup saved')
@@ -2888,10 +3108,10 @@ app.get('/api/games', gated(async (req, res) => {
     const { consoleId, hasAchievements, hasCover, q, offset = 0, limit = 100 } = req.query
     const idx = getIndex()
     let games = idx.games || []
-    
+
     // Merge with user metadata before filtering
     games = mergeWithGameLibrary(games)
-    
+
     if (consoleId && consoleId !== 'All') games = games.filter(g => g.console?.id === consoleId)
     if (hasAchievements) games = games.filter(g => g.flags?.hasAchievements)
     if (hasCover) games = games.filter(g => g.flags?.hasCover)

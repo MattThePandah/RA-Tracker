@@ -11,6 +11,7 @@ import useOverlayConnector from '../hooks/useOverlayConnector.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 import FullOverlayAchievementPopups from '../components/FullOverlayAchievementPopups.jsx'
 import DotMatrixText from '../components/DotMatrixText.jsx'
+import StartingSoonModule from '../components/StartingSoonModule.jsx'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -451,7 +452,34 @@ export default function OverlayFull() {
   const { width: viewportWidth, height: viewportHeight } = useViewportSize()
   const tick = usePoll(poll)
   const [current, setCurrent] = React.useState(null)
+  const [startingSoon, setStartingSoon] = React.useState(false)
+  const [startingSoonEndTime, setStartingSoonEndTime] = React.useState(null)
+  const [timeLeft, setTimeLeft] = React.useState(null)
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
+
+  React.useEffect(() => {
+    if (!startingSoon || !startingSoonEndTime) {
+      setTimeLeft(null)
+      return
+    }
+    const update = () => {
+      const now = Date.now()
+      const diff = Math.max(0, Math.floor((startingSoonEndTime - now) / 1000))
+      setTimeLeft(diff)
+    }
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
+  }, [startingSoon, startingSoonEndTime])
+
+  const formatSoonTimer = (totalSeconds) => {
+    if (totalSeconds === null) return ''
+    if (totalSeconds <= 0) return 'SOON!'
+    const m = Math.floor(totalSeconds / 60)
+    const s = totalSeconds % 60
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
   const [timers, setTimers] = React.useState({ currentGameTime: '00:00:00', totalTime: '000:00:00' })
   const overlayEvent = useOverlayEvent(2000)
   const eventTitle = overlayEvent?.overlayTitle || overlayEvent?.name || ''
@@ -463,8 +491,8 @@ export default function OverlayFull() {
   const tvShellRef = React.useRef(null)
   const tvScreenRef = React.useRef(null)
   
-  // TV Power state: ON if game is live OR event is active
-  const isTvPowered = !!current || !!eventTitle
+  // TV Power state: ON if game is live OR event is active OR starting soon
+  const isTvPowered = !!current || !!eventTitle || startingSoon
   const tvPowerClass = isTvPowered ? 'power-on' : 'power-off'
 
   const currentEnabled = moduleConfig.current?.enabled ?? false
@@ -474,7 +502,7 @@ export default function OverlayFull() {
   const shouldLoadTimers = timersEnabled || tvNeedsTimers
   const showEventTimer = timersEnabled && globalConfig.showTimer !== false
 
-  const needsCurrent = currentEnabled || achievementsEnabled || tvEnabled
+  const needsCurrent = currentEnabled || achievementsEnabled || tvEnabled || true // Always fetch to get startingSoon status
   const tvNeedsStats = tvEnabled
   const needsStats = statsEnabled || tvNeedsStats
 
@@ -487,6 +515,8 @@ export default function OverlayFull() {
         if (res.ok) {
           const json = await res.json()
           setCurrent(json?.current || null)
+          setStartingSoon(!!json?.startingSoon)
+          setStartingSoonEndTime(json?.startingSoonEndTime || null)
           return
         }
       } catch {}
@@ -495,8 +525,12 @@ export default function OverlayFull() {
         const curId = Storage.getCurrentGameId()
         const found = games.find(x => x.id === curId) || null
         setCurrent(found)
+        setStartingSoon(false)
+        setStartingSoonEndTime(null)
       } catch {
         setCurrent(null)
+        setStartingSoon(false)
+        setStartingSoonEndTime(null)
       }
     }
     loadCurrent()
@@ -806,6 +840,28 @@ export default function OverlayFull() {
 
   const moduleDefs = [
     {
+      id: 'soon-timer',
+      order: 0,
+      position: 'left',
+      enabled: startingSoon,
+      content: (
+        <div className="overlay-card full-overlay-card soon-timer-card">
+          <div className="full-card-title">Stream Status</div>
+          <div className="soon-timer-content" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px 0' }}>
+            {tvLogoUrl ? (
+              <img src={tvLogoUrl} alt="Logo" style={{ maxWidth: '120px', marginBottom: '15px' }} />
+            ) : (
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#5ecf86', marginBottom: '10px' }}>{tvLogoText}</div>
+            )}
+            <div style={{ fontSize: '18px', color: '#5ecf86', fontWeight: 'bold', letterSpacing: '1px', marginBottom: '5px' }}>STARTING SOON</div>
+            <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#66b7ff', fontFamily: 'monospace' }}>
+              {formatSoonTimer(timeLeft)}
+            </div>
+          </div>
+        </div>
+      )
+    },
+    {
       id: 'current',
       order: moduleConfig.current?.order || 1,
       position: moduleConfig.current?.position || 'left',
@@ -815,7 +871,7 @@ export default function OverlayFull() {
           className={`overlay-card full-overlay-card${nowPlayingCover ? ` full-overlay-now-playing${nowPlayingToneClass}` : ''}`}
           style={nowPlayingCover ? { '--now-playing-cover': `url(${nowPlayingCover})` } : undefined}
         >
-          <div className="full-card-title">Now Playing</div>
+          <div className="full-card-title">{startingSoon ? 'Up Next' : 'Now Playing'}</div>
           {current ? (
             <div className="full-game-card">
               {showNowPlayingThumb && (
@@ -832,8 +888,8 @@ export default function OverlayFull() {
                   {globalConfig.showYear !== false && current.release_year ? ` • ${current.release_year}` : ''}
                   {globalConfig.showPublisher !== false && current.publisher ? ` • ${current.publisher}` : ''}
                 </div>
-                {current.status && <div className="full-game-status">{current.status}</div>}
-                {showEventTimer && (
+                <div className="full-game-status">{startingSoon ? 'WARMING UP...' : (current.status || '')}</div>
+                {showEventTimer && !startingSoon && (
                   <div className="full-game-timer">
                     <span className="full-game-timer-label">Current</span>
                     <span className="full-game-timer-value">{timers.currentGameTime}</span>
@@ -842,7 +898,7 @@ export default function OverlayFull() {
               </div>
             </div>
           ) : (
-            <div className="text-secondary small">No current game selected.</div>
+            <div className="text-secondary small">{startingSoon ? 'No game scheduled.' : 'No current game selected.'}</div>
           )}
         </div>
       )
@@ -851,7 +907,7 @@ export default function OverlayFull() {
       id: eventModuleId,
       order: eventModuleConfig?.order || 1,
       position: eventModuleConfig?.position || 'left',
-      enabled: eventModuleEnabled,
+      enabled: eventModuleEnabled && !startingSoon,
       content: (
         <div className="overlay-card full-overlay-card full-overlay-event">
           <div className="full-card-title">{eventModuleTitle}</div>
@@ -884,10 +940,33 @@ export default function OverlayFull() {
       )
     },
     {
+      id: 'timers',
+      order: moduleConfig.timers?.order || 1,
+      position: moduleConfig.timers?.position || 'right',
+      enabled: timersEnabled && !startingSoon,
+      content: (
+        <div className="overlay-card full-overlay-card">
+          <div className="full-card-title">Timers</div>
+          <div className="full-timer-list">
+            <div className="full-timer-item">
+              <span className="full-timer-label">Current Session</span>
+              <span className="full-timer-value">{timers.currentGameTime}</span>
+            </div>
+            {globalConfig.showTimer !== false && (
+              <div className="full-timer-item">
+                <span className="full-timer-label">{eventTitle || 'Event'} Total</span>
+                <span className="full-timer-value">{timers.totalTime}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    },
+    {
       id: 'achievements',
       order: moduleConfig.achievements?.order || 1,
       position: moduleConfig.achievements?.position || 'right',
-      enabled: achievementsEnabled && globalConfig.showAchievements !== false,
+      enabled: achievementsEnabled && globalConfig.showAchievements !== false && !startingSoon,
       content: (
         <div className="overlay-card full-overlay-card">
           <div className="full-card-title">Achievements</div>
@@ -1111,7 +1190,7 @@ export default function OverlayFull() {
   }
 
   const consoleAcronym = tvEnabled ? getConsoleAcronym(current?.console) : ''
-  const inputText = consoleAcronym ? clampDotText(sanitizeDotText(consoleAcronym), DOT_LABEL_MAX) : ' '
+  const inputText = startingSoon ? 'SOON' : (consoleAcronym ? clampDotText(sanitizeDotText(consoleAcronym), DOT_LABEL_MAX) : ' ')
   const tvTitleText = tvEnabled ? clampDotText(sanitizeDotText(current?.title), DOT_GAME_SCROLL_MAX) : ''
   const gameLabelText = tvTitleText ? clampDotText(sanitizeDotText('Now Playing'), DOT_LABEL_MAX) : ''
   const gameMetaParts = []
@@ -1145,7 +1224,25 @@ export default function OverlayFull() {
       const labelText = display?.label == null ? '' : String(display.label)
       const label = applyDisplayTokens(renameDisplayLabel(labelText), timers, current)
       const rawValue = applyDisplayTokens(display?.value, timers, current)
-      const value = applyDisplayFallback(rawValue, labelText, timers)
+      let value = applyDisplayFallback(rawValue, labelText, timers)
+      
+      if (startingSoon) {
+        const lowerLabel = label.toLowerCase()
+        const lowerRaw = labelText.toLowerCase()
+        if (
+          lowerLabel.includes('current') || 
+          lowerLabel.includes('status') || 
+          lowerLabel.includes('session') ||
+          lowerRaw.includes('status') ||
+          lowerRaw.includes('session')
+        ) {
+          value = 'PRE-SHOW'
+        }
+        if (lowerLabel.includes('event') || lowerRaw.includes('event')) {
+          value = 'STANDBY'
+        }
+      }
+
       return { label, value }
     })
     .filter(display => display.label || display.value)
@@ -1185,6 +1282,14 @@ export default function OverlayFull() {
   const centerItems = React.useMemo(() => {
     if (!tvEnabled) return []
     const items = []
+    if (startingSoon) {
+      items.push({
+        type: 'soon',
+        label: 'STREAM STATUS',
+        title: 'THANK YOU FOR WAITING : PLS STAND BY : ',
+        meta: 'STAY TUNED'
+      })
+    }
     if (tvTitleText) {
       items.push({
         type: 'game',
@@ -1204,6 +1309,7 @@ export default function OverlayFull() {
     return items
   }, [
     tvEnabled,
+    startingSoon,
     tvTitleText,
     gameLabelText,
     gameMetaText,
@@ -1227,6 +1333,10 @@ export default function OverlayFull() {
     centerRotationItems.findIndex(item => item.type === 'game')
   ), [centerRotationItems])
 
+  const soonCenterIndex = React.useMemo(() => (
+    centerRotationItems.findIndex(item => item.type === 'soon')
+  ), [centerRotationItems])
+
   React.useEffect(() => {
     if (!tvEnabled) {
       setCenterIndex(0)
@@ -1234,6 +1344,12 @@ export default function OverlayFull() {
       return
     }
     if (bezelAchievement || connectorActive) return
+    
+    if (startingSoon && soonCenterIndex >= 0) {
+      setCenterIndex(soonCenterIndex)
+      return
+    }
+
     setCenterIndex(0)
     if (centerRotationItems.length <= 1) return
     const id = setInterval(() => {
@@ -1241,10 +1357,11 @@ export default function OverlayFull() {
       setCenterIndex(prev => (prev + 1) % centerRotationItems.length)
     }, logoSwapMs)
     return () => clearInterval(id)
-  }, [tvEnabled, bezelAchievement, connectorActive, centerRotationItems.length, logoSwapMs, centerCycleSeed])
+  }, [tvEnabled, bezelAchievement, connectorActive, centerRotationItems.length, logoSwapMs, centerCycleSeed, startingSoon, soonCenterIndex])
 
   React.useEffect(() => {
     if (!tvEnabled) return
+    if (startingSoon) return
     const gameId = current?.id || null
     if (!gameId) return
     if (gameId === lastGameIdRef.current) return
@@ -1291,7 +1408,7 @@ export default function OverlayFull() {
   const activeCenter = centerRotationItems[centerIndex] || centerRotationItems[0] || { type: 'logo' }
   const showGameLayer = centerItems.some(item => item.type === 'game')
   const showEventLayer = centerItems.some(item => item.type === 'event')
-  const showAchievementLayer = Boolean(bezelAchievement)
+  const showAchievementLayer = startingSoon ? false : Boolean(bezelAchievement)
   const centerOverride = connectorFocus === 'game'
     ? (showGameLayer ? 'game' : null)
     : connectorFocus === 'event'
@@ -1313,8 +1430,8 @@ export default function OverlayFull() {
         </div>
       )}
       <FullOverlayAchievementPopups
-        enabled={showAchievementPopups}
-        forceEnable={raTest && showAchievementPopups}
+        enabled={!startingSoon && showAchievementPopups}
+        forceEnable={!startingSoon && raTest && showAchievementPopups}
         duration={popupDuration}
         onActiveChange={setAchievementGlow}
       />
@@ -1345,10 +1462,11 @@ export default function OverlayFull() {
             <div className="full-tv-shell" ref={tvShellRef}>
               <div className="full-tv-screen" ref={tvScreenRef}>
                 <div className={`tv-screen-content ${tvPowerClass}`}>
-                  {current && stageFrames}
+                  {startingSoon && <StartingSoonModule enabled={startingSoon} />}
+                  {current && !startingSoon && stageFrames}
                 </div>
 
-                {!current && eventTitle && (
+                {!current && !startingSoon && eventTitle && (
                   <div className="tv-no-signal">
                     <div className="tv-static-snow" />
                     <div className="tv-hum-bar" />
@@ -1378,7 +1496,7 @@ export default function OverlayFull() {
                       const label = display.label?.toLowerCase() || ''
                       const isCurrent = label.includes('current') || label.includes('session')
                       const isEvent = label.includes('event')
-                      const showValue = isEvent ? !!eventTitle : (current || !isCurrent)
+                      const showValue = startingSoon || (isEvent ? !!eventTitle : (current || !isCurrent))
 
                       return (
                         <div className="full-tv-display" key={`tv-display-${index}`}>
@@ -1415,6 +1533,24 @@ export default function OverlayFull() {
                         <span>{tvLogoText}</span>
                       )}
                     </div>
+                    {startingSoon && (
+                      <div className="full-tv-logo-layer full-tv-logo-layer-soon">
+                        <div className="full-tv-logo-stack">
+                          <DotMatrixText text="STREAM STATUS" dotSize={2} dotGap={0} charGap={1} />
+                          <DotMatrixText
+                            text="THANK YOU FOR WAITING : PLS STAND BY : "
+                            dotSize={4}
+                            dotGap={0}
+                            charGap={1}
+                            scroll
+                            maxChars={DOT_SCROLL_VISIBLE}
+                            scrollSpeed={20}
+                            scrollGap={8}
+                          />
+                          <DotMatrixText text="STARTING SOON" dotSize={2} dotGap={0} charGap={1} />
+                        </div>
+                      </div>
+                    )}
                     {showGameLayer && (
                       <div className="full-tv-logo-layer full-tv-logo-layer-game">
                         <div className="full-tv-logo-stack">
