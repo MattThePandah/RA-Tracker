@@ -490,7 +490,7 @@ export default function OverlayFull() {
   const centerLockRef = React.useRef(0)
   const tvShellRef = React.useRef(null)
   const tvScreenRef = React.useRef(null)
-  
+
   // TV Power state: ON if game is live OR event is active OR starting soon
   const isTvPowered = !!current || !!eventTitle || startingSoon
   const tvPowerClass = isTvPowered ? 'power-on' : 'power-off'
@@ -519,7 +519,7 @@ export default function OverlayFull() {
           setStartingSoonEndTime(json?.startingSoonEndTime || null)
           return
         }
-      } catch {}
+      } catch { }
       try {
         const games = Storage.getGames()
         const curId = Storage.getCurrentGameId()
@@ -550,7 +550,7 @@ export default function OverlayFull() {
           setStats({ total, completed, percent })
           return
         }
-      } catch {}
+      } catch { }
       try {
         const games = Storage.getGames()
         const total = games.length
@@ -577,7 +577,7 @@ export default function OverlayFull() {
             setTimers({ currentGameTime: t.currentGameTime, totalTime: t.totalTime || t.psfestTime })
           }
         }
-      } catch {}
+      } catch { }
     }
     fetchTimers()
     id = setInterval(fetchTimers, 1000)
@@ -1225,13 +1225,13 @@ export default function OverlayFull() {
       const label = applyDisplayTokens(renameDisplayLabel(labelText), timers, current)
       const rawValue = applyDisplayTokens(display?.value, timers, current)
       let value = applyDisplayFallback(rawValue, labelText, timers)
-      
+
       if (startingSoon) {
         const lowerLabel = label.toLowerCase()
         const lowerRaw = labelText.toLowerCase()
         if (
-          lowerLabel.includes('current') || 
-          lowerLabel.includes('status') || 
+          lowerLabel.includes('current') ||
+          lowerLabel.includes('status') ||
           lowerLabel.includes('session') ||
           lowerRaw.includes('status') ||
           lowerRaw.includes('session')
@@ -1344,7 +1344,7 @@ export default function OverlayFull() {
       return
     }
     if (bezelAchievement || connectorActive) return
-    
+
     if (startingSoon && soonCenterIndex >= 0) {
       setCenterIndex(soonCenterIndex)
       return

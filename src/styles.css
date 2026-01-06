@@ -741,6 +741,11 @@ body {
   /* Critical for OBS transparency */
 }
 
+.overlay-theme-panda .full-overlay-shell {
+  font-family: 'Chakra Petch', 'Manrope', monospace;
+  letter-spacing: 0.02em;
+}
+
 .full-overlay-backdrop {
   position: absolute;
   inset: 0;
@@ -893,17 +898,107 @@ body {
 .full-tv-screen {
   position: relative;
   flex: 1 1 auto;
-  border-radius: var(--tv-screen-radius, 0px);
-  background: var(--tv-screen-bg, transparent);
+  border-radius: var(--tv-screen-radius, 50% / 5%);
+  /* Subtle horizontal curve */
+  background: var(--tv-screen-bg, #111);
   border: var(--tv-screen-lip-size, 12px) solid var(--tv-screen-lip, #1a1b1e);
-  /* Deep inner frame */
   border-bottom-width: calc(var(--tv-screen-lip-size, 12px) * 2.3);
-  /* Classic chunky bottom bezel */
   overflow: hidden;
   box-shadow: var(--tv-screen-shadow,
-      inset 0 0 50px rgba(0, 0, 0, 0.9),
+      inset 0 0 80px rgba(0, 0, 0, 0.9),
       0 0 0 1px var(--tv-screen-border, rgba(60, 60, 65, 0.4)));
   z-index: 1;
+  transition: box-shadow 0.3s ease;
+}
+
+.tv-no-signal {
+  position: absolute;
+  inset: 0;
+  background: #111;
+  overflow: hidden;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tv-static-snow {
+  position: absolute;
+  inset: -100%;
+  width: 300%;
+  height: 300%;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 150px 150px;
+  animation: static-noise 0.3s steps(4) infinite;
+  opacity: 0.15;
+  pointer-events: none;
+}
+
+.tv-hum-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20%;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.2) 50%, rgba(0, 0, 0, 0) 100%);
+  animation: hum-scroll 6s linear infinite;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.tv-no-signal-osd {
+  position: relative;
+  z-index: 10;
+  background: black;
+  color: #00ff00;
+  padding: 10px 20px;
+  font-family: 'Terminus', 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 24px;
+  text-transform: uppercase;
+  text-shadow: 2px 2px 0px rgba(0, 0, 0, 0.5);
+  box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.tv-osd-channel {
+  font-size: 18px;
+  opacity: 0.8;
+}
+
+@keyframes static-noise {
+  0% {
+    transform: translate(0, 0);
+  }
+
+  25% {
+    transform: translate(-5%, -5%);
+  }
+
+  50% {
+    transform: translate(5%, 5%);
+  }
+
+  75% {
+    transform: translate(-5%, 5%);
+  }
+
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+@keyframes hum-scroll {
+  from {
+    transform: translateY(-100%);
+  }
+
+  to {
+    transform: translateY(500%);
+  }
 }
 
 .full-tv-screen::before {
@@ -911,12 +1006,13 @@ body {
   position: absolute;
   inset: 0;
   background:
-    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.08) 1px, transparent 1px, transparent 2px),
-    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.12), rgba(0, 0, 0, 0.12) 1px, transparent 1px, transparent 3px);
-  background-size: 3px 100%, 100% 4px;
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+  background-size: 100% 2px, 3px 100%;
   pointer-events: none;
-  z-index: 2;
-  opacity: var(--tv-screen-overlay-opacity, 0.35);
+  z-index: 10;
+  opacity: var(--tv-screen-overlay-opacity, 0.6);
+  border-radius: var(--tv-screen-radius, 50% / 5%);
 }
 
 .full-tv-screen::after {
@@ -924,12 +1020,87 @@ body {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 50% 50%, transparent 35%, rgba(0, 0, 0, var(--tv-screen-vignette, 0.3)) 100%),
-    linear-gradient(120deg, rgba(255, 255, 255, 0.02) 0%, transparent 30%, rgba(255, 255, 255, 0.01) 100%);
+    radial-gradient(circle at 50% 50%, transparent 40%, rgba(0, 0, 0, 0.6) 100%),
+    /* Vignette */
+    linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, transparent 40%, rgba(255, 255, 255, 0) 100%);
+  /* Glare */
   pointer-events: none;
-  z-index: 3;
-  mix-blend-mode: screen;
-  opacity: var(--tv-screen-glare-opacity, 0.6);
+  z-index: 11;
+  opacity: var(--tv-screen-glare-opacity, 0.8);
+  border-radius: var(--tv-screen-radius, 50% / 5%);
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.tv-screen-content {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+}
+
+.tv-screen-content.power-on {
+  animation: turn-on 4s linear;
+  animation-fill-mode: forwards;
+}
+
+.tv-screen-content.power-off {
+  animation: turn-off 0.55s cubic-bezier(0.23, 1, 0.32, 1);
+  animation-fill-mode: forwards;
+}
+
+@keyframes turn-on {
+  0% {
+    transform: scale(1, 0.8) translate3d(0, 0, 0);
+    filter: brightness(30) saturate(1) opacity(1);
+    opacity: 1;
+  }
+
+  3.5% {
+    transform: scale(1, 0.8) translate3d(0, 100%, 0);
+  }
+
+  3.6% {
+    transform: scale(1, 0.8) translate3d(0, -100%, 0);
+    opacity: 1;
+  }
+
+  9% {
+    transform: scale(1.3, 0.6) translate3d(0, 100%, 0);
+    filter: brightness(30) saturate(1) opacity(1);
+    opacity: 1;
+  }
+
+  11% {
+    transform: scale(2.4, 1) translate3d(0, 0, 0);
+    filter: brightness(30) saturate(1) opacity(1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1, 1) translate3d(0, 0, 0);
+    filter: brightness(1) saturate(1) opacity(1);
+    opacity: 1;
+  }
+}
+
+@keyframes turn-off {
+  0% {
+    transform: scale(1, 1.3) translate3d(0, 0, 0);
+    filter: brightness(1);
+    opacity: 1;
+  }
+
+  60% {
+    transform: scale(1.3, 0.001) translate3d(0, 0, 0);
+    filter: brightness(10);
+  }
+
+  100% {
+    animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);
+    transform: scale(0.000, 0.0001) translate3d(0, 0, 0);
+    filter: brightness(50);
+  }
 }
 
 .full-tv-footer {
@@ -1024,7 +1195,10 @@ body {
 .dot-matrix-dot.on {
   background: #5ecf86;
   opacity: 1;
-  box-shadow: 0 0 4px rgba(94, 207, 134, 0.8);
+  box-shadow:
+    0 0 4px rgba(94, 207, 134, 0.8),
+    0 0 8px rgba(94, 207, 134, 0.4);
+  /* Bloom effect */
 }
 
 .full-tv-logo {
