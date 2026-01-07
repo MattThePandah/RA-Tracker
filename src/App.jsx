@@ -22,7 +22,7 @@ export default function App() {
       try {
         const data = await fetchPublicSite()
         if (activeRequest) setSiteTheme(data.site?.theme || null)
-      } catch {}
+      } catch { }
     }
     loadTheme()
     return () => { activeRequest = false }
@@ -39,7 +39,7 @@ export default function App() {
           <i className="bi bi-controller"></i>
           <span>RA Studio</span>
         </div>
-        
+
         <nav className="sidebar-nav">
           <div className="nav-group">
             <div className="nav-label">General</div>
@@ -58,6 +58,9 @@ export default function App() {
             </Link>
             <Link className={`nav-link ${active('library')}`} to={`${base}/library`}>
               <i className="bi bi-collection-fill"></i> Library
+            </Link>
+            <Link className={`nav-link ${active('select')}`} to={`${base}/select`}>
+              <i className="bi bi-controller"></i> Game Selector
             </Link>
             <Link className={`nav-link ${active('achievements')}`} to={`${base}/achievements`}>
               <i className="bi bi-trophy-fill"></i> Achievements
@@ -117,7 +120,7 @@ export default function App() {
             <TimerDock />
           </div>
         </header>
-        
+
         <div className="admin-content p-4">
           <Outlet />
         </div>

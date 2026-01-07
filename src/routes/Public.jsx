@@ -51,11 +51,11 @@ const DEFAULT_SITE = {
 }
 
 // --- Icons ---
-const IconSearch = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-const IconStar = () => <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-const IconPlay = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-const IconCheck = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
-const IconChevronDown = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+const IconSearch = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" /></svg>
+const IconStar = () => <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>
+const IconPlay = () => <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+const IconCheck = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></svg>
+const IconChevronDown = () => <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></svg>
 
 // --- Components ---
 const consoleLabel = (value) => {
@@ -77,7 +77,7 @@ function BambooRating({ rating, size = 'md' }) {
         <span>{value}</span>
         <small>/ 10</small>
       </div>
-      <div className="bamboo-emoji-display d-flex gap-1 p-2 rounded" style={{ 
+      <div className="bamboo-emoji-display d-flex gap-1 p-2 rounded" style={{
         fontSize: size === 'sm' ? '12px' : '1.2rem',
         background: 'rgba(0,0,0,0.05)',
         width: 'fit-content'
@@ -149,8 +149,8 @@ function AutoComplete({ onSelect, disabled }) {
           placeholder="Search for a game from the library..."
           value={query}
           onChange={e => {
-             setQuery(e.target.value)
-             if (!e.target.value) onSelect(null)
+            setQuery(e.target.value)
+            if (!e.target.value) onSelect(null)
           }}
           onFocus={() => query.length > 1 && setIsOpen(true)}
           disabled={disabled}
@@ -262,14 +262,14 @@ export default function Public() {
   const [loading, setLoading] = useState(true)
   const [streamStatus, setStreamStatus] = useState({ twitch: {}, youtube: {} })
   const [currentGame, setCurrentGame] = useState(null)
-  
+
   // Suggestion State
   const [suggestionSettings, setSuggestionSettings] = useState({ suggestions_open: true, max_open: 0, openCount: 0 })
   const [suggestForm, setSuggestForm] = useState({ title: '', console: '', requester: '', note: '' })
   const [suggestStatus, setSuggestStatus] = useState({ error: '', success: '' })
   const [captchaToken, setCaptchaToken] = useState('')
   const captchaRef = useRef(null)
-  
+
   // Filters
   const [reviewFilter, setReviewFilter] = useState({ query: '', console: 'All', sort: 'recent' })
 
@@ -286,7 +286,7 @@ export default function Public() {
           fetchCompletedDrafts(),
           fetchPublicCurrentGame()
         ])
-        
+
         if (gamesRes.status === 'fulfilled') setPublicGames(gamesRes.value.games || [])
         if (settingsRes.status === 'fulfilled') {
           const s = settingsRes.value
@@ -308,7 +308,7 @@ export default function Public() {
       }
     }
     load()
-    
+
     // Stream status polling
     const poll = async () => {
       try {
@@ -318,7 +318,7 @@ export default function Public() {
         ])
         if (statusRes.status === 'fulfilled') setStreamStatus(statusRes.value || {})
         if (currentRes.status === 'fulfilled') setCurrentGame(currentRes.value.current || null)
-      } catch {}
+      } catch { }
     }
     poll()
     const interval = setInterval(poll, 60000)
@@ -336,9 +336,9 @@ export default function Public() {
     [publicGames]
   )
   const planned = useMemo(() => publicGames.filter(g => g.publicStatus === 'Planned' || g.publicStatus === 'Queued'), [publicGames])
-  
+
   const consoles = useMemo(() => ['All', ...new Set(completed.map(g => consoleLabel(g.game?.console)).filter(Boolean))].sort(), [completed])
-  
+
   const filteredReviews = useMemo(() => {
     let list = completed
     if (reviewFilter.query) {
@@ -358,6 +358,7 @@ export default function Public() {
   }, [completed, reviewFilter])
 
   const featured = useMemo(() => {
+    if (!completed.length) return null
     if (site.featuredGameId) return completed.find(g => g.id === site.featuredGameId) || completed[0]
     return completed[0]
   }, [site.featuredGameId, completed])
@@ -366,9 +367,9 @@ export default function Public() {
   const handleSuggest = async (e) => {
     e.preventDefault()
     setSuggestStatus({ error: '', success: '' })
-    
+
     if (!suggestForm.title) return setSuggestStatus({ error: 'Please select or enter a game title.', success: '' })
-    
+
     try {
       await createSuggestion({ ...suggestForm, source: 'public', captchaToken })
       setSuggestForm({ title: '', console: '', requester: '', note: '' })
@@ -425,13 +426,13 @@ export default function Public() {
           Now Playing
           {liveLabel && <span className="pub-now-live">{liveLabel}</span>}
         </div>
-        <h2 className="pub-now-title">{currentGame.title || 'Current game'}</h2>
+        <h2 className="pub-now-title">{currentGame?.title || 'Current game'}</h2>
         <div className="pub-now-meta">
           {currentConsole && <span>{currentConsole}</span>}
-          {currentConsole && currentGame.release_year && <span>&bull;</span>}
-          {currentGame.release_year && <span>{currentGame.release_year}</span>}
-          {(currentConsole || currentGame.release_year) && currentGame.status && <span>&bull;</span>}
-          {currentGame.status && <span>{currentGame.status}</span>}
+          {currentConsole && currentGame?.release_year && <span>&bull;</span>}
+          {currentGame?.release_year && <span>{currentGame.release_year}</span>}
+          {(currentConsole || currentGame?.release_year) && currentGame?.status && <span>&bull;</span>}
+          {currentGame?.status && <span>{currentGame.status}</span>}
         </div>
         {liveActions.length > 0 && (
           <div className="pub-now-actions">
@@ -465,10 +466,10 @@ export default function Public() {
         <div className="pub-container pub-nav-inner">
           <Link to="/" className="pub-brand d-flex align-items-center">
             {site.logoImage ? (
-              <img 
-                src={`${import.meta.env.VITE_IGDB_PROXY_URL || ''}/local-assets/${site.logoImage}`} 
-                alt={site.title} 
-                style={{ height: '40px', width: 'auto', objectFit: 'contain' }} 
+              <img
+                src={`${import.meta.env.VITE_IGDB_PROXY_URL || ''}/local-assets/${site.logoImage}`}
+                alt={site.title}
+                style={{ height: '40px', width: 'auto', objectFit: 'contain' }}
               />
             ) : site.title}
           </Link>
@@ -480,10 +481,10 @@ export default function Public() {
           </div>
           <div className="pub-nav-actions">
             {site.ctaUrl || twitch.isLive ? (
-              <a 
-                href={site.ctaUrl || twitch.url} 
-                className="pub-btn primary small" 
-                target="_blank" 
+              <a
+                href={site.ctaUrl || twitch.url}
+                className="pub-btn primary small"
+                target="_blank"
                 rel="noreferrer"
                 style={twitch.isLive ? { animation: 'pub-glow 2s infinite', fontWeight: '800' } : {}}
               >
@@ -507,11 +508,11 @@ export default function Public() {
         <div className="pub-container pub-hero-content pub-animate-in">
           <div className="pub-hero-text">
             {site.characterImage && (
-              <img 
-                src={`${import.meta.env.VITE_IGDB_PROXY_URL || ''}/local-assets/${site.characterImage}`} 
-                alt="" 
+              <img
+                src={`${import.meta.env.VITE_IGDB_PROXY_URL || ''}/local-assets/${site.characterImage}`}
+                alt=""
                 className="mb-4"
-                style={{ height: '120px', width: 'auto', animation: 'float 4s ease-in-out infinite' }} 
+                style={{ height: '120px', width: 'auto', animation: 'float 4s ease-in-out infinite' }}
               />
             )}
             <h1 className="pub-title">{site.heroTitle}</h1>
@@ -537,23 +538,23 @@ export default function Public() {
               </div>
             )}
           </div>
-          
+
           {/* Featured Card */}
           {featured && (
             <div className="pub-hero-card-wrapper" style={{ animation: 'float 6s ease-in-out infinite' }}>
-               <div className="pub-hero-label">Latest Completion</div>
-               <Link to={`/game/${encodeURIComponent(featured.id)}`} className="pub-hero-card">
-                 <div className="pub-hero-cover">
-                   <img src={buildCoverUrl(featured.game?.image_url)} alt={featured.game?.title} />
-                 </div>
-                 <div className="pub-hero-info">
-                   <div className="d-flex justify-content-between align-items-end mb-2">
-                     <h3 className="mb-0">{featured.publicReviewTitle || featured.game?.title}</h3>
-                   </div>
-                   <BambooRating rating={featured.publicRating} />
-                   <div className="pub-read-more mt-3">Full Review &rarr;</div>
-                 </div>
-               </Link>
+              <div className="pub-hero-label">Latest Completion</div>
+              <Link to={`/game/${encodeURIComponent(featured.id)}`} className="pub-hero-card">
+                <div className="pub-hero-cover">
+                  <img src={buildCoverUrl(featured.game?.image_url)} alt={featured.game?.title} />
+                </div>
+                <div className="pub-hero-info">
+                  <div className="d-flex justify-content-between align-items-end mb-2">
+                    <h3 className="mb-0">{featured.publicReviewTitle || featured.game?.title}</h3>
+                  </div>
+                  <BambooRating rating={featured.publicRating} />
+                  <div className="pub-read-more mt-3">Full Review &rarr;</div>
+                </div>
+              </Link>
             </div>
           )}
         </div>
@@ -609,10 +610,10 @@ export default function Public() {
             <div className="pub-section-top">
               <SectionHeader title="Completed Reviews" subtitle={`${completed.length} games beaten and reviewed.`} />
               <div className="pub-filters">
-                <input 
-                  type="text" 
-                  placeholder="Find a review..." 
-                  value={reviewFilter.query} 
+                <input
+                  type="text"
+                  placeholder="Find a review..."
+                  value={reviewFilter.query}
                   onChange={e => setReviewFilter(prev => ({ ...prev, query: e.target.value }))}
                 />
                 <select value={reviewFilter.console} onChange={e => setReviewFilter(prev => ({ ...prev, console: e.target.value }))}>
@@ -625,9 +626,9 @@ export default function Public() {
                 </select>
               </div>
             </div>
-            
+
             {filteredReviews.length === 0 ? (
-               <div className="pub-empty">No reviews match your search.</div>
+              <div className="pub-empty">No reviews match your search.</div>
             ) : (
               <div className="pub-grid">
                 {filteredReviews.map(game => (
@@ -654,9 +655,9 @@ export default function Public() {
       {site.showPlanned && (
         <section className="pub-section bg-darker pub-animate-in" id="planned">
           <div className="pub-container">
-            <SectionHeader 
-              title="The Collection Queue" 
-              subtitle="Current backlog and games lined up for the next journey." 
+            <SectionHeader
+              title="The Collection Queue"
+              subtitle="Current backlog and games lined up for the next journey."
             />
             <div className="pub-queue-list mt-5">
               {planned.length === 0 && (
@@ -668,7 +669,7 @@ export default function Public() {
               {planned.map(item => (
                 <div key={item.id} className="pub-queue-item pub-glass">
                   <div className="pub-queue-cover shadow">
-                     {item.game?.image_url ? <img src={buildCoverUrl(item.game.image_url)} alt="" /> : <div className="no-cover"></div>}
+                    {item.game?.image_url ? <img src={buildCoverUrl(item.game.image_url)} alt="" /> : <div className="no-cover"></div>}
                   </div>
                   <div className="pub-queue-info">
                     <h4 className="mb-1">{item.game?.title}</h4>
@@ -714,7 +715,7 @@ export default function Public() {
               <form className="pub-suggestion-form" onSubmit={handleSuggest}>
                 <div className="form-group">
                   <label>Game Title</label>
-                  <AutoComplete 
+                  <AutoComplete
                     disabled={!suggestionSettings.suggestions_open}
                     onSelect={(game) => {
                       if (game) {
@@ -726,22 +727,22 @@ export default function Public() {
                   />
                   <small>Start typing to search existing library...</small>
                 </div>
-                
+
                 <div className="form-row">
                   <div className="form-group">
                     <label>Console (Optional)</label>
-                    <input 
-                      className="pub-input" 
-                      value={suggestForm.console} 
+                    <input
+                      className="pub-input"
+                      value={suggestForm.console}
                       onChange={e => setSuggestForm(prev => ({ ...prev, console: e.target.value }))}
                       disabled={!suggestionSettings.suggestions_open}
                     />
                   </div>
                   <div className="form-group">
                     <label>Your Name (Optional)</label>
-                    <input 
-                      className="pub-input" 
-                      value={suggestForm.requester} 
+                    <input
+                      className="pub-input"
+                      value={suggestForm.requester}
                       onChange={e => setSuggestForm(prev => ({ ...prev, requester: e.target.value }))}
                       disabled={!suggestionSettings.suggestions_open}
                     />
@@ -750,9 +751,9 @@ export default function Public() {
 
                 <div className="form-group">
                   <label>Why this game?</label>
-                  <textarea 
-                    className="pub-input" 
-                    rows="3" 
+                  <textarea
+                    className="pub-input"
+                    rows="3"
                     value={suggestForm.note}
                     onChange={e => setSuggestForm(prev => ({ ...prev, note: e.target.value }))}
                     disabled={!suggestionSettings.suggestions_open}

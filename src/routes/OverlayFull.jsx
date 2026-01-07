@@ -3,6 +3,7 @@ import * as Storage from '../services/storage.js'
 import { useAchievements } from '../context/AchievementContext.jsx'
 import * as RA from '../services/retroachievements.js'
 import { buildOverlayUrl } from '../utils/overlayApi.js'
+import CrtWheel from '../components/CrtWheel'
 import { buildCoverUrl } from '../utils/coverUrl.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
@@ -48,6 +49,7 @@ function safeText(value) {
 
 const LOGO_SWAP_INTERVAL_MS = 60000
 const GAME_LOCK_MS = 10000
+const WHEEL_GAME_LOCK_MS = 30000
 const CONNECTOR_DEFAULT_POLL_MS = 1500
 const DOT_TEXT_MAX = 20
 const DOT_GAME_SCROLL_MAX = 64
@@ -58,6 +60,7 @@ const DOT_LABEL_MAX = 14
 const DOT_META_MAX = 18
 const DOT_ALLOWED = /[A-Z0-9:%\-\.\/ ]/
 const CONNECTOR_COLOR_ALLOWED = /^[#(),.%0-9a-zA-Z\s\-\/]+$/
+const WHEEL_ANNOUNCE_HOLD_MS = 5000
 
 const TIMER_TOKENS = [
   '{current}',
@@ -168,6 +171,19 @@ function clampDotText(text, maxLen) {
   if (value.length <= maxLen) return value
   const sliceLen = Math.max(0, maxLen - 3)
   return `${value.slice(0, sliceLen).trimEnd()}...`
+}
+
+function shouldScrollDotText(text, maxChars) {
+  if (!text) return false
+  return String(text).length > maxChars
+}
+
+function formatConsoleForMeta(consoleName, acronym, maxLen) {
+  const name = String(consoleName || '').trim()
+  const short = String(acronym || '').trim()
+  if (name && name.length <= maxLen) return name
+  if (short) return short
+  return name
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -416,6 +432,23 @@ export default function OverlayFull() {
   const tvDisplaySource = Array.isArray(tvConfig.displays) ? tvConfig.displays : defaultTvDisplays
   const tvStickerSource = Array.isArray(tvConfig.stickers) ? tvConfig.stickers : []
   const [dynamicStickers, setDynamicStickers] = React.useState([])
+  const [wheelSelectedConsole, setWheelSelectedConsole] = React.useState('')
+  const [wheelAnnouncement, setWheelAnnouncement] = React.useState(null)
+  const wheelAnnouncementTimeoutRef = React.useRef(null)
+  const wheelGameLockTimeoutRef = React.useRef(null)
+
+  React.useEffect(() => {
+    return () => {
+      if (wheelAnnouncementTimeoutRef.current) {
+        clearTimeout(wheelAnnouncementTimeoutRef.current)
+        wheelAnnouncementTimeoutRef.current = null
+      }
+      if (wheelGameLockTimeoutRef.current) {
+        clearTimeout(wheelGameLockTimeoutRef.current)
+        wheelGameLockTimeoutRef.current = null
+      }
+    }
+  }, [])
 
   // Handle dynamic stickers from StreamerBot
   React.useEffect(() => {
@@ -491,8 +524,8 @@ export default function OverlayFull() {
   const tvShellRef = React.useRef(null)
   const tvScreenRef = React.useRef(null)
 
-  // TV Power state: ON if game is live OR event is active OR starting soon
-  const isTvPowered = !!current || !!eventTitle || startingSoon
+  // TV Power state: ON if game is live OR event is active OR starting soon OR wheel is pinned
+  const isTvPowered = !!current || !!eventTitle || startingSoon || tvConfig.wheelPinned === true
   const tvPowerClass = isTvPowered ? 'power-on' : 'power-off'
 
   const currentEnabled = moduleConfig.current?.enabled ?? false
@@ -599,8 +632,11 @@ export default function OverlayFull() {
     if (!achievementsEnabled) return
     const newGameId = current?.id || null
     if (!newGameId) {
-      clearCurrentGameData()
-      setCurrentGameId(null)
+      const hasAchievementData = state.currentGameAchievements.length > 0 || state.currentGameProgress
+      if (currentGameId !== null || hasAchievementData) {
+        clearCurrentGameData()
+        setCurrentGameId(null)
+      }
       return
     }
     if (newGameId !== currentGameId) {
@@ -1190,21 +1226,31 @@ export default function OverlayFull() {
   }
 
   const consoleAcronym = tvEnabled ? getConsoleAcronym(current?.console) : ''
-  const inputText = startingSoon ? 'SOON' : (consoleAcronym ? clampDotText(sanitizeDotText(consoleAcronym), DOT_LABEL_MAX) : ' ')
+  const wheelConsoleAcronym = tvEnabled ? getConsoleAcronym(wheelSelectedConsole) : ''
+  const inputText = startingSoon
+    ? 'SOON'
+    : (wheelConsoleAcronym || consoleAcronym
+      ? clampDotText(sanitizeDotText(wheelConsoleAcronym || consoleAcronym), DOT_LABEL_MAX)
+      : ' ')
   const tvTitleText = tvEnabled ? clampDotText(sanitizeDotText(current?.title), DOT_GAME_SCROLL_MAX) : ''
+  const tvTitleScroll = shouldScrollDotText(tvTitleText, DOT_GAME_SCROLL_VISIBLE)
   const gameLabelText = tvTitleText ? clampDotText(sanitizeDotText('Now Playing'), DOT_LABEL_MAX) : ''
   const gameMetaParts = []
   if (current?.release_year) gameMetaParts.push(String(current.release_year))
   if (current?.publisher) gameMetaParts.push(`Dev ${current.publisher}`)
+  if (!gameMetaParts.length && current?.console) {
+    gameMetaParts.push(formatConsoleForMeta(current.console, consoleAcronym, DOT_META_MAX))
+  }
   const gameMetaText = tvTitleText && gameMetaParts.length
     ? clampDotText(sanitizeDotText(gameMetaParts.join(' ')), DOT_META_MAX)
     : ''
   const hasEventStats = tvEnabled && Number.isFinite(stats.total) && stats.total > 0
+  const showEventCenter = tvEnabled && (Boolean(eventTitle) || hasEventStats)
   const eventLabelBase = eventTitle || 'Event'
-  const eventLabelText = hasEventStats ? clampDotText(sanitizeDotText(eventLabelBase), DOT_LABEL_MAX) : ''
+  const eventLabelText = showEventCenter ? clampDotText(sanitizeDotText(eventLabelBase), DOT_LABEL_MAX) : ''
   const eventPercentText = hasEventStats
     ? clampDotText(sanitizeDotText(`${stats.percent}%`), DOT_LABEL_MAX)
-    : ''
+    : clampDotText(sanitizeDotText(eventSubtitle || 'LIVE'), DOT_LABEL_MAX)
   const eventCountText = hasEventStats ? `${stats.completed}/${stats.total}` : ''
   const eventMetaText = hasEventStats
     ? clampDotText(sanitizeDotText(`Done ${eventCountText}`), DOT_META_MAX)
@@ -1217,6 +1263,30 @@ export default function OverlayFull() {
     : ''
   const achievementPointsText = bezelAchievement
     ? clampDotText(sanitizeDotText(`${bezelAchievement.points || 0} PTS`), DOT_META_MAX)
+    : ''
+  const wheelWinner = wheelAnnouncement?.winner || null
+  const wheelWinnerType = wheelWinner?.type || (wheelWinner?.isConsole ? 'console' : 'game')
+  const wheelWinnerTitleRaw = wheelWinner ? safeText(wheelWinner.title || wheelWinner.name) : ''
+  const wheelTitleText = wheelWinnerTitleRaw
+    ? clampDotText(sanitizeDotText(wheelWinnerTitleRaw), DOT_SCROLL_MAX)
+    : ''
+  const wheelTitleScroll = shouldScrollDotText(wheelTitleText, DOT_GAME_SCROLL_VISIBLE)
+  const wheelLabelText = wheelTitleText
+    ? clampDotText(sanitizeDotText(wheelWinnerType === 'console' ? 'Console Winner' : 'Wheel Winner'), DOT_LABEL_MAX)
+    : ''
+  const wheelWinnerConsole = wheelWinnerType === 'console'
+    ? ''
+    : (typeof wheelWinner?.console === 'object'
+      ? safeText(wheelWinner.console?.name || wheelWinner.console?.id)
+      : safeText(wheelWinner?.console))
+  const wheelMetaParts = []
+  const wheelWinnerYear = wheelWinner?.release_year ?? wheelWinner?.releaseYear ?? wheelWinner?.year
+  const wheelWinnerPublisher = wheelWinner?.publisher ?? wheelWinner?.developer ?? wheelWinner?.studio
+  if (wheelWinnerYear) wheelMetaParts.push(String(wheelWinnerYear))
+  if (wheelWinnerPublisher) wheelMetaParts.push(`Dev ${wheelWinnerPublisher}`)
+  if (!wheelMetaParts.length && wheelWinnerConsole) wheelMetaParts.push(formatConsoleForMeta(wheelWinnerConsole, getConsoleAcronym(wheelWinnerConsole), DOT_META_MAX))
+  const wheelMetaText = wheelTitleText && wheelMetaParts.length && wheelWinnerType !== 'console'
+    ? clampDotText(sanitizeDotText(wheelMetaParts.join(' ')), DOT_META_MAX)
     : ''
   const tvDisplays = tvDisplaySource
     .slice(0, 4)
@@ -1250,7 +1320,9 @@ export default function OverlayFull() {
   const connectorActive = tvEnabled && !!connectorEvent
   const connectorSource = normalizeConnectorSource(connectorEvent?.source)
   const connectorType = normalizeConnectorType(connectorEvent?.type)
-  const connectorFocus = normalizeConnectorFocus(connectorEvent?.focus || connectorEvent?.center || connectorEvent?.mode)
+  const connectorFocus = connectorActive
+    ? normalizeConnectorFocus(connectorEvent?.focus || connectorEvent?.center || connectorEvent?.mode)
+    : null
   const connectorTheme = resolveConnectorTheme(connectorEvent, connectorSource, connectorType)
   const connectorStyle = connectorActive ? {
     '--connector-border': connectorTheme.border,
@@ -1298,7 +1370,7 @@ export default function OverlayFull() {
         meta: gameMetaText
       })
     }
-    if (hasEventStats) {
+    if (showEventCenter) {
       items.push({
         type: 'event',
         label: eventLabelText,
@@ -1343,27 +1415,30 @@ export default function OverlayFull() {
       centerLockRef.current = 0
       return
     }
-    if (bezelAchievement || connectorActive) return
+    if (bezelAchievement || connectorActive || wheelAnnouncement) return
 
     if (startingSoon && soonCenterIndex >= 0) {
       setCenterIndex(soonCenterIndex)
       return
     }
 
-    setCenterIndex(0)
     if (centerRotationItems.length <= 1) return
     const id = setInterval(() => {
       if (centerLockRef.current && Date.now() < centerLockRef.current) return
       setCenterIndex(prev => (prev + 1) % centerRotationItems.length)
     }, logoSwapMs)
     return () => clearInterval(id)
-  }, [tvEnabled, bezelAchievement, connectorActive, centerRotationItems.length, logoSwapMs, centerCycleSeed, startingSoon, soonCenterIndex])
+  }, [tvEnabled, bezelAchievement, connectorActive, wheelAnnouncement, centerRotationItems.length, logoSwapMs, centerCycleSeed, startingSoon, soonCenterIndex])
 
   React.useEffect(() => {
     if (!tvEnabled) return
     if (startingSoon) return
     const gameId = current?.id || null
     if (!gameId) return
+    if (!lastGameIdRef.current) {
+      lastGameIdRef.current = gameId
+      return
+    }
     if (gameId === lastGameIdRef.current) return
     lastGameIdRef.current = gameId
     if (gameCenterIndex >= 0) {
@@ -1409,12 +1484,16 @@ export default function OverlayFull() {
   const showGameLayer = centerItems.some(item => item.type === 'game')
   const showEventLayer = centerItems.some(item => item.type === 'event')
   const showAchievementLayer = startingSoon ? false : Boolean(bezelAchievement)
-  const centerOverride = connectorFocus === 'game'
+  const centerOverride = connectorActive && connectorFocus === 'game'
     ? (showGameLayer ? 'game' : null)
-    : connectorFocus === 'event'
+    : connectorActive && connectorFocus === 'event'
       ? (showEventLayer ? 'event' : null)
       : null
-  const centerMode = centerOverride ?? (connectorActive ? 'connector' : bezelAchievement ? 'achievement' : (activeCenter?.type || 'logo'))
+  const wheelAnnouncementActive = !startingSoon && Boolean(wheelTitleText)
+  const showWheelLayer = wheelAnnouncementActive && wheelWinnerType === 'console'
+  const wheelUsesGameLayer = wheelAnnouncementActive && wheelWinnerType !== 'console'
+  const centerModeBase = centerOverride ?? (connectorActive ? 'connector' : bezelAchievement ? 'achievement' : (activeCenter?.type || 'logo'))
+  const centerMode = wheelUsesGameLayer ? 'game' : (showWheelLayer ? 'wheel' : centerModeBase)
   const showConnectorLayer = connectorActive && centerMode === 'connector'
 
   const stageFrames = (
@@ -1461,12 +1540,46 @@ export default function OverlayFull() {
           {tvEnabled ? (
             <div className="full-tv-shell" ref={tvShellRef}>
               <div className="full-tv-screen" ref={tvScreenRef}>
-                <div className={`tv-screen-content ${tvPowerClass}`}>
+                <div className={`tv-screen-content ${tvPowerClass}${tvConfig.wheelPinned === true ? ' tv-wheel-pinned' : ''}`}>
+                  <CrtWheel
+                    base={import.meta.env.VITE_IGDB_PROXY_URL}
+                    pinned={tvConfig.wheelPinned === true}
+                    onStateChange={(info) => {
+                      if (info?.spinning && !info?.winner) return
+                      const winner = info?.winner
+                      if (winner) {
+                        const winnerTitle = winner.title || winner.name || ''
+                        if (winnerTitle) {
+                          setWheelAnnouncement({ winner })
+                          if (tvEnabled && current && gameCenterIndex >= 0) {
+                            centerLockRef.current = Date.now() + WHEEL_GAME_LOCK_MS
+                            setCenterIndex(gameCenterIndex)
+                            if (wheelGameLockTimeoutRef.current) clearTimeout(wheelGameLockTimeoutRef.current)
+                            wheelGameLockTimeoutRef.current = setTimeout(() => {
+                              centerLockRef.current = 0
+                              setCenterIndex(0)
+                              setCenterCycleSeed(seed => seed + 1)
+                            }, WHEEL_GAME_LOCK_MS)
+                          }
+                          if (wheelAnnouncementTimeoutRef.current) clearTimeout(wheelAnnouncementTimeoutRef.current)
+                          wheelAnnouncementTimeoutRef.current = setTimeout(() => {
+                            setWheelAnnouncement(null)
+                          }, WHEEL_ANNOUNCE_HOLD_MS)
+                        }
+                      }
+                      const selected = info?.selectedConsole || ''
+                      const next = (winner && winner.type === 'console' && winner.title)
+                        ? winner.title
+                        : (selected && selected !== 'All' ? selected : '')
+                      if (!next) return
+                      setWheelSelectedConsole(prev => (prev === next ? prev : next))
+                    }}
+                  />
                   {startingSoon && <StartingSoonModule enabled={startingSoon} />}
                   {current && !startingSoon && stageFrames}
                 </div>
 
-                {!current && !startingSoon && eventTitle && (
+                {!current && !startingSoon && eventTitle && tvConfig.wheelPinned !== true && (
                   <div className="tv-no-signal">
                     <div className="tv-static-snow" />
                     <div className="tv-hum-bar" />
@@ -1557,20 +1670,20 @@ export default function OverlayFull() {
                           {activeCenter.type === 'game' && activeCenter.label ? (
                             <DotMatrixText text={activeCenter.label} dotSize={2} dotGap={0} charGap={1} />
                           ) : (
-                            <DotMatrixText text={gameLabelText} dotSize={2} dotGap={0} charGap={1} />
+                            <DotMatrixText text={wheelUsesGameLayer ? wheelLabelText : gameLabelText} dotSize={2} dotGap={0} charGap={1} />
                           )}
                           <DotMatrixText
-                            text={tvTitleText}
+                            text={wheelUsesGameLayer ? wheelTitleText : tvTitleText}
                             dotSize={4}
                             dotGap={0}
                             charGap={1}
-                            scroll
+                            scroll={wheelUsesGameLayer ? wheelTitleScroll : tvTitleScroll}
                             maxChars={DOT_GAME_SCROLL_VISIBLE}
                             scrollSpeed={14}
                             scrollGap={8}
                           />
-                          {gameMetaText ? (
-                            <DotMatrixText text={gameMetaText} dotSize={2} dotGap={0} charGap={1} />
+                          {(wheelUsesGameLayer ? wheelMetaText : gameMetaText) ? (
+                            <DotMatrixText text={wheelUsesGameLayer ? wheelMetaText : gameMetaText} dotSize={2} dotGap={0} charGap={1} />
                           ) : null}
                         </div>
                       </div>
@@ -1647,6 +1760,26 @@ export default function OverlayFull() {
                           />
                           {achievementPointsText ? (
                             <DotMatrixText text={achievementPointsText} dotSize={2} dotGap={0} charGap={1} />
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
+                    {showWheelLayer && (
+                      <div className="full-tv-logo-layer full-tv-logo-layer-wheel">
+                        <div className="full-tv-logo-stack">
+                          <DotMatrixText text={wheelLabelText} dotSize={2} dotGap={0} charGap={1} />
+                          <DotMatrixText
+                            text={wheelTitleText}
+                            dotSize={4}
+                            dotGap={0}
+                            charGap={1}
+                            scroll={wheelTitleScroll}
+                            maxChars={DOT_SCROLL_VISIBLE}
+                            scrollSpeed={16}
+                            scrollGap={8}
+                          />
+                          {wheelMetaText ? (
+                            <DotMatrixText text={wheelMetaText} dotSize={2} dotGap={0} charGap={1} />
                           ) : null}
                         </div>
                       </div>

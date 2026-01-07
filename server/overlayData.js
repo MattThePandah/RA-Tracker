@@ -120,6 +120,7 @@ const DEFAULT_OVERLAY_SETTINGS = {
     achievementCycleMs: 8000,
     tv: {
       enabled: true,
+      wheelPinned: false,
       logoText: 'PANDA',
       logoUrl: '',
       connectorIcons: {
@@ -382,6 +383,7 @@ function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS
       achievementCycleMs: clampNumber(incoming.full?.achievementCycleMs, 0, 60000, base.full.achievementCycleMs),
       tv: {
         enabled: normalizeBoolean(incoming.full?.tv?.enabled, base.full?.tv?.enabled ?? true),
+        wheelPinned: normalizeBoolean(incoming.full?.tv?.wheelPinned, base.full?.tv?.wheelPinned ?? false),
         logoText: cleanText(incoming.full?.tv?.logoText || base.full?.tv?.logoText, 32),
         logoUrl: cleanText(incoming.full?.tv?.logoUrl || base.full?.tv?.logoUrl, 200),
         connectorIcons: normalizeConnectorIcons(incoming.full?.tv?.connectorIcons, base.full?.tv?.connectorIcons),

@@ -56,6 +56,15 @@ import {
   saveTimerStateToFile,
   loadLegacyTimerStateFromDb
 } from './timerData.js'
+import {
+  getWheelState,
+  getWheelSnapshot,
+  WHEEL_VERSION,
+  setWheelMode,
+  updateWheelSettings,
+  executeSpin,
+  refreshPool
+} from './wheelData.js'
 import { getPool, isPgEnabled } from './db.js'
 
 const app = express()
@@ -1156,36 +1165,79 @@ app.post('/api/sample-games', requireAdmin, requireCsrf, requireOrigin, (req, re
 })
 
 // Wheel spin sync so OBS overlay can mirror app spins  
-let overlaySpin = { ts: 0, sample: [], targetIdx: 0, durationMs: 9000, poolSize: 0 }
 app.get('/overlay/spin', requireOverlayAuth, (req, res) => {
-  res.json(overlaySpin)
+  const state = getWheelState()
+  res.json(state.spin || { ts: 0, sample: [], targetIdx: 0, durationMs: 4500, poolSize: 0 })
 })
+// Deprecated: old manual overlay sync, now handled via main /wheel/spin
 app.post('/overlay/spin', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
-  const { sample, targetIdx, durationMs, poolSize } = req.body || {}
-  if (!Array.isArray(sample) || typeof targetIdx !== 'number') {
-    return res.status(400).json({ error: 'sample[] and targetIdx required' })
-  }
-  overlaySpin = {
-    ts: Date.now(),
-    sample,
-    targetIdx,
-    durationMs: Number(durationMs) || 9000,
-    poolSize: poolSize || 0
-  }
-  res.json({ ok: true, ts: overlaySpin.ts })
+  res.json({ ok: true })
 })
 
 // Allow setting wheel sample without triggering a spin (for idle overlay view)
 app.get('/overlay/wheel-state', requireOverlayAuth, (req, res) => {
-  res.json({ sample: overlaySpin.sample || [], poolSize: overlaySpin.poolSize || 0 })
+  getWheelSnapshot()
+    .then(snapshot => {
+      res.json({
+        sample: snapshot.sample || [],
+        poolSize: snapshot.poolSize || 0,
+        mode: snapshot.mode,
+        selectedConsole: snapshot.settings?.consoleFilter || 'All',
+        event: snapshot.event || { name: '', consoles: [] }
+      })
+    })
+    .catch(() => {
+      res.json({ sample: [], poolSize: 0, mode: 'game', selectedConsole: 'All', event: { name: '', consoles: [] } })
+    })
 })
 app.post('/overlay/wheel-state', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
-  const { sample, poolSize } = req.body || {}
-  if (!Array.isArray(sample)) return res.status(400).json({ error: 'sample[] required' })
-  overlaySpin.sample = sample
-  overlaySpin.poolSize = Number(poolSize) || 0
-  // Do not update ts here; avoids unintended spins in overlay
+  // Deprecated manual push, just return ok
   res.json({ ok: true })
+})
+
+// New Wheel Control Endpoints
+async function serializeWheelState(opts = {}) {
+  const snapshot = await getWheelSnapshot()
+  const payload = { ...snapshot }
+
+  if (opts.debug) {
+    try {
+      const activeEvent = await getActiveEvent()
+      payload.debug = {
+        wheelVersion: WHEEL_VERSION,
+        activeEvent: activeEvent ? { id: activeEvent.id, name: activeEvent.name, consoles: activeEvent.consoles } : null,
+        samplePreview: (payload.sample || []).slice(0, 16).map(item => (item && typeof item === 'object') ? (item.title || item.name || item.id || '') : String(item || ''))
+      }
+    } catch (e) {
+      payload.debug = { wheelVersion: WHEEL_VERSION, activeEvent: null, error: e?.message || String(e) }
+    }
+  }
+
+  return payload
+}
+
+app.get('/wheel/state', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+  const debug = String(req.query?.debug || '') === '1'
+  res.json(await serializeWheelState({ debug }))
+})
+
+app.post('/wheel/mode', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+  const { mode } = req.body
+  if (mode !== 'console' && mode !== 'game') return res.status(400).json({ error: 'invalid mode' })
+  setWheelMode(mode)
+  await refreshPool()
+  res.json(await serializeWheelState())
+})
+
+app.post('/wheel/settings', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+  updateWheelSettings(req.body)
+  await refreshPool()
+  res.json(await serializeWheelState())
+})
+
+app.post('/wheel/refresh', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
+  await refreshPool()
+  res.json(await serializeWheelState())
 })
 
 // Lightweight overlay stats (counts only) to avoid big payloads
@@ -2142,51 +2194,15 @@ function formatTime(seconds, longHours = false) {
 }
 
 // Authoritative wheel spin orchestration
-// Body: { pool: Game[], slotCount?: number, durationMs?: number, turns?: number }
 app.post('/wheel/spin', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
   try {
-    const slotCount = Math.min(Number(req.body?.slotCount) || 16, 32)
-    const durationMs = Math.max(1500, Math.min(Number(req.body?.durationMs) || 3800, 20000))
-    const turns = Math.max(3, Math.min(Number(req.body?.turns) || 10, 30))
-    let sample = []
-    let poolSize = 0
+    const overrides = {}
+    if (req.body?.durationMs) overrides.durationMs = Number(req.body.durationMs)
+    if (req.body?.turns) overrides.turns = Number(req.body.turns)
 
-    if (Array.isArray(req.body?.sample) && req.body.sample.length) {
-      // Client provided sample of games (preferred: minimal payload)
-      sample = req.body.sample.slice(0, slotCount)
-      while (sample.length < slotCount) sample.push(null)
-      poolSize = Number(req.body?.poolSize) || req.body.sample.filter(Boolean).length
-    } else {
-      const pool = Array.isArray(req.body?.pool) ? req.body.pool : []
-      if (!pool.length) return res.status(400).json({ error: 'pool[] or sample[] required' })
-      poolSize = pool.length
-      // Sample without replacement
-      const poolCopy = pool.slice()
-      const targetSize = Math.min(slotCount, poolCopy.length)
-      for (let i = 0; i < targetSize; i++) {
-        const idx = Math.floor(Math.random() * poolCopy.length)
-        sample.push(poolCopy.splice(idx, 1)[0])
-      }
-      while (sample.length < slotCount) sample.push(null)
-    }
-
-    const validSlots = sample.map((g, i) => (g ? i : null)).filter(i => i != null)
-    if (!validSlots.length) return res.status(400).json({ error: 'no valid games in sample' })
-    const targetIdx = validSlots[Math.floor(Math.random() * validSlots.length)]
-
-    // Publish to overlay state for OBS
-    const sampleHash = sample.map(g => (g ? String(g.id) : '-')).join('|')
-    overlaySpin = {
-      ts: Date.now(),
-      sample,
-      targetIdx,
-      durationMs,
-      poolSize,
-      turns,
-      sampleHash
-    }
-
-    res.json(overlaySpin)
+    // Execute server-side authoritative spin
+    const result = executeSpin(overrides)
+    res.json(result)
   } catch (e) {
     console.error('wheel/spin error', e)
     res.status(500).json({ error: 'failed to start spin' })

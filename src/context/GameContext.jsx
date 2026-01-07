@@ -73,7 +73,7 @@ function reducer(state, action) {
       })
       Storage.saveGames(games)
       Storage.setCurrentGameId(null)
-      try { console.log('[CLEAR_ALL_IN_PROGRESS] reset', changed, 'games') } catch {}
+      try { console.log('[CLEAR_ALL_IN_PROGRESS] reset', changed, 'games') } catch { }
       return { ...state, games, filtered: games, currentGameId: null, stats: computeStats(games) }
     }
     default:
@@ -108,7 +108,7 @@ export function GameProvider({ children }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, payload })
       })
-    } catch {}
+    } catch { }
   }, [])
 
   const sendLegacyHistory = React.useCallback(async (game, entry) => {
@@ -125,7 +125,7 @@ export function GameProvider({ children }) {
           eventType: 'legacy_fields'
         })
       })
-    } catch {}
+    } catch { }
   }, [])
 
   useEffect(() => {
@@ -234,8 +234,10 @@ export function GameProvider({ children }) {
             const merged = all.map(g => {
               const k = makeKey(g)
               const lg = byKey.get(k)
+              const normalizedConsole = typeof g.console === 'object' ? (g.console.name || g.console.id || '') : String(g.console || '')
+              const base = { ...g, console: normalizedConsole }
               return lg ? {
-                ...g,
+                ...base,
                 status: lg.status || g.status,
                 date_started: lg.date_started || g.date_started || null,
                 date_finished: lg.date_finished || g.date_finished || null,
@@ -244,13 +246,13 @@ export function GameProvider({ children }) {
                 notes: lg.notes ?? g.notes ?? '',
                 custom_tags: lg.custom_tags ?? g.custom_tags ?? [],
                 studio: lg.studio ?? g.studio ?? null,
-              } : g
+              } : base
             })
             dispatch({ type: 'SET_GAMES', games: merged })
             return
           }
         }
-      } catch {}
+      } catch { }
       // Fallback to legacy RA client sync
       if (state.settings.raEnabled || !state.games.length) {
         rasync()
@@ -260,7 +262,7 @@ export function GameProvider({ children }) {
 
   // Expose for debugging
   useEffect(() => {
-    try { window.__PSFEST_STATE__ = state } catch {}
+    try { window.__PSFEST_STATE__ = state } catch { }
   }, [state])
 
   const value = useMemo(() => ({ state, dispatch }), [state])

@@ -36,6 +36,7 @@ export default function Overlays() {
   const [settings, setSettings] = React.useState(DEFAULT_OVERLAY_SETTINGS)
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
+  const [tvWheelPinnedSaving, setTvWheelPinnedSaving] = React.useState(false)
   const [error, setError] = React.useState('')
   const [token, setToken] = useLocalToken()
   const [baseUrl, setBaseUrl] = React.useState(() => {
@@ -241,6 +242,18 @@ export default function Overlays() {
       setError('Failed to save overlay settings.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const applyTvWheelPinned = async (nextPinned) => {
+    setTvWheelPinnedSaving(true)
+    setError('')
+    try {
+      await updateOverlaySettings({ full: { tv: { wheelPinned: nextPinned } } })
+    } catch (err) {
+      setError('Failed to update TV wheel toggle.')
+    } finally {
+      setTvWheelPinnedSaving(false)
     }
   }
 
@@ -591,7 +604,23 @@ export default function Overlays() {
                   id="fullTvEnabled"
                 />
               </div>
+              <div className="form-check form-switch p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 d-flex justify-content-between align-items-center gap-3 mt-2">
+                <label className="form-check-label small fw-bold opacity-75" htmlFor="fullTvWheelPinned">Show Wheel (Pinned)</label>
+                <input
+                  className="form-check-input ms-0"
+                  type="checkbox"
+                  checked={settings.full?.tv?.wheelPinned === true}
+                  onChange={e => {
+                    const next = e.target.checked
+                    updateFullTv('wheelPinned', next)
+                    applyTvWheelPinned(next)
+                  }}
+                  id="fullTvWheelPinned"
+                  disabled={saving || tvWheelPinnedSaving}
+                />
+              </div>
               <div className="text-secondary small mt-2">Only used when the global theme is set to Panda TV.</div>
+              <div className="text-secondary small">Pinned wheel covers the TV screen until you turn it off.</div>
               <div className="row g-2 mt-3">
                 <div className="col-6">
                   <label className="form-label small fw-bold opacity-50">Logo Text</label>

@@ -1302,6 +1302,15 @@ body {
   opacity: 1;
 }
 
+.full-tv-logo.show-wheel {
+  border-color: rgba(94, 207, 134, 0.85);
+  box-shadow: 0 0 18px rgba(94, 207, 134, 0.35);
+}
+
+.full-tv-logo.show-wheel .full-tv-logo-layer-wheel {
+  opacity: 1;
+}
+
 .full-tv-logo-connector {
   position: relative;
   width: 100%;
@@ -10484,6 +10493,10 @@ body.overlay-clean .full-overlay-shell.overlay-clean {
   z-index: 2;
 }
 
+.tv-screen-content.tv-wheel-pinned {
+  background: #000;
+}
+
 .tv-screen-content.power-off {
   opacity: 0;
   transition-delay: 0.4s;
@@ -10494,7 +10507,6 @@ body.overlay-clean .full-overlay-shell.overlay-clean {
   opacity: 1;
   transition-delay: 0s;
 }
-
 
 /* 3D Bezel Screen Effect */
 .full-tv-screen {
@@ -13694,4 +13706,125 @@ body.overlay-clean .full-overlay-shell.overlay-clean {
 
 .btn-brand i {
   color: inherit;
+}
+
+/* CRT Wheel Styles */
+.crt-wheel-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 100;
+  color: #5ecf86;
+  padding: 24px;
+}
+
+.crt-wheel-header {
+  font-family: 'Chakra Petch', monospace;
+  font-size: 16px;
+  letter-spacing: 0.1em;
+  color: #5ecf86;
+  text-shadow: 0 0 5px rgba(94, 207, 134, 0.6);
+  margin-bottom: 16px;
+  animation: blink 2s infinite;
+}
+
+.crt-wheel-stage {
+  position: relative;
+  width: min(70vmin, 500px);
+  height: min(70vmin, 500px);
+  margin-bottom: 16px;
+}
+
+.crt-wheel-stage.has-winner {
+  /* Shrink wheel to show winner card? */
+  transform: scale(0.6) translateY(-20%);
+  transition: transform 0.5s ease;
+  opacity: 0.5;
+}
+
+.crt-wheel-pointer {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-top: 20px solid #fff;
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.8));
+}
+
+.crt-winner-card {
+  position: absolute;
+  bottom: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #000;
+  border: 2px solid #5ecf86;
+  padding: 16px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  box-shadow: 0 0 20px rgba(94, 207, 134, 0.2);
+  width: 80%;
+  max-width: 500px;
+  animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.crt-winner-cover {
+  width: 80px;
+  height: 100px;
+  /* Guessing ratio */
+  background: #111;
+  flex-shrink: 0;
+  border: 1px solid #333;
+}
+
+.crt-winner-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.crt-winner-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crt-winner-label {
+  font-size: 12px;
+  color: #fff;
+  opacity: 0.7;
+}
+
+.crt-winner-title {
+  font-family: 'Chakra Petch', monospace;
+  font-size: 24px;
+  font-weight: bold;
+  color: #5ecf86;
+  line-height: 1.2;
+}
+
+.crt-winner-meta {
+  font-family: monospace;
+  color: #888;
+}
+
+@keyframes pop-in {
+  from {
+    transform: translateX(-50%) scale(0.8);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
 }

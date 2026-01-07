@@ -111,6 +111,7 @@ export const DEFAULT_OVERLAY_SETTINGS = {
     achievementCycleMs: 8000,
     tv: {
       enabled: true,
+      wheelPinned: false,
       logoText: 'PANDA',
       logoUrl: '',
       connectorIcons: {
@@ -155,6 +156,7 @@ export function mergeOverlaySettings(incoming) {
   const tvIncoming = fullIncoming.tv || {}
   const mergedTv = {
     enabled: tvIncoming.enabled ?? tvBase.enabled ?? true,
+    wheelPinned: tvIncoming.wheelPinned ?? tvBase.wheelPinned ?? false,
     logoText: tvIncoming.logoText ?? tvBase.logoText ?? 'PANDA',
     logoUrl: tvIncoming.logoUrl ?? tvBase.logoUrl ?? '',
     connectorIcons: {
