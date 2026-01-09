@@ -433,6 +433,8 @@ export default function OverlayFull() {
   const tvStickerSource = Array.isArray(tvConfig.stickers) ? tvConfig.stickers : []
   const [dynamicStickers, setDynamicStickers] = React.useState([])
   const [wheelSelectedConsole, setWheelSelectedConsole] = React.useState('')
+  const [wheelActive, setWheelActive] = React.useState(false)
+  const [wheelMode, setWheelMode] = React.useState('game')
   const [wheelAnnouncement, setWheelAnnouncement] = React.useState(null)
   const wheelAnnouncementTimeoutRef = React.useRef(null)
   const wheelGameLockTimeoutRef = React.useRef(null)
@@ -1226,7 +1228,9 @@ export default function OverlayFull() {
   }
 
   const consoleAcronym = tvEnabled ? getConsoleAcronym(current?.console) : ''
-  const wheelConsoleAcronym = tvEnabled ? getConsoleAcronym(wheelSelectedConsole) : ''
+  const wheelConsoleAcronym = (tvEnabled && wheelActive && wheelMode === 'console')
+    ? getConsoleAcronym(wheelSelectedConsole)
+    : ''
   const inputText = startingSoon
     ? 'SOON'
     : (wheelConsoleAcronym || consoleAcronym
@@ -1541,38 +1545,48 @@ export default function OverlayFull() {
             <div className="full-tv-shell" ref={tvShellRef}>
               <div className="full-tv-screen" ref={tvScreenRef}>
                 <div className={`tv-screen-content ${tvPowerClass}${tvConfig.wheelPinned === true ? ' tv-wheel-pinned' : ''}`}>
-                  <CrtWheel
-                    base={import.meta.env.VITE_IGDB_PROXY_URL}
-                    pinned={tvConfig.wheelPinned === true}
-                    onStateChange={(info) => {
-                      if (info?.spinning && !info?.winner) return
-                      const winner = info?.winner
-                      if (winner) {
-                        const winnerTitle = winner.title || winner.name || ''
-                        if (winnerTitle) {
-                          setWheelAnnouncement({ winner })
-                          if (tvEnabled && current && gameCenterIndex >= 0) {
-                            centerLockRef.current = Date.now() + WHEEL_GAME_LOCK_MS
-                            setCenterIndex(gameCenterIndex)
-                            if (wheelGameLockTimeoutRef.current) clearTimeout(wheelGameLockTimeoutRef.current)
-                            wheelGameLockTimeoutRef.current = setTimeout(() => {
-                              centerLockRef.current = 0
-                              setCenterIndex(0)
-                              setCenterCycleSeed(seed => seed + 1)
-                            }, WHEEL_GAME_LOCK_MS)
-                          }
-                          if (wheelAnnouncementTimeoutRef.current) clearTimeout(wheelAnnouncementTimeoutRef.current)
-                          wheelAnnouncementTimeoutRef.current = setTimeout(() => {
-                            setWheelAnnouncement(null)
-                          }, WHEEL_ANNOUNCE_HOLD_MS)
+                    <CrtWheel
+                      base={import.meta.env.VITE_IGDB_PROXY_URL}
+                      pinned={tvConfig.wheelPinned === true}
+                      onStateChange={(info) => {
+                        if (info?.spinning && !info?.winner) return
+                        if (info && typeof info.active === 'boolean') {
+                          setWheelActive(prev => (prev === info.active ? prev : info.active))
                         }
-                      }
-                      const selected = info?.selectedConsole || ''
+                        if (info && typeof info.mode === 'string') {
+                          setWheelMode(prev => (prev === info.mode ? prev : info.mode))
+                        }
+                        const winner = info?.winner
+                        if (winner) {
+                          const winnerTitle = winner.title || winner.name || ''
+                          if (winnerTitle) {
+                            setWheelAnnouncement({ winner })
+                            if (tvEnabled && current && gameCenterIndex >= 0) {
+                              centerLockRef.current = Date.now() + WHEEL_GAME_LOCK_MS
+                              setCenterIndex(gameCenterIndex)
+                              if (wheelGameLockTimeoutRef.current) clearTimeout(wheelGameLockTimeoutRef.current)
+                              wheelGameLockTimeoutRef.current = setTimeout(() => {
+                                centerLockRef.current = 0
+                                setCenterIndex(0)
+                                setCenterCycleSeed(seed => seed + 1)
+                              }, WHEEL_GAME_LOCK_MS)
+                            }
+                            if (wheelAnnouncementTimeoutRef.current) clearTimeout(wheelAnnouncementTimeoutRef.current)
+                            wheelAnnouncementTimeoutRef.current = setTimeout(() => {
+                              setWheelAnnouncement(null)
+                            }, WHEEL_ANNOUNCE_HOLD_MS)
+                          }
+                        }
+                      const hasSelectedConsole = info && Object.prototype.hasOwnProperty.call(info, 'selectedConsole')
+                      const selectedRaw = hasSelectedConsole && typeof info.selectedConsole === 'string'
+                        ? info.selectedConsole.trim()
+                        : ''
                       const next = (winner && winner.type === 'console' && winner.title)
                         ? winner.title
-                        : (selected && selected !== 'All' ? selected : '')
-                      if (!next) return
-                      setWheelSelectedConsole(prev => (prev === next ? prev : next))
+                        : (hasSelectedConsole && selectedRaw && selectedRaw !== 'All' ? selectedRaw : '')
+                      if (winner || hasSelectedConsole) {
+                        setWheelSelectedConsole(prev => (prev === next ? prev : next))
+                      }
                     }}
                   />
                   {startingSoon && <StartingSoonModule enabled={startingSoon} />}
