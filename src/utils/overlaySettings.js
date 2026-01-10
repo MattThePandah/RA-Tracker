@@ -112,6 +112,7 @@ export const DEFAULT_OVERLAY_SETTINGS = {
     tv: {
       enabled: true,
       wheelPinned: false,
+      wheelStyle: 'wheel', // 'wheel' | 'capsule'
       logoText: 'PANDA',
       logoUrl: '',
       connectorIcons: {
@@ -157,6 +158,7 @@ export function mergeOverlaySettings(incoming) {
   const mergedTv = {
     enabled: tvIncoming.enabled ?? tvBase.enabled ?? true,
     wheelPinned: tvIncoming.wheelPinned ?? tvBase.wheelPinned ?? false,
+    wheelStyle: tvIncoming.wheelStyle ?? tvBase.wheelStyle ?? 'wheel',
     logoText: tvIncoming.logoText ?? tvBase.logoText ?? 'PANDA',
     logoUrl: tvIncoming.logoUrl ?? tvBase.logoUrl ?? '',
     connectorIcons: {

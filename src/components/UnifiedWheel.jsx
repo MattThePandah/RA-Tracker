@@ -10,6 +10,64 @@ function colorFor(i) {
     return RETRO_COLORS[i % RETRO_COLORS.length]
 }
 
+function cleanWheelLabel(value) {
+    let s = String(value || '').trim()
+    // Strip RetroAchievements decorators like ~Hack~, ~Homebrew~, etc.
+    s = s.replace(/~[^~]+~/g, ' ')
+    // Strip subset markers like [Subset - ...]
+    s = s.replace(/\[\s*Subset[^\]]*\]/gi, ' ')
+    // Keep left side of pipes (alt titles)
+    s = s.split('|')[0]
+    return s.replace(/\s+/g, ' ').trim()
+}
+
+function ellipsizeToWidth(ctx, text, maxWidth) {
+    const s = String(text || '')
+    if (!s) return ''
+    if (ctx.measureText(s).width <= maxWidth) return s
+
+    const ellipsis = '…'
+    if (ctx.measureText(ellipsis).width > maxWidth) return ''
+
+    let lo = 0
+    let hi = s.length
+    while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2)
+        const candidate = s.slice(0, mid) + ellipsis
+        if (ctx.measureText(candidate).width <= maxWidth) lo = mid
+        else hi = mid - 1
+    }
+    return s.slice(0, lo) + ellipsis
+}
+
+function wrapToTwoLines(ctx, text, maxWidth) {
+    const cleaned = String(text || '').trim()
+    if (!cleaned) return ['']
+    if (ctx.measureText(cleaned).width <= maxWidth) return [cleaned]
+
+    const words = cleaned.split(/\s+/).filter(Boolean)
+    if (words.length <= 1) return [ellipsizeToWidth(ctx, cleaned, maxWidth)]
+
+    // Greedy build first line, remaining words into second line.
+    let line1 = ''
+    let i = 0
+    while (i < words.length) {
+        const next = line1 ? `${line1} ${words[i]}` : words[i]
+        if (ctx.measureText(next).width <= maxWidth) {
+            line1 = next
+            i++
+            continue
+        }
+        break
+    }
+
+    if (!line1) return [ellipsizeToWidth(ctx, cleaned, maxWidth)]
+
+    const rest = words.slice(i).join(' ')
+    const line2 = ellipsizeToWidth(ctx, rest, maxWidth)
+    return line2 ? [line1, line2] : [line1]
+}
+
 export default function UnifiedWheel({
     mode = 'game', // 'console' | 'game'
     sample = [], // Array of items (objects for games, strings/objects for consoles)
@@ -275,8 +333,9 @@ export default function UnifiedWheel({
             // Text
             if (item) {
                 const mid = (start + end) / 2
-                const tx = Math.cos(mid) * (r * 0.75)
-                const ty = Math.sin(mid) * (r * 0.75)
+                const textRadius = (r * 0.75)
+                const tx = Math.cos(mid) * textRadius
+                const ty = Math.sin(mid) * textRadius
 
                 ctx.save()
                 ctx.translate(tx, ty)
@@ -290,21 +349,32 @@ export default function UnifiedWheel({
                     else if (item.title) label = typeof item.title === 'string' ? item.title : (item.title.name || item.title.id || 'Unknown')
                     else if (item.name) label = item.name
                 }
-                const cleaned = String(label || '').trim()
-                const trimmed = cleaned.length > 18 ? `${cleaned.slice(0, 17)}…` : cleaned
-                // Font size adaptation
+                const cleaned = cleanWheelLabel(label)
+
+                // Fit text to actual segment chord width at label radius.
+                const chord = 2 * textRadius * Math.sin(segAngle / 2)
+                const maxWidth = Math.max(40, chord * 0.86)
+
                 const baseSize = isOverlay ? 18 : 16
-                const fontSize = trimmed.length > 16 ? Math.max(12, baseSize - 2) : baseSize
+                let fontSize = baseSize
                 ctx.font = `bold ${fontSize}px "Chakra Petch", monospace`
+                while (fontSize > 11 && ctx.measureText(cleaned).width > maxWidth) {
+                    fontSize -= 1
+                    ctx.font = `bold ${fontSize}px "Chakra Petch", monospace`
+                }
+
+                const lines = wrapToTwoLines(ctx, cleaned, maxWidth)
                 ctx.textAlign = 'center'
                 ctx.textBaseline = 'middle'
 
-                if (isOverlay && trimmed) {
-                    const metrics = ctx.measureText(trimmed)
+                if (isOverlay && lines.some(Boolean)) {
+                    const widths = lines.map(line => ctx.measureText(line).width)
+                    const textW = Math.max(...widths, 0)
                     const padX = 7
                     const padY = 5
-                    const boxW = metrics.width + padX * 2
-                    const boxH = fontSize + padY * 2
+                    const lineGap = 2
+                    const boxW = textW + padX * 2
+                    const boxH = (lines.length * fontSize) + ((lines.length - 1) * lineGap) + padY * 2
                     const x = -boxW / 2
                     const y = -boxH / 2
                     const radius = 8
@@ -337,12 +407,20 @@ export default function UnifiedWheel({
                 ctx.shadowBlur = 2
                 ctx.lineWidth = isOverlay ? 5 : 3
                 ctx.strokeStyle = 'rgba(0,0,0,0.95)'
-                ctx.strokeText(trimmed || '', 0, 0)
+                const lineGap = 2
+                const totalH = (lines.length * fontSize) + ((lines.length - 1) * lineGap)
+                for (let li = 0; li < lines.length; li++) {
+                    const y = (-totalH / 2) + (li * (fontSize + lineGap)) + (fontSize / 2)
+                    ctx.strokeText(lines[li] || '', 0, y)
+                }
 
                 ctx.shadowColor = 'transparent'
                 ctx.shadowBlur = 0
                 ctx.fillStyle = isOverlay ? '#ffffff' : colorFor(i)
-                ctx.fillText(trimmed || '', 0, 0)
+                for (let li = 0; li < lines.length; li++) {
+                    const y = (-totalH / 2) + (li * (fontSize + lineGap)) + (fontSize / 2)
+                    ctx.fillText(lines[li] || '', 0, y)
+                }
 
                 ctx.restore()
             }

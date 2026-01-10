@@ -619,6 +619,18 @@ export default function Overlays() {
                   disabled={saving || tvWheelPinnedSaving}
                 />
               </div>
+              <div className="p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 mt-2">
+                <label className="form-label small fw-bold opacity-75 mb-2">Picker Style</label>
+                <select
+                  className="form-select form-select-sm bg-dark border-secondary text-light"
+                  value={settings.full?.tv?.wheelStyle || 'wheel'}
+                  onChange={e => updateFullTv('wheelStyle', e.target.value)}
+                >
+                  <option value="wheel">Wheel</option>
+                  <option value="capsule">Capsule / Claw</option>
+                </select>
+                <div className="text-secondary small mt-2">Controls how the pinned TV picker is rendered.</div>
+              </div>
               <div className="text-secondary small mt-2">Only used when the global theme is set to Panda TV.</div>
               <div className="text-secondary small">Pinned wheel covers the TV screen until you turn it off.</div>
               <div className="row g-2 mt-3">

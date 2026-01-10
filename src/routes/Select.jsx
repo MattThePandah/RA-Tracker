@@ -11,7 +11,10 @@ export default function Select() {
   const [spinning, setSpinning] = useState(false)
   const [includeSuggestions, setIncludeSuggestions] = useState(false)
   const [consoleFilter, setConsoleFilter] = useState('All')
+  const [bonusExclusions, setBonusExclusions] = useState({ subset: false, demo: false, hack: false, homebrew: false })
+  const [spinSource, setSpinSource] = useState('pool') // 'pool' | 'sample'
   const [overlayWheelPinned, setOverlayWheelPinned] = useState(false)
+  const [overlayWheelStyle, setOverlayWheelStyle] = useState('wheel') // 'wheel' | 'capsule'
   const [overlayWheelSaving, setOverlayWheelSaving] = useState(false)
   const debugWheel = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debugWheel') === '1'
 
@@ -25,6 +28,16 @@ export default function Select() {
         if (json.settings) {
           if (json.settings.includeSuggestions !== undefined) setIncludeSuggestions(json.settings.includeSuggestions)
           if (json.settings.consoleFilter) setConsoleFilter(json.settings.consoleFilter)
+          if (json.settings.spinSource === 'sample' || json.settings.spinSource === 'pool') setSpinSource(json.settings.spinSource)
+          if (json.settings.bonusExclusions && typeof json.settings.bonusExclusions === 'object') {
+            setBonusExclusions(prev => ({
+              ...prev,
+              subset: json.settings.bonusExclusions.subset === true,
+              demo: json.settings.bonusExclusions.demo === true,
+              hack: json.settings.bonusExclusions.hack === true,
+              homebrew: json.settings.bonusExclusions.homebrew === true
+            }))
+          }
         }
       }
     } catch (e) { console.error(e) }
@@ -40,6 +53,7 @@ export default function Select() {
     try {
       const settings = await fetchOverlaySettings()
       setOverlayWheelPinned(settings.full?.tv?.wheelPinned === true)
+      setOverlayWheelStyle(settings.full?.tv?.wheelStyle === 'capsule' ? 'capsule' : 'wheel')
     } catch { }
   }, [])
 
@@ -54,6 +68,19 @@ export default function Select() {
       setOverlayWheelPinned(updated.full?.tv?.wheelPinned === true)
     } catch {
       // Re-sync from server if save fails
+      loadOverlayPinned()
+    } finally {
+      setOverlayWheelSaving(false)
+    }
+  }
+
+  const setOverlayStyle = async (nextStyle) => {
+    const style = nextStyle === 'capsule' ? 'capsule' : 'wheel'
+    setOverlayWheelSaving(true)
+    try {
+      const updated = await updateOverlaySettingsAdmin({ full: { tv: { wheelStyle: style } } })
+      setOverlayWheelStyle(updated.full?.tv?.wheelStyle === 'capsule' ? 'capsule' : 'wheel')
+    } catch {
       loadOverlayPinned()
     } finally {
       setOverlayWheelSaving(false)
@@ -88,15 +115,22 @@ export default function Select() {
     try {
       setSpinning(true)
       const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      const anyBonusExcluded = Object.values(bonusExclusions || {}).some(Boolean)
+      const effectiveBonusMode = state.settings.hideBonusGames ? 'exclude' : (anyBonusExcluded ? 'exclude' : 'include')
+      const effectiveBonusExclusions = state.settings.hideBonusGames ? null : bonusExclusions
       await updateSettings({
         includeSuggestions,
         consoleFilter,
-        bonusMode: state.settings.hideBonusGames ? 'exclude' : 'include'
+        spinSource,
+        bonusMode: effectiveBonusMode,
+        ...(effectiveBonusExclusions ? { bonusExclusions: effectiveBonusExclusions } : {})
       })
+      // If the overlay picker is the capsule/claw machine, use a longer spin so the animation feels intentional.
+      const durationOverrideMs = overlayWheelStyle === 'capsule' ? 9000 : undefined
       const res = await adminFetch(`${base}/wheel/spin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+        body: JSON.stringify(durationOverrideMs ? { durationMs: durationOverrideMs } : {})
       })
       if (res.ok) fetchState()
     } catch (e) { setSpinning(false) }
@@ -114,6 +148,16 @@ export default function Select() {
       }
     } else if (winner && winner.type === 'console') {
       if (winner.title) {
+        // Clear current game when selecting a console via the console wheel.
+        dispatch({ type: 'SET_CURRENT', id: null })
+        try {
+          const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+          adminFetch(`${base}/overlay/current`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current: null })
+          })
+        } catch { }
         setConsoleFilter(winner.title)
         setMode('game')
         updateSettings({ consoleFilter: winner.title })
@@ -220,6 +264,100 @@ export default function Select() {
                       Include Suggestions
                     </label>
                   </div>
+
+                  <div>
+                    <label className="form-label small text-muted text-uppercase fw-bold mb-2">Exclude (Wheel)</label>
+                    <div className="vstack gap-2">
+                      <div className="form-check">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="excludeSubset"
+                          checked={bonusExclusions.subset === true}
+                          onChange={(e) => {
+                            const next = { ...bonusExclusions, subset: e.target.checked }
+                            setBonusExclusions(next)
+                            updateSettings({ bonusMode: Object.values(next).some(Boolean) ? 'exclude' : 'include', bonusExclusions: next })
+                          }}
+                        />
+                        <label className="form-check-label text-light small" htmlFor="excludeSubset">Subsets</label>
+                      </div>
+                      <div className="form-check">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="excludeDemo"
+                          checked={bonusExclusions.demo === true}
+                          onChange={(e) => {
+                            const next = { ...bonusExclusions, demo: e.target.checked }
+                            setBonusExclusions(next)
+                            updateSettings({ bonusMode: Object.values(next).some(Boolean) ? 'exclude' : 'include', bonusExclusions: next })
+                          }}
+                        />
+                        <label className="form-check-label text-light small" htmlFor="excludeDemo">Demos</label>
+                      </div>
+                      <div className="form-check">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="excludeHack"
+                          checked={bonusExclusions.hack === true}
+                          onChange={(e) => {
+                            const next = { ...bonusExclusions, hack: e.target.checked }
+                            setBonusExclusions(next)
+                            updateSettings({ bonusMode: Object.values(next).some(Boolean) ? 'exclude' : 'include', bonusExclusions: next })
+                          }}
+                        />
+                        <label className="form-check-label text-light small" htmlFor="excludeHack">Hacks</label>
+                      </div>
+                      <div className="form-check">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="excludeHomebrew"
+                          checked={bonusExclusions.homebrew === true}
+                          onChange={(e) => {
+                            const next = { ...bonusExclusions, homebrew: e.target.checked }
+                            setBonusExclusions(next)
+                            updateSettings({ bonusMode: Object.values(next).some(Boolean) ? 'exclude' : 'include', bonusExclusions: next })
+                          }}
+                        />
+                        <label className="form-check-label text-light small" htmlFor="excludeHomebrew">Homebrew</label>
+                      </div>
+                      {state.settings.hideBonusGames && (
+                        <div className="small text-warning opacity-75">
+                          Global “Hide Bonus Games” is enabled; wheel will exclude all bonus categories.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="form-label small text-muted text-uppercase fw-bold mb-2">Spin Source</label>
+                    <div className="btn-group w-100">
+                      <button
+                        className={`btn btn-sm ${spinSource === 'pool' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                        onClick={() => {
+                          setSpinSource('pool')
+                          updateSettings({ spinSource: 'pool' })
+                        }}
+                      >
+                        Full Pool
+                      </button>
+                      <button
+                        className={`btn btn-sm ${spinSource === 'sample' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                        onClick={() => {
+                          setSpinSource('sample')
+                          updateSettings({ spinSource: 'sample' })
+                        }}
+                      >
+                        Visible 16
+                      </button>
+                    </div>
+                    <div className="small text-secondary mt-1">
+                      Full Pool is true-random; Visible 16 matches what viewers saw pre-spin.
+                    </div>
+                  </div>
                 </>
               )}
 
@@ -242,6 +380,28 @@ export default function Select() {
                 <label className="form-check-label text-light small" htmlFor="overlayWheelPinned">
                   Show Wheel on Full Overlay {overlayWheelSaving ? '(Saving...)' : ''}
                 </label>
+              </div>
+
+              <div className="mt-1">
+                <label className="form-label small text-muted text-uppercase fw-bold">Overlay Picker</label>
+                <div className="btn-group w-100">
+                  <button
+                    className={`btn btn-sm ${overlayWheelStyle === 'wheel' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                    onClick={() => setOverlayStyle('wheel')}
+                    disabled={overlayWheelSaving}
+                    type="button"
+                  >
+                    Wheel
+                  </button>
+                  <button
+                    className={`btn btn-sm ${overlayWheelStyle === 'capsule' ? 'btn-primary' : 'btn-outline-secondary'}`}
+                    onClick={() => setOverlayStyle('capsule')}
+                    disabled={overlayWheelSaving}
+                    type="button"
+                  >
+                    Capsule
+                  </button>
+                </div>
               </div>
 
               <button

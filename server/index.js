@@ -1167,7 +1167,7 @@ app.post('/api/sample-games', requireAdmin, requireCsrf, requireOrigin, (req, re
 // Wheel spin sync so OBS overlay can mirror app spins  
 app.get('/overlay/spin', requireOverlayAuth, (req, res) => {
   const state = getWheelState()
-  res.json(state.spin || { ts: 0, sample: [], targetIdx: 0, durationMs: 4500, poolSize: 0 })
+  res.json(state.spin || { spinId: 0, ts: 0, sample: [], sampleHash: '', targetIdx: 0, durationMs: 4500, turns: 0, poolSize: 0 })
 })
 // Deprecated: old manual overlay sync, now handled via main /wheel/spin
 app.post('/overlay/spin', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
@@ -1188,6 +1188,30 @@ app.get('/overlay/wheel-state', requireOverlayAuth, (req, res) => {
     })
     .catch(() => {
       res.json({ sample: [], poolSize: 0, mode: 'game', selectedConsole: 'All', event: { name: '', consoles: [] } })
+    })
+})
+
+// Single-call sync endpoint for overlays: spin + idle state together.
+app.get('/overlay/wheel-sync', requireOverlayAuth, (req, res) => {
+  const state = getWheelState()
+  getWheelSnapshot()
+    .then(snapshot => {
+      res.json({
+        spin: state.spin || { spinId: 0, ts: 0, sample: [], sampleHash: '', targetIdx: 0, durationMs: 4500, turns: 0, poolSize: 0 },
+        state: {
+          sample: snapshot.sample || [],
+          poolSize: snapshot.poolSize || 0,
+          mode: snapshot.mode,
+          selectedConsole: snapshot.settings?.consoleFilter || 'All',
+          event: snapshot.event || { name: '', consoles: [] }
+        }
+      })
+    })
+    .catch(() => {
+      res.json({
+        spin: state.spin || { spinId: 0, ts: 0, sample: [], sampleHash: '', targetIdx: 0, durationMs: 4500, turns: 0, poolSize: 0 },
+        state: { sample: [], poolSize: 0, mode: 'game', selectedConsole: 'All', event: { name: '', consoles: [] } }
+      })
     })
 })
 app.post('/overlay/wheel-state', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
@@ -2194,14 +2218,14 @@ function formatTime(seconds, longHours = false) {
 }
 
 // Authoritative wheel spin orchestration
-app.post('/wheel/spin', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+app.post('/wheel/spin', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
   try {
     const overrides = {}
     if (req.body?.durationMs) overrides.durationMs = Number(req.body.durationMs)
     if (req.body?.turns) overrides.turns = Number(req.body.turns)
 
     // Execute server-side authoritative spin
-    const result = executeSpin(overrides)
+    const result = await executeSpin(overrides)
     res.json(result)
   } catch (e) {
     console.error('wheel/spin error', e)

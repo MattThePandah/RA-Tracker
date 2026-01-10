@@ -121,6 +121,7 @@ const DEFAULT_OVERLAY_SETTINGS = {
     tv: {
       enabled: true,
       wheelPinned: false,
+      wheelStyle: 'wheel', // 'wheel' | 'capsule'
       logoText: 'PANDA',
       logoUrl: '',
       connectorIcons: {
@@ -384,6 +385,11 @@ function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS
       tv: {
         enabled: normalizeBoolean(incoming.full?.tv?.enabled, base.full?.tv?.enabled ?? true),
         wheelPinned: normalizeBoolean(incoming.full?.tv?.wheelPinned, base.full?.tv?.wheelPinned ?? false),
+        wheelStyle: (() => {
+          const raw = cleanText(incoming.full?.tv?.wheelStyle || base.full?.tv?.wheelStyle, 16).toLowerCase()
+          if (raw === 'capsule') return 'capsule'
+          return 'wheel'
+        })(),
         logoText: cleanText(incoming.full?.tv?.logoText || base.full?.tv?.logoText, 32),
         logoUrl: cleanText(incoming.full?.tv?.logoUrl || base.full?.tv?.logoUrl, 200),
         connectorIcons: normalizeConnectorIcons(incoming.full?.tv?.connectorIcons, base.full?.tv?.connectorIcons),

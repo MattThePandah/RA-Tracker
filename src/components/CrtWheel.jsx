@@ -56,29 +56,47 @@ export default function CrtWheel({
     const fetchSpin = useCallback(async () => {
         try {
             if (!base) return
-            // 1. Check for new Spin
-            const res = await fetch(buildOverlayUrl('/overlay/spin', base))
-            if (res.ok) {
-                const spin = await res.json()
-                // If timestamp is newer than last seen, update it
-                if (spin.ts && spin.ts !== lastSpinTs.current) {
+            // Prefer single-call sync endpoint; fall back to legacy endpoints if missing.
+            let spin = null
+            let state = null
+
+            const syncRes = await fetch(buildOverlayUrl('/overlay/wheel-sync', base))
+            if (syncRes.ok) {
+                const payload = await syncRes.json()
+                spin = payload?.spin || null
+                state = payload?.state || null
+            } else {
+                // Legacy: 1) Check for new Spin
+                const res = await fetch(buildOverlayUrl('/overlay/spin', base))
+                if (res.ok) spin = await res.json()
+
+                // Legacy: 2) Poll for idle state (sample/mode updates from admin)
+                const r2 = await fetch(buildOverlayUrl('/overlay/wheel-state', base))
+                if (r2.ok) state = await r2.json()
+            }
+
+            // Apply spin update (if any)
+            if (spin?.ts && spin.ts !== lastSpinTs.current) {
+                const durationMs = Number(spin.durationMs) || 4500
+                const ageMs = Date.now() - Number(spin.ts)
+                // Don't replay an old spin on first load/refresh; just mark it as seen.
+                if (Number.isFinite(ageMs) && ageMs > (durationMs + 1500)) {
                     lastSpinTs.current = spin.ts
-                    spinInProgressRef.current = true
-                    holdUntilRef.current = 0
-                    setWheelState(prev => ({ ...prev, spin }))
-                    const durationMs = Number(spin.durationMs) || 4500
-                    const winnerHold = 2500
-                    const winnerFade = 450
-                    activeUntilRef.current = Date.now() + durationMs + winnerHold + winnerFade + 1000
-                    setVisible(prev => (prev ? prev : true))
-                    report({ active: true, spinning: true, spin, spinTs: spin.ts })
+                } else {
+                lastSpinTs.current = spin.ts
+                spinInProgressRef.current = true
+                holdUntilRef.current = 0
+                setWheelState(prev => ({ ...prev, spin }))
+                const winnerHold = 2500
+                const winnerFade = 450
+                activeUntilRef.current = Date.now() + durationMs + winnerHold + winnerFade + 1000
+                setVisible(prev => (prev ? prev : true))
+                report({ active: true, spinning: true, spin, spinTs: spin.ts })
                 }
             }
 
-            // 2. Poll for idle state (sample/mode updates from admin)
-            const r2 = await fetch(buildOverlayUrl('/overlay/wheel-state', base))
-            if (r2.ok) {
-                const state = await r2.json()
+            // Apply idle state update (if any)
+            if (state) {
                 const now = Date.now()
                 const isHolding = now < holdUntilRef.current
                 const isSpinning = spinInProgressRef.current

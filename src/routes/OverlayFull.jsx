@@ -4,6 +4,7 @@ import { useAchievements } from '../context/AchievementContext.jsx'
 import * as RA from '../services/retroachievements.js'
 import { buildOverlayUrl } from '../utils/overlayApi.js'
 import CrtWheel from '../components/CrtWheel'
+import CrtCapsuleMachine from '../components/CrtCapsuleMachine.jsx'
 import { buildCoverUrl } from '../utils/coverUrl.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
@@ -421,6 +422,8 @@ export default function OverlayFull() {
   const tvConfig = fullConfig.tv || {}
   const connectorIconMap = tvConfig.connectorIcons || {}
   const tvEnabled = isPandaTheme && tvConfig.enabled !== false
+  const tvWheelStyle = (typeof tvConfig.wheelStyle === 'string' ? tvConfig.wheelStyle : '') || 'wheel'
+  const TvPicker = tvWheelStyle === 'capsule' ? CrtCapsuleMachine : CrtWheel
   const connectorPollMs = tvEnabled ? connectorPollRaw : 0
   const connectorEvent = useOverlayConnector(connectorPollMs)
   const tvLogoUrl = typeof tvConfig.logoUrl === 'string' ? tvConfig.logoUrl.trim() : ''
@@ -1228,13 +1231,20 @@ export default function OverlayFull() {
   }
 
   const consoleAcronym = tvEnabled ? getConsoleAcronym(current?.console) : ''
-  const wheelConsoleAcronym = (tvEnabled && wheelActive && wheelMode === 'console')
+  // If a console winner was selected, keep showing it on the "input" display while switching to game mode.
+  // Current game console (if present) wins.
+  const selectedWheelConsoleAcronym = (tvEnabled && wheelSelectedConsole)
     ? getConsoleAcronym(wheelSelectedConsole)
     : ''
+
+  const wheelWinnerRaw = wheelAnnouncement?.winner || null
+  const wheelWinnerTypeRaw = wheelWinnerRaw?.type || (wheelWinnerRaw?.isConsole ? 'console' : 'game')
+  const wheelWinnerTitleRawForInput = wheelWinnerRaw ? safeText(wheelWinnerRaw.title || wheelWinnerRaw.name) : ''
+  const preferWheelConsole = Boolean(selectedWheelConsoleAcronym) && (wheelActive || wheelMode === 'console' || !consoleAcronym)
   const inputText = startingSoon
     ? 'SOON'
-    : (wheelConsoleAcronym || consoleAcronym
-      ? clampDotText(sanitizeDotText(wheelConsoleAcronym || consoleAcronym), DOT_LABEL_MAX)
+    : (((preferWheelConsole ? selectedWheelConsoleAcronym : consoleAcronym) || (!preferWheelConsole ? selectedWheelConsoleAcronym : consoleAcronym))
+      ? clampDotText(sanitizeDotText((preferWheelConsole ? selectedWheelConsoleAcronym : consoleAcronym) || (!preferWheelConsole ? selectedWheelConsoleAcronym : consoleAcronym)), DOT_LABEL_MAX)
       : ' ')
   const tvTitleText = tvEnabled ? clampDotText(sanitizeDotText(current?.title), DOT_GAME_SCROLL_MAX) : ''
   const tvTitleScroll = shouldScrollDotText(tvTitleText, DOT_GAME_SCROLL_VISIBLE)
@@ -1268,9 +1278,9 @@ export default function OverlayFull() {
   const achievementPointsText = bezelAchievement
     ? clampDotText(sanitizeDotText(`${bezelAchievement.points || 0} PTS`), DOT_META_MAX)
     : ''
-  const wheelWinner = wheelAnnouncement?.winner || null
-  const wheelWinnerType = wheelWinner?.type || (wheelWinner?.isConsole ? 'console' : 'game')
-  const wheelWinnerTitleRaw = wheelWinner ? safeText(wheelWinner.title || wheelWinner.name) : ''
+  const wheelWinner = wheelWinnerRaw
+  const wheelWinnerType = wheelWinnerTypeRaw
+  const wheelWinnerTitleRaw = wheelWinnerTitleRawForInput
   const wheelTitleText = wheelWinnerTitleRaw
     ? clampDotText(sanitizeDotText(wheelWinnerTitleRaw), DOT_SCROLL_MAX)
     : ''
@@ -1545,7 +1555,7 @@ export default function OverlayFull() {
             <div className="full-tv-shell" ref={tvShellRef}>
               <div className="full-tv-screen" ref={tvScreenRef}>
                 <div className={`tv-screen-content ${tvPowerClass}${tvConfig.wheelPinned === true ? ' tv-wheel-pinned' : ''}`}>
-                    <CrtWheel
+                    <TvPicker
                       base={import.meta.env.VITE_IGDB_PROXY_URL}
                       pinned={tvConfig.wheelPinned === true}
                       onStateChange={(info) => {
@@ -1577,14 +1587,9 @@ export default function OverlayFull() {
                             }, WHEEL_ANNOUNCE_HOLD_MS)
                           }
                         }
-                      const hasSelectedConsole = info && Object.prototype.hasOwnProperty.call(info, 'selectedConsole')
-                      const selectedRaw = hasSelectedConsole && typeof info.selectedConsole === 'string'
-                        ? info.selectedConsole.trim()
-                        : ''
-                      const next = (winner && winner.type === 'console' && winner.title)
-                        ? winner.title
-                        : (hasSelectedConsole && selectedRaw && selectedRaw !== 'All' ? selectedRaw : '')
-                      if (winner || hasSelectedConsole) {
+                      // Don't update selected console from idle wheel-state; only after a console winner is shown.
+                      if (winner && winner.type === 'console' && winner.title) {
+                        const next = winner.title
                         setWheelSelectedConsole(prev => (prev === next ? prev : next))
                       }
                     }}
