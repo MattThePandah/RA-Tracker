@@ -124,6 +124,7 @@ const DEFAULT_OVERLAY_SETTINGS = {
       wheelStyle: 'wheel', // 'wheel' | 'capsule'
       logoText: 'PANDA',
       logoUrl: '',
+      centerPlaylist: [],
       connectorIcons: {
         default: '',
         left: '',
@@ -136,6 +137,21 @@ const DEFAULT_OVERLAY_SETTINGS = {
         cheer: '',
         member: '',
         tip: ''
+      },
+      connectorSounds: {
+        enabled: false,
+        volume: 0.8,
+        sounds: {
+          default: '',
+          sub: '',
+          resub: '',
+          gift: '',
+          raid: '',
+          follow: '',
+          cheer: '',
+          member: '',
+          tip: ''
+        }
       },
       displays: [
         { label: 'Current', value: '{currentTime}' },
@@ -254,7 +270,27 @@ function normalizeTvStickers(incoming, fallback) {
   return source.slice(0, 12).map((item, index) => normalizeTvSticker(item, baseList[index]))
 }
 
+function normalizeTvCenterItem(value = {}) {
+  const type = cleanText(value?.type || 'logo', 16).toLowerCase()
+  const allowed = new Set(['logo', 'game', 'event', 'soon', 'image'])
+  const normalizedType = allowed.has(type) ? type : 'logo'
+  const durationMs = clampNumber(value?.durationMs, 500, 900000, 8000)
+  const out = { type: normalizedType, durationMs }
+  if (normalizedType === 'image') {
+    out.url = cleanText(value?.url || '', 240)
+  }
+  return out
+}
+
+function normalizeTvCenterPlaylist(incoming, fallback) {
+  const baseList = Array.isArray(fallback) ? fallback : []
+  const source = Array.isArray(incoming) ? incoming : baseList
+  if (!source.length) return baseList
+  return source.slice(0, 40).map(item => normalizeTvCenterItem(item))
+}
+
 const CONNECTOR_ICON_KEYS = ['default', 'left', 'right', 'sub', 'resub', 'gift', 'raid', 'follow', 'cheer', 'member', 'tip']
+const CONNECTOR_SOUND_KEYS = ['default', 'sub', 'resub', 'gift', 'raid', 'follow', 'cheer', 'member', 'tip']
 
 function normalizeConnectorIcons(incoming, fallback) {
   const base = (fallback && typeof fallback === 'object') ? fallback : {}
@@ -264,6 +300,22 @@ function normalizeConnectorIcons(incoming, fallback) {
     result[key] = cleanText(source[key] || base[key] || '', 240)
   })
   return result
+}
+
+function normalizeConnectorSounds(incoming, fallback) {
+  const base = (fallback && typeof fallback === 'object') ? fallback : {}
+  const source = (incoming && typeof incoming === 'object') ? incoming : {}
+  const baseSounds = (base.sounds && typeof base.sounds === 'object') ? base.sounds : {}
+  const sourceSounds = (source.sounds && typeof source.sounds === 'object') ? source.sounds : {}
+  const sounds = {}
+  CONNECTOR_SOUND_KEYS.forEach(key => {
+    sounds[key] = cleanText(sourceSounds[key] || baseSounds[key] || '', 240)
+  })
+  return {
+    enabled: normalizeBoolean(source.enabled, base.enabled ?? false),
+    volume: clampNumber(source.volume, 0, 1, base.volume ?? 0.8),
+    sounds
+  }
 }
 
 function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS) {
@@ -392,7 +444,9 @@ function normalizeOverlaySettings(input = {}, current = DEFAULT_OVERLAY_SETTINGS
         })(),
         logoText: cleanText(incoming.full?.tv?.logoText || base.full?.tv?.logoText, 32),
         logoUrl: cleanText(incoming.full?.tv?.logoUrl || base.full?.tv?.logoUrl, 200),
+        centerPlaylist: normalizeTvCenterPlaylist(incoming.full?.tv?.centerPlaylist, base.full?.tv?.centerPlaylist),
         connectorIcons: normalizeConnectorIcons(incoming.full?.tv?.connectorIcons, base.full?.tv?.connectorIcons),
+        connectorSounds: normalizeConnectorSounds(incoming.full?.tv?.connectorSounds, base.full?.tv?.connectorSounds),
         displays: normalizeTvDisplays(incoming.full?.tv?.displays, base.full?.tv?.displays),
         stickers: normalizeTvStickers(incoming.full?.tv?.stickers, base.full?.tv?.stickers)
       },
@@ -431,15 +485,25 @@ export async function getOverlaySettings() {
 
 export async function updateOverlaySettings(updates = {}) {
   const current = await getOverlaySettings()
+  const currentTv = current.full?.tv || {}
+  const updatesTv = updates.full?.tv || {}
   const mergedFull = {
     ...current.full,
     ...updates.full,
     tv: {
-      ...current.full?.tv,
-      ...updates.full?.tv,
+      ...currentTv,
+      ...updatesTv,
       connectorIcons: {
-        ...current.full?.tv?.connectorIcons,
-        ...updates.full?.tv?.connectorIcons
+        ...(currentTv.connectorIcons || {}),
+        ...(updatesTv.connectorIcons || {})
+      },
+      connectorSounds: {
+        ...(currentTv.connectorSounds || {}),
+        ...(updatesTv.connectorSounds || {}),
+        sounds: {
+          ...((currentTv.connectorSounds && currentTv.connectorSounds.sounds) ? currentTv.connectorSounds.sounds : {}),
+          ...((updatesTv.connectorSounds && updatesTv.connectorSounds.sounds) ? updatesTv.connectorSounds.sounds : {})
+        }
       }
     },
     modules: {

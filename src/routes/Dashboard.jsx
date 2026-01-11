@@ -53,7 +53,9 @@ export default function Dashboard() {
   const [activeEventId, setActiveEventId] = React.useState(null)
   const [eventStatus, setEventStatus] = React.useState('')
   const [startingSoon, setStartingSoon] = React.useState(false)
+  const [brb, setBrb] = React.useState(false)
   const [soonMinutes, setSoonMinutes] = React.useState(10)
+  const [brbMinutes, setBrbMinutes] = React.useState(10)
   const [trailers, setTrailers] = React.useState([])
   const [youtubeUrl, setYoutubeUrl] = React.useState('')
   const [downloading, setDownloading] = React.useState(false)
@@ -89,6 +91,7 @@ export default function Dashboard() {
       if (currentRes.ok) {
         const data = await currentRes.json()
         setStartingSoon(!!data.startingSoon)
+        setBrb(!!data.brb)
       }
       loadTrailers()
     } catch { }
@@ -173,11 +176,38 @@ export default function Dashboard() {
         body: JSON.stringify({ enabled: newState, endTime })
       })
       if (res.ok) {
-        setStartingSoon(newState)
+        const data = await res.json().catch(() => ({}))
+        setStartingSoon(!!data.startingSoon)
+        setBrb(!!data.brb)
         setEventStatus(`Soon Mode ${newState ? 'ON' : 'OFF'}`)
         setTimeout(() => setEventStatus(''), 2000)
       } else {
         setEventStatus('Failed to toggle Soon Mode')
+      }
+    } catch (err) {
+      setEventStatus('Network error')
+    }
+  }
+
+  const handleToggleBrb = async () => {
+    const newState = !brb
+    const endTime = newState ? (Date.now() + brbMinutes * 60 * 1000) : null
+    setEventStatus('Updating BRB Mode...')
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      const res = await adminFetch(`${base}/overlay/brb`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: newState, endTime })
+      })
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setStartingSoon(!!data.startingSoon)
+        setBrb(!!data.brb)
+        setEventStatus(`BRB Mode ${newState ? 'ON' : 'OFF'}`)
+        setTimeout(() => setEventStatus(''), 2000)
+      } else {
+        setEventStatus('Failed to toggle BRB Mode')
       }
     } catch (err) {
       setEventStatus('Network error')
@@ -502,10 +532,11 @@ export default function Dashboard() {
                       <i className="bi bi-broadcast me-2"></i>Broadcast Control
                     </span>
                     {startingSoon && <span className="badge bg-danger pulse-slow">LIVE: SOON MODE</span>}
+                    {brb && <span className="badge bg-warning text-dark pulse-slow">LIVE: BRB MODE</span>}
                   </div>
                   <div className="p-4">
                     <div className="row align-items-center">
-                      <div className="col-md-6">
+                      <div className="col-md-4">
                         <label className="form-label small text-secondary text-uppercase fw-bold">Starting Soon Timer</label>
                         <div className="d-flex gap-2 mb-3">
                           <div className="input-group input-group-lg" style={{ maxWidth: '200px' }}>
@@ -514,19 +545,45 @@ export default function Dashboard() {
                               className="form-control bg-dark border-secondary text-light fw-bold text-center"
                               value={soonMinutes}
                               onChange={e => setSoonMinutes(Math.max(1, parseInt(e.target.value) || 0))}
-                              disabled={startingSoon}
+                              disabled={startingSoon || brb}
                             />
                             <span className="input-group-text bg-dark border-secondary text-secondary">min</span>
                           </div>
                           <button
                             className={`btn btn-lg px-4 fw-bold ${startingSoon ? 'btn-danger' : 'btn-brand text-dark'}`}
                             onClick={handleToggleStartingSoon}
+                            disabled={brb}
                           >
                             {startingSoon ? 'STOP' : 'START'}
                           </button>
                         </div>
                       </div>
-                      <div className="col-md-6 border-start border-secondary border-opacity-25 ps-md-4">
+                      <div className="col-md-4 border-start border-secondary border-opacity-25 ps-md-4">
+                        <label className="form-label small text-secondary text-uppercase fw-bold">BRB Mode</label>
+                        <div className="d-flex gap-2 mb-3">
+                          <div className="input-group input-group-lg" style={{ maxWidth: '200px' }}>
+                            <input
+                              type="number"
+                              className="form-control bg-dark border-secondary text-light fw-bold text-center"
+                              value={brbMinutes}
+                              onChange={e => setBrbMinutes(Math.max(1, parseInt(e.target.value) || 0))}
+                              disabled={brb || startingSoon}
+                            />
+                            <span className="input-group-text bg-dark border-secondary text-secondary">min</span>
+                          </div>
+                          <button
+                            className={`btn btn-lg px-4 fw-bold ${brb ? 'btn-warning text-dark' : 'btn-outline-warning'}`}
+                            onClick={handleToggleBrb}
+                            disabled={startingSoon}
+                          >
+                            {brb ? 'STOP' : 'START'}
+                          </button>
+                        </div>
+                        <p className="small text-secondary mb-0">
+                          BRB forces the overlay to show trailers/standby even if a game is selected.
+                        </p>
+                      </div>
+                      <div className="col-md-4 border-start border-secondary border-opacity-25 ps-md-4">
                         <label className="form-label small text-secondary text-uppercase fw-bold">Active Event Profile</label>
                         <select
                           className="form-select form-select-lg bg-dark border-secondary text-light mb-2"

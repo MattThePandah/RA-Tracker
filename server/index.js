@@ -67,6 +67,11 @@ import {
 } from './wheelData.js'
 import { getPool, isPgEnabled } from './db.js'
 
+const TV_ASSETS_DIR = path.join(process.cwd(), 'public', 'tv-assets')
+fs.mkdirSync(TV_ASSETS_DIR, { recursive: true })
+const ALERT_SOUNDS_DIR = path.join(process.cwd(), 'public', 'alert-sounds')
+fs.mkdirSync(ALERT_SOUNDS_DIR, { recursive: true })
+
 const app = express()
 if (process.env.TRUST_PROXY === 'true') {
   app.set('trust proxy', 1)
@@ -178,6 +183,40 @@ function requireOrigin(req, res, next) {
   if (!origin) return next()
   if (corsOrigins.some(allowed => origin.startsWith(allowed))) return next()
   return res.status(403).json({ error: 'origin_not_allowed' })
+}
+
+function tvAssetExtFromType(contentType) {
+  const type = String(contentType || '').toLowerCase()
+  if (type.includes('image/png')) return '.png'
+  if (type.includes('image/webp')) return '.webp'
+  if (type.includes('image/jpeg') || type.includes('image/jpg')) return '.jpg'
+  if (type.includes('image/gif')) return '.gif'
+  if (type.includes('image/svg')) return '.svg'
+  return null
+}
+
+function alertSoundExtFromType(contentType) {
+  const type = String(contentType || '').toLowerCase()
+  if (type.includes('audio/mpeg') || type.includes('audio/mp3')) return '.mp3'
+  if (type.includes('audio/ogg')) return '.ogg'
+  if (type.includes('audio/wav') || type.includes('audio/x-wav')) return '.wav'
+  return null
+}
+
+function sanitizeFileStem(name) {
+  const raw = String(name || '').trim()
+  if (!raw) return ''
+  const base = raw.replace(/\.[^/.]+$/, '')
+  const safe = base.replace(/[^a-z0-9_-]/gi, '').slice(0, 64)
+  return safe
+}
+
+function safeTvAssetFileName(fileName) {
+  const raw = String(fileName || '').trim()
+  if (!raw) return null
+  if (raw.includes('..') || raw.includes('/') || raw.includes('\\')) return null
+  if (!/^[a-z0-9][a-z0-9._-]{0,128}$/i.test(raw)) return null
+  return raw
 }
 
 const overlayToken = process.env.OVERLAY_ACCESS_TOKEN || ''
@@ -524,6 +563,8 @@ const overlayState = {
   current: null,
   startingSoon: false,
   startingSoonEndTime: null,
+  brb: false,
+  brbEndTime: null,
   updatedAt: Date.now()
 }
 
@@ -831,6 +872,8 @@ app.get('/overlay/current', requireOverlayAuth, (req, res) => {
     current: overlayState.current,
     startingSoon: overlayState.startingSoon,
     startingSoonEndTime: overlayState.startingSoonEndTime,
+    brb: overlayState.brb,
+    brbEndTime: overlayState.brbEndTime,
     updatedAt: overlayState.updatedAt
   })
 })
@@ -975,11 +1018,36 @@ app.post('/overlay/starting-soon', requireAdmin, requireCsrf, requireOrigin, (re
   const { enabled, endTime } = req.body || {}
   overlayState.startingSoon = !!enabled
   overlayState.startingSoonEndTime = endTime ? Number(endTime) : null
+  if (overlayState.startingSoon) {
+    overlayState.brb = false
+    overlayState.brbEndTime = null
+  }
   overlayState.updatedAt = Date.now()
   res.json({
     ok: true,
     startingSoon: overlayState.startingSoon,
     startingSoonEndTime: overlayState.startingSoonEndTime,
+    brb: overlayState.brb,
+    brbEndTime: overlayState.brbEndTime,
+    updatedAt: overlayState.updatedAt
+  })
+})
+
+app.post('/overlay/brb', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  const { enabled, endTime } = req.body || {}
+  overlayState.brb = !!enabled
+  overlayState.brbEndTime = endTime ? Number(endTime) : null
+  if (overlayState.brb) {
+    overlayState.startingSoon = false
+    overlayState.startingSoonEndTime = null
+  }
+  overlayState.updatedAt = Date.now()
+  res.json({
+    ok: true,
+    startingSoon: overlayState.startingSoon,
+    startingSoonEndTime: overlayState.startingSoonEndTime,
+    brb: overlayState.brb,
+    brbEndTime: overlayState.brbEndTime,
     updatedAt: overlayState.updatedAt
   })
 })
@@ -1109,6 +1177,114 @@ app.post('/api/covers/custom', requireAdmin, requireCsrf, requireOrigin, express
   } catch (error) {
     console.error('Custom cover upload failed:', error.message)
     res.status(500).json({ error: 'custom_cover_upload_failed' })
+  }
+})
+
+// ---- TV assets (local admin) ----
+app.get('/api/admin/tv-assets', requireAdmin, async (req, res) => {
+  try {
+    const files = fs.existsSync(TV_ASSETS_DIR) ? fs.readdirSync(TV_ASSETS_DIR) : []
+    const allowed = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg'])
+    const assets = files
+      .filter(name => allowed.has(path.extname(name).toLowerCase()))
+      .sort((a, b) => a.localeCompare(b))
+      .map(name => ({ name, url: `/tv-assets/${name}` }))
+    res.json({ assets })
+  } catch (error) {
+    console.error('Failed to list TV assets:', error.message)
+    res.status(500).json({ error: 'tv_assets_list_failed' })
+  }
+})
+
+app.post('/api/admin/tv-assets', requireAdmin, requireCsrf, requireOrigin, express.raw({
+  type: ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/svg+xml'],
+  limit: '8mb'
+}), (req, res) => {
+  try {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) {
+      return res.status(400).json({ error: 'image_required' })
+    }
+    const ext = tvAssetExtFromType(req.headers['content-type'])
+    if (!ext) return res.status(400).json({ error: 'unsupported_image_type' })
+
+    const requested = sanitizeFileStem(req.query.name)
+    const defaultStem = crypto.createHash('sha1').update(req.body).digest('hex').slice(0, 16)
+    const stem = requested || defaultStem
+    const fileName = `${stem}${ext}`
+    const filePath = path.join(TV_ASSETS_DIR, fileName)
+    fs.writeFileSync(filePath, req.body)
+    res.json({ ok: true, name: fileName, url: `/tv-assets/${fileName}` })
+  } catch (error) {
+    console.error('TV asset upload failed:', error.message)
+    res.status(500).json({ error: 'tv_asset_upload_failed' })
+  }
+})
+
+app.delete('/api/admin/tv-assets', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  try {
+    const name = safeTvAssetFileName(req.query.name)
+    if (!name) return res.status(400).json({ error: 'name_required' })
+    const filePath = path.join(TV_ASSETS_DIR, name)
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'not_found' })
+    fs.unlinkSync(filePath)
+    res.json({ ok: true })
+  } catch (error) {
+    console.error('TV asset delete failed:', error.message)
+    res.status(500).json({ error: 'tv_asset_delete_failed' })
+  }
+})
+
+// ---- Alert sounds (local admin) ----
+app.get('/api/admin/alert-sounds', requireAdmin, async (req, res) => {
+  try {
+    const files = fs.existsSync(ALERT_SOUNDS_DIR) ? fs.readdirSync(ALERT_SOUNDS_DIR) : []
+    const allowed = new Set(['.mp3', '.wav', '.ogg'])
+    const sounds = files
+      .filter(name => allowed.has(path.extname(name).toLowerCase()))
+      .sort((a, b) => a.localeCompare(b))
+      .map(name => ({ name, url: `/alert-sounds/${name}` }))
+    res.json({ sounds })
+  } catch (error) {
+    console.error('Failed to list alert sounds:', error.message)
+    res.status(500).json({ error: 'alert_sounds_list_failed' })
+  }
+})
+
+app.post('/api/admin/alert-sounds', requireAdmin, requireCsrf, requireOrigin, express.raw({
+  type: ['audio/mpeg', 'audio/mp3', 'audio/ogg', 'audio/wav', 'audio/x-wav'],
+  limit: '16mb'
+}), (req, res) => {
+  try {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) {
+      return res.status(400).json({ error: 'audio_required' })
+    }
+    const ext = alertSoundExtFromType(req.headers['content-type'])
+    if (!ext) return res.status(400).json({ error: 'unsupported_audio_type' })
+
+    const requested = sanitizeFileStem(req.query.name)
+    const defaultStem = crypto.createHash('sha1').update(req.body).digest('hex').slice(0, 16)
+    const stem = requested || defaultStem
+    const fileName = `${stem}${ext}`
+    const filePath = path.join(ALERT_SOUNDS_DIR, fileName)
+    fs.writeFileSync(filePath, req.body)
+    res.json({ ok: true, name: fileName, url: `/alert-sounds/${fileName}` })
+  } catch (error) {
+    console.error('Alert sound upload failed:', error.message)
+    res.status(500).json({ error: 'alert_sound_upload_failed' })
+  }
+})
+
+app.delete('/api/admin/alert-sounds', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  try {
+    const name = safeTvAssetFileName(req.query.name)
+    if (!name) return res.status(400).json({ error: 'name_required' })
+    const filePath = path.join(ALERT_SOUNDS_DIR, name)
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'not_found' })
+    fs.unlinkSync(filePath)
+    res.json({ ok: true })
+  } catch (error) {
+    console.error('Alert sound delete failed:', error.message)
+    res.status(500).json({ error: 'alert_sound_delete_failed' })
   }
 })
 

@@ -2,6 +2,8 @@ import React from 'react'
 import { DEFAULT_OVERLAY_SETTINGS, mergeOverlaySettings, clampNumber } from '../utils/overlaySettings.js'
 import { fetchOverlaySettings, updateOverlaySettings } from '../services/overlaySettings.js'
 import { useGame } from '../context/GameContext.jsx'
+import { listTvAssets, uploadTvAsset, deleteTvAsset } from '../services/tvAssets.js'
+import { listAlertSounds, uploadAlertSound, deleteAlertSound } from '../services/alertSounds.js'
 
 const OVERLAY_ROUTES = [
   { label: 'Full Studio Overlay', path: '/overlay/full', note: 'One URL with modules and camera/game framing.' },
@@ -21,6 +23,28 @@ const FULL_MODULE_OPTIONS = [
   { key: 'achievements', label: 'Achievements', hasCount: true }
 ]
 
+const OVERLAY_TABS = [
+  { key: 'access', label: 'Access & URLs', icon: 'bi-link-45deg' },
+  { key: 'global', label: 'Global', icon: 'bi-gear-fill' },
+  { key: 'full', label: 'Full Overlay', icon: 'bi-window-fullscreen' },
+  { key: 'other', label: 'Other Overlays', icon: 'bi-sliders' }
+]
+
+const FULL_OVERLAY_TABS = [
+  { key: 'layout', label: 'Layout', icon: 'bi-layout-three-columns' },
+  { key: 'modules', label: 'Modules', icon: 'bi-grid-3x3-gap-fill' },
+  { key: 'tv', label: 'Panda TV', icon: 'bi-tv' }
+]
+
+const FULL_TV_TABS = [
+  { key: 'general', label: 'General' },
+  { key: 'displays', label: 'Displays' },
+  { key: 'stickers', label: 'Stickers' },
+  { key: 'center', label: 'Center' },
+  { key: 'alerts', label: 'Alerts' },
+  { key: 'assets', label: 'Assets' }
+]
+
 function useLocalToken() {
   const [token, setToken] = React.useState(() => {
     try { return localStorage.getItem('ra.overlayToken') || '' } catch { return '' }
@@ -38,6 +62,25 @@ export default function Overlays() {
   const [saving, setSaving] = React.useState(false)
   const [tvWheelPinnedSaving, setTvWheelPinnedSaving] = React.useState(false)
   const [error, setError] = React.useState('')
+  const [tab, setTab] = React.useState(() => {
+    try { return localStorage.getItem('ra.overlayStudioTab') || 'access' } catch { return 'access' }
+  })
+  const [fullTab, setFullTab] = React.useState(() => {
+    try { return localStorage.getItem('ra.overlayStudioFullTab') || 'layout' } catch { return 'layout' }
+  })
+  const [tvTab, setTvTab] = React.useState(() => {
+    try { return localStorage.getItem('ra.overlayStudioTvTab') || 'general' } catch { return 'general' }
+  })
+  const [tvAssets, setTvAssets] = React.useState([])
+  const [tvAssetsLoading, setTvAssetsLoading] = React.useState(false)
+  const [tvAssetsError, setTvAssetsError] = React.useState('')
+  const [tvAssetUploading, setTvAssetUploading] = React.useState(false)
+  const [tvAssetUploadName, setTvAssetUploadName] = React.useState('')
+  const [alertSounds, setAlertSounds] = React.useState([])
+  const [alertSoundsLoading, setAlertSoundsLoading] = React.useState(false)
+  const [alertSoundsError, setAlertSoundsError] = React.useState('')
+  const [alertSoundUploading, setAlertSoundUploading] = React.useState(false)
+  const [alertSoundUploadName, setAlertSoundUploadName] = React.useState('')
   const [token, setToken] = useLocalToken()
   const [baseUrl, setBaseUrl] = React.useState(() => {
     if (typeof window === 'undefined') return ''
@@ -56,6 +99,8 @@ export default function Overlays() {
   const tvDisplayLimit = 4
   const tvStickerCount = Array.isArray(settings.full?.tv?.stickers) ? settings.full.tv.stickers.length : 0
   const tvStickerLimit = 12
+  const tvCenterCount = Array.isArray(settings.full?.tv?.centerPlaylist) ? settings.full.tv.centerPlaylist.length : 0
+  const tvCenterLimit = 40
 
   const toggleEventConsole = (consoleName) => {
     const current = settings.global.eventConsoles || []
@@ -81,6 +126,54 @@ export default function Overlays() {
     load()
     return () => { active = false }
   }, [])
+
+  const loadTvAssets = React.useCallback(async () => {
+    setTvAssetsError('')
+    setTvAssetsLoading(true)
+    try {
+      const data = await listTvAssets()
+      setTvAssets(Array.isArray(data.assets) ? data.assets : [])
+    } catch (err) {
+      setTvAssets([])
+      setTvAssetsError('Failed to load TV assets.')
+    } finally {
+      setTvAssetsLoading(false)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    loadTvAssets()
+  }, [loadTvAssets])
+
+  const loadAlertSounds = React.useCallback(async () => {
+    setAlertSoundsError('')
+    setAlertSoundsLoading(true)
+    try {
+      const data = await listAlertSounds()
+      setAlertSounds(Array.isArray(data.sounds) ? data.sounds : [])
+    } catch (err) {
+      setAlertSounds([])
+      setAlertSoundsError('Failed to load alert sounds.')
+    } finally {
+      setAlertSoundsLoading(false)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    loadAlertSounds()
+  }, [loadAlertSounds])
+
+  React.useEffect(() => {
+    try { localStorage.setItem('ra.overlayStudioTab', tab) } catch { }
+  }, [tab])
+
+  React.useEffect(() => {
+    try { localStorage.setItem('ra.overlayStudioFullTab', fullTab) } catch { }
+  }, [fullTab])
+
+  React.useEffect(() => {
+    try { localStorage.setItem('ra.overlayStudioTvTab', tvTab) } catch { }
+  }, [tvTab])
 
 
   const updateSection = (section, key, value) => {
@@ -122,6 +215,30 @@ export default function Overlays() {
     }))
   }
 
+  const updateTvConnectorSound = (soundKey, value) => {
+    setSettings(prev => {
+      const tv = prev.full?.tv || {}
+      const connectorSounds = tv.connectorSounds || {}
+      const sounds = (connectorSounds.sounds && typeof connectorSounds.sounds === 'object') ? connectorSounds.sounds : {}
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...tv,
+            connectorSounds: {
+              ...connectorSounds,
+              sounds: {
+                ...sounds,
+                [soundKey]: value
+              }
+            }
+          }
+        }
+      }
+    })
+  }
+
   const updateTvDisplay = (index, key, value) => {
     setSettings(prev => {
       const displays = Array.isArray(prev.full?.tv?.displays) ? [...prev.full.tv.displays] : []
@@ -138,6 +255,149 @@ export default function Overlays() {
         }
       }
     })
+  }
+
+  const updateTvCenterItem = (index, key, value) => {
+    setSettings(prev => {
+      const centerPlaylist = Array.isArray(prev.full?.tv?.centerPlaylist) ? [...prev.full.tv.centerPlaylist] : []
+      const current = centerPlaylist[index] || {}
+      const next = { ...current, [key]: value }
+      if (key === 'type' && value !== 'image') {
+        delete next.url
+      }
+      centerPlaylist[index] = next
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            centerPlaylist
+          }
+        }
+      }
+    })
+  }
+
+  const addTvCenterItem = () => {
+    setSettings(prev => {
+      const centerPlaylist = Array.isArray(prev.full?.tv?.centerPlaylist) ? [...prev.full.tv.centerPlaylist] : []
+      if (centerPlaylist.length >= tvCenterLimit) return prev
+      centerPlaylist.push({ type: 'logo', durationMs: 8000 })
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            centerPlaylist
+          }
+        }
+      }
+    })
+  }
+
+  const setDefaultTvCenterPlaylist = () => {
+    updateFullTv('centerPlaylist', [
+      { type: 'logo', durationMs: 6000 },
+      { type: 'game', durationMs: 10000 },
+      { type: 'logo', durationMs: 6000 },
+      { type: 'event', durationMs: 9000 }
+    ])
+  }
+
+  const clearTvCenterPlaylist = () => {
+    updateFullTv('centerPlaylist', [])
+  }
+
+  const removeTvCenterItem = (index) => {
+    setSettings(prev => {
+      const centerPlaylist = Array.isArray(prev.full?.tv?.centerPlaylist) ? [...prev.full.tv.centerPlaylist] : []
+      centerPlaylist.splice(index, 1)
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            centerPlaylist
+          }
+        }
+      }
+    })
+  }
+
+  const moveTvCenterItem = (index, direction) => {
+    setSettings(prev => {
+      const centerPlaylist = Array.isArray(prev.full?.tv?.centerPlaylist) ? [...prev.full.tv.centerPlaylist] : []
+      const nextIndex = index + direction
+      if (nextIndex < 0 || nextIndex >= centerPlaylist.length) return prev
+      const tmp = centerPlaylist[index]
+      centerPlaylist[index] = centerPlaylist[nextIndex]
+      centerPlaylist[nextIndex] = tmp
+      return {
+        ...prev,
+        full: {
+          ...prev.full,
+          tv: {
+            ...prev.full?.tv,
+            centerPlaylist
+          }
+        }
+      }
+    })
+  }
+
+  const handleTvAssetUpload = async (file) => {
+    if (!file) return
+    setTvAssetsError('')
+    setTvAssetUploading(true)
+    try {
+      await uploadTvAsset({ file, name: tvAssetUploadName })
+      setTvAssetUploadName('')
+      await loadTvAssets()
+    } catch (err) {
+      setTvAssetsError('Failed to upload TV asset.')
+    } finally {
+      setTvAssetUploading(false)
+    }
+  }
+
+  const handleTvAssetDelete = async (name) => {
+    if (!name) return
+    setTvAssetsError('')
+    try {
+      await deleteTvAsset(name)
+      await loadTvAssets()
+    } catch (err) {
+      setTvAssetsError('Failed to delete TV asset.')
+    }
+  }
+
+  const handleAlertSoundUpload = async (file) => {
+    if (!file) return
+    setAlertSoundsError('')
+    setAlertSoundUploading(true)
+    try {
+      await uploadAlertSound({ file, name: alertSoundUploadName })
+      setAlertSoundUploadName('')
+      await loadAlertSounds()
+    } catch (err) {
+      setAlertSoundsError('Failed to upload alert sound.')
+    } finally {
+      setAlertSoundUploading(false)
+    }
+  }
+
+  const handleAlertSoundDelete = async (name) => {
+    if (!name) return
+    setAlertSoundsError('')
+    try {
+      await deleteAlertSound(name)
+      await loadAlertSounds()
+    } catch (err) {
+      setAlertSoundsError('Failed to delete alert sound.')
+    }
   }
 
   const addTvDisplay = () => {
@@ -296,8 +556,26 @@ export default function Overlays() {
 
       {error && <div className="alert alert-danger shadow-sm border-0">{error}</div>}
 
+      <div className="d-flex flex-wrap gap-2 mb-3">
+        {OVERLAY_TABS.map(item => {
+          const active = item.key === tab
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className={`btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}`}
+              onClick={() => setTab(item.key)}
+            >
+              <i className={`bi ${item.icon} me-2`}></i>
+              {item.label}
+            </button>
+          )
+        })}
+      </div>
+
       <div className="row g-4">
         {/* Overlay Access Section */}
+        {tab === 'access' && (
         <div className="col-12">
           <div className="card bg-panel p-4 border-0 shadow-sm">
             <h3 className="h6 fw-bold mb-3 text-uppercase opacity-75" style={{ letterSpacing: '1px' }}>Overlay Access</h3>
@@ -354,9 +632,11 @@ export default function Overlays() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Global Settings & Event Scope */}
-        <div className="col-12 col-lg-6">
+        {tab === 'global' && (
+        <div className="col-12">
           <div className="card bg-panel p-4 h-100 border-0 shadow-sm">
             <div className="d-flex align-items-center gap-3 mb-4">
               <div className="p-2 rounded-3 bg-primary bg-opacity-10 text-primary" style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -413,17 +693,39 @@ export default function Overlays() {
             </div>
           </div>
         </div>
+        )}
 
         {/* Full Overlay Config */}
-        <div className="col-12 col-lg-6">
+        {tab === 'full' && (
+        <div className="col-12">
           <div className="card bg-panel p-4 h-100 border-0 shadow-sm">
             <div className="d-flex align-items-center gap-3 mb-4">
               <div className="p-2 rounded-3 bg-info bg-opacity-10 text-info" style={{ width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <i className="bi bi-window-fullscreen fs-5"></i>
               </div>
-              <h3 className="h6 fw-bold m-0 text-uppercase opacity-75" style={{ letterSpacing: '1px' }}>Full Overlay Layout</h3>
+              <div className="d-flex flex-column gap-2 flex-grow-1">
+                <h3 className="h6 fw-bold m-0 text-uppercase opacity-75" style={{ letterSpacing: '1px' }}>Full Overlay</h3>
+                <div className="d-flex flex-wrap gap-2">
+                  {FULL_OVERLAY_TABS.map(item => {
+                    const active = item.key === fullTab
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className={`btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}`}
+                        onClick={() => setFullTab(item.key)}
+                      >
+                        <i className={`bi ${item.icon} me-2`}></i>
+                        {item.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
             
+            {fullTab === 'layout' && (
+              <>
             <div className="row g-3">
               <div className="col-6">
                 <div className="form-check form-switch p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 d-flex justify-content-between align-items-center gap-3">
@@ -524,8 +826,11 @@ export default function Overlays() {
                 </div>
               </div>
             </div>
+              </>
+            )}
 
-            <div className="mt-4">
+            {fullTab === 'modules' && (
+            <div className="mt-2">
               <div className="small fw-bold opacity-50 mb-3 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Active Modules</div>
               <div className="d-grid gap-2">
                 {FULL_MODULE_OPTIONS.map(module => {
@@ -591,9 +896,28 @@ export default function Overlays() {
                 })}
               </div>
             </div>
+            )}
 
-            <div className="mt-4">
-              <div className="small fw-bold opacity-50 mb-3 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Panda TV Shell</div>
+            {fullTab === 'tv' && (
+            <div className="mt-2">
+              <div className="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+                <div className="small fw-bold opacity-50 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Panda TV Shell</div>
+                <div className="btn-group" role="group" aria-label="TV sections">
+                  {FULL_TV_TABS.map(item => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`btn btn-sm ${tvTab === item.key ? 'btn-primary' : 'btn-outline-secondary'}`}
+                      onClick={() => setTvTab(item.key)}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {tvTab === 'general' && (
+              <>
               <div className="form-check form-switch p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 d-flex justify-content-between align-items-center gap-3">
                 <label className="form-check-label small fw-bold opacity-75" htmlFor="fullTvEnabled">Enable TV Shell</label>
                 <input
@@ -653,7 +977,11 @@ export default function Overlays() {
                   />
                 </div>
               </div>
-              <div className="mt-3">
+              </>
+              )}
+
+              {tvTab === 'displays' && (
+              <div>
                 <div className="small fw-bold opacity-50 mb-2 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Digital Displays</div>
                 <div className="d-grid gap-2">
                   {(Array.isArray(settings.full?.tv?.displays) ? settings.full.tv.displays : []).map((display, index) => (
@@ -699,7 +1027,10 @@ export default function Overlays() {
                   Tokens: {`{currentTime}`} {`{totalTime}`} {`{session}`} {`{event}`} {`{title}`} {`{console}`} {`{year}`} {`{publisher}`} {`{status}`}.
                 </div>
               </div>
-              <div className="mt-4">
+              )}
+
+              {tvTab === 'stickers' && (
+              <div>
                 <div className="small fw-bold opacity-50 mb-2 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>TV Stickers</div>
                 <div className="d-grid gap-2">
                   {(Array.isArray(settings.full?.tv?.stickers) ? settings.full.tv.stickers : []).map((sticker, index) => (
@@ -786,65 +1117,374 @@ export default function Overlays() {
                   X/Y are percentages from the top-left of the TV shell. Size is width as a percent of the shell.
                 </div>
               </div>
+              )}
+
+              {tvTab === 'center' && (
+              <div>
+                <div className="small fw-bold opacity-50 mb-2 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>TV Center Playlist</div>
+                <div className="text-secondary small">
+                  Optional. If empty, the TV center uses the built-in rotation (Logo/Game/Event). Add items to fully customize what shows and for how long.
+                </div>
+                <div className="d-flex flex-wrap gap-2 mt-2">
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={addTvCenterItem} disabled={tvCenterCount >= tvCenterLimit}>
+                    Add Item
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={setDefaultTvCenterPlaylist}>
+                    Preset: Default
+                  </button>
+                  <button type="button" className="btn btn-sm btn-outline-secondary" onClick={clearTvCenterPlaylist} disabled={tvCenterCount === 0}>
+                    Use Built-in Rotation
+                  </button>
+                  {tvCenterCount >= tvCenterLimit && (
+                    <span className="text-secondary small align-self-center">Limit {tvCenterLimit} items.</span>
+                  )}
+                </div>
+
+                <div className="d-grid gap-2 mt-3">
+                  {(Array.isArray(settings.full?.tv?.centerPlaylist) ? settings.full.tv.centerPlaylist : []).map((item, index) => {
+                    const durationSec = (Number(item?.durationMs) || 8000) / 1000
+                    const isImage = String(item?.type || '').toLowerCase() === 'image'
+
+                    return (
+                      <div className="p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10" key={`tv-center-${index}`}>
+                        <div className="row g-2 align-items-end">
+                          <div className="col-4">
+                            <label className="form-label small fw-bold opacity-50">Type</label>
+                            <select
+                              className="form-select border-0 bg-panel shadow-sm"
+                              value={item?.type || 'logo'}
+                              onChange={e => updateTvCenterItem(index, 'type', e.target.value)}
+                            >
+                              <option value="logo">Logo</option>
+                              <option value="game">Game</option>
+                              <option value="event">Event</option>
+                              <option value="soon">BRB / Starting Soon</option>
+                              <option value="image">Image (PNG)</option>
+                            </select>
+                          </div>
+                          <div className="col-4">
+                            <label className="form-label small fw-bold opacity-50">Duration (sec)</label>
+                            <input
+                              className="form-control border-0 bg-panel shadow-sm"
+                              type="number"
+                              step="0.5"
+                              value={durationSec}
+                              onChange={e => {
+                                const sec = clampNumber(e.target.value, 0.5, 900, durationSec)
+                                updateTvCenterItem(index, 'durationMs', Math.round(sec * 1000))
+                              }}
+                            />
+                          </div>
+                          <div className="col-4 text-end">
+                            <div className="btn-group">
+                              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => moveTvCenterItem(index, -1)} disabled={index === 0}>Up</button>
+                              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => moveTvCenterItem(index, +1)} disabled={index >= tvCenterCount - 1}>Down</button>
+                              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => removeTvCenterItem(index)}>Remove</button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {isImage ? (
+                          <div className="row g-2 mt-2 align-items-end">
+                            <div className="col-6">
+                              <label className="form-label small fw-bold opacity-50">Pick Uploaded Asset</label>
+                              <select
+                                className="form-select border-0 bg-panel shadow-sm"
+                                value={item?.url || ''}
+                                onChange={e => updateTvCenterItem(index, 'url', e.target.value)}
+                              >
+                                <option value="">(none)</option>
+                                {tvAssets.map(asset => (
+                                  <option key={asset.name} value={asset.url}>{asset.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="col-6">
+                              <label className="form-label small fw-bold opacity-50">Or Custom URL</label>
+                              <input
+                                className="form-control border-0 bg-panel shadow-sm"
+                                value={item?.url || ''}
+                                onChange={e => updateTvCenterItem(index, 'url', e.target.value)}
+                                placeholder="/tv-assets/my.png"
+                              />
+                            </div>
+                            {item?.url ? (
+                              <div className="col-12 mt-2">
+                                <img
+                                  src={item.url}
+                                  alt="Preview"
+                                  style={{ maxWidth: 220, maxHeight: 110, objectFit: 'contain', opacity: 0.9 }}
+                                />
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                  {(Array.isArray(settings.full?.tv?.centerPlaylist) ? settings.full.tv.centerPlaylist : []).length === 0 && (
+                    <div className="text-secondary small">No playlist items yet.</div>
+                  )}
+                </div>
+              </div>
+              )}
+
+              {tvTab === 'alerts' && (
+                <div>
+                  <div className="small fw-bold opacity-50 mb-2 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Alert Sounds</div>
+                  <div className="form-check form-switch p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 d-flex justify-content-between align-items-center gap-3">
+                    <label className="form-check-label small fw-bold opacity-75" htmlFor="tvConnectorSoundsEnabled">Play sounds for connector alerts</label>
+                    <input
+                      className="form-check-input ms-0"
+                      type="checkbox"
+                      checked={settings.full?.tv?.connectorSounds?.enabled === true}
+                      onChange={e => updateFullTv('connectorSounds', { ...(settings.full?.tv?.connectorSounds || {}), enabled: e.target.checked })}
+                      id="tvConnectorSoundsEnabled"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 mt-2">
+                    <label className="form-label small fw-bold opacity-50">Volume ({Math.round((settings.full?.tv?.connectorSounds?.volume ?? 0.8) * 100)}%)</label>
+                    <input
+                      className="form-range"
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={settings.full?.tv?.connectorSounds?.volume ?? 0.8}
+                      onChange={e => updateFullTv('connectorSounds', { ...(settings.full?.tv?.connectorSounds || {}), volume: Number(e.target.value) })}
+                    />
+                    <div className="text-secondary small">
+                      These play when StreamerBot (or another connector) posts `/api/streamerbot/overlay-connector`.
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 mt-2">
+                    <div className="d-flex align-items-center justify-content-between gap-2 mb-2">
+                      <div className="small fw-bold opacity-50 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Sound Mapping</div>
+                      <button type="button" className="btn btn-sm btn-outline-secondary" onClick={loadAlertSounds} disabled={alertSoundsLoading}>
+                        Refresh
+                      </button>
+                    </div>
+                    {alertSoundsError && <div className="text-danger small mb-2">{alertSoundsError}</div>}
+
+                    {[
+                      ['default', 'Default'],
+                      ['sub', 'Subscription'],
+                      ['resub', 'Resub'],
+                      ['gift', 'Gift'],
+                      ['raid', 'Raid'],
+                      ['follow', 'Follow'],
+                      ['cheer', 'Bits/Cheer'],
+                      ['member', 'Member'],
+                      ['tip', 'Tip/Donation']
+                    ].map(([key, label]) => {
+                      const currentValue = settings.full?.tv?.connectorSounds?.sounds?.[key] || ''
+                      return (
+                        <div key={key} className="row g-2 align-items-center mb-2">
+                          <div className="col-4">
+                            <div className="small fw-bold opacity-75">{label}</div>
+                          </div>
+                          <div className="col-8">
+                            <select
+                              className="form-select form-select-sm bg-dark border-secondary text-light"
+                              value={currentValue}
+                              onChange={e => updateTvConnectorSound(key, e.target.value)}
+                            >
+                              <option value="">(none)</option>
+                              {alertSounds.map(sound => (
+                                <option key={sound.name} value={sound.url}>{sound.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  <div className="p-3 bg-panel-2 rounded-3 border border-secondary border-opacity-10 mt-2">
+                    <div className="small fw-bold opacity-50 mb-2 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>Manage Sounds</div>
+                    <div className="row g-2 align-items-end">
+                      <div className="col-6">
+                        <label className="form-label small fw-bold opacity-50">Upload Name (optional)</label>
+                        <input
+                          className="form-control border-0 bg-panel shadow-sm"
+                          value={alertSoundUploadName}
+                          onChange={e => setAlertSoundUploadName(e.target.value)}
+                          placeholder="sub, bits, etc"
+                          disabled={alertSoundUploading}
+                        />
+                      </div>
+                      <div className="col-6">
+                        <label className="form-label small fw-bold opacity-50">Upload Audio</label>
+                        <input
+                          className="form-control border-0 bg-panel shadow-sm"
+                          type="file"
+                          accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/ogg"
+                          disabled={alertSoundUploading}
+                          onChange={e => {
+                            const file = e.target.files?.[0] || null
+                            e.target.value = ''
+                            handleAlertSoundUpload(file)
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="d-grid gap-2 mt-2">
+                      {alertSoundsLoading && <div className="text-secondary small">Loading sounds.</div>}
+                      {!alertSoundsLoading && alertSounds.map(sound => (
+                        <div key={sound.name} className="p-2 bg-panel rounded-3 border border-secondary border-opacity-10 d-flex align-items-center justify-content-between gap-2">
+                          <div className="small text-truncate min-w-0" title={sound.url}>{sound.name}</div>
+                          <div className="d-flex gap-2">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary"
+                              onClick={() => {
+                                try {
+                                  const audio = new Audio(sound.url)
+                                  audio.volume = settings.full?.tv?.connectorSounds?.volume ?? 0.8
+                                  audio.play().catch(() => {})
+                                } catch {}
+                              }}
+                            >
+                              Test
+                            </button>
+                            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => handleAlertSoundDelete(sound.name)}>
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {!alertSoundsLoading && alertSounds.length === 0 && (
+                        <div className="text-secondary small">No uploaded sounds yet.</div>
+                      )}
+                    </div>
+
+                    <div className="text-secondary small mt-2">
+                      Uploaded files are saved to `public/alert-sounds/` and served at `/alert-sounds/...`.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {tvTab === 'assets' && (
+                <div>
+                  <div className="small fw-bold opacity-50 mb-2 text-uppercase" style={{ fontSize: '10px', letterSpacing: '1px' }}>TV Assets</div>
+                  <div className="row g-2 align-items-end">
+                    <div className="col-6">
+                      <label className="form-label small fw-bold opacity-50">Upload Name (optional)</label>
+                      <input
+                        className="form-control border-0 bg-panel shadow-sm"
+                        value={tvAssetUploadName}
+                        onChange={e => setTvAssetUploadName(e.target.value)}
+                        placeholder="brb, sponsor, etc"
+                        disabled={tvAssetUploading}
+                      />
+                    </div>
+                    <div className="col-6">
+                      <label className="form-label small fw-bold opacity-50">Upload Image</label>
+                      <input
+                        className="form-control border-0 bg-panel shadow-sm"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                        disabled={tvAssetUploading}
+                        onChange={e => {
+                          const file = e.target.files?.[0] || null
+                          e.target.value = ''
+                          handleTvAssetUpload(file)
+                        }}
+                      />
+                    </div>
+                  </div>
+                  {tvAssetsError && <div className="text-danger small mt-2">{tvAssetsError}</div>}
+                  <div className="d-grid gap-2 mt-2">
+                    {tvAssetsLoading && <div className="text-secondary small">Loading assets…</div>}
+                    {!tvAssetsLoading && tvAssets.map(asset => (
+                      <div key={asset.name} className="p-2 bg-panel rounded-3 border border-secondary border-opacity-10 d-flex align-items-center justify-content-between gap-2">
+                        <div className="d-flex align-items-center gap-2 min-w-0">
+                          <img src={asset.url} alt={asset.name} style={{ width: 44, height: 28, objectFit: 'contain', opacity: 0.9 }} />
+                          <div className="small text-truncate" title={asset.url}>{asset.name}</div>
+                        </div>
+                        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => handleTvAssetDelete(asset.name)}>
+                          Delete
+                        </button>
+                      </div>
+                    ))}
+                    {!tvAssetsLoading && tvAssets.length === 0 && (
+                      <div className="text-secondary small">No uploaded assets yet.</div>
+                    )}
+                  </div>
+                  <div className="text-secondary small mt-2">
+                    Uploaded files are saved to `public/tv-assets/` and served at `/tv-assets/...`.
+                  </div>
+                </div>
+              )}
             </div>
+            )}
 
           </div>
         </div>
+        )}
 
         {/* Specific Overlay Settings */}
-        <div className="col-12 col-lg-6">
-          <div className="card bg-panel p-4 border-0 shadow-sm h-100">
-            <h3 className="h6 fw-bold mb-3 text-uppercase opacity-75">Main & Modern Specifics</h3>
-            <div className="row g-3">
-              <div className="col-6">
-                <label className="form-label small fw-bold opacity-50">Main Style</label>
-                <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.main.style} onChange={e => updateSection('main', 'style', e.target.value)}>
-                  <option value="reference">Reference</option>
-                  <option value="classic">Classic</option>
-                </select>
-              </div>
-              <div className="col-6">
-                <label className="form-label small fw-bold opacity-50">Modern Theme</label>
-                <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.modern.theme} onChange={e => updateSection('modern', 'theme', e.target.value)}>
-                  <option value="bamboo">Bamboo</option>
-                  <option value="cyberpunk">Cyberpunk</option>
-                  <option value="neon">Neon</option>
-                  <option value="quantum">Quantum</option>
-                </select>
-              </div>
-              <div className="col-6">
-                <label className="form-label small fw-bold opacity-50">Modern Style</label>
-                <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.modern.style} onChange={e => updateSection('modern', 'style', e.target.value)}>
-                  <option value="glass">Glass</option>
-                  <option value="solid">Solid</option>
-                </select>
-              </div>
-              <div className="col-6">
-                <label className="form-label small fw-bold opacity-50">Glass Tint</label>
-                <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.modern.glassTint} onChange={e => updateSection('modern', 'glassTint', e.target.value)}>
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                </select>
+        {tab === 'other' && (
+          <>
+            <div className="col-12 col-lg-6">
+              <div className="card bg-panel p-4 border-0 shadow-sm h-100">
+                <h3 className="h6 fw-bold mb-3 text-uppercase opacity-75">Main & Modern Specifics</h3>
+                <div className="row g-3">
+                  <div className="col-6">
+                    <label className="form-label small fw-bold opacity-50">Main Style</label>
+                    <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.main.style} onChange={e => updateSection('main', 'style', e.target.value)}>
+                      <option value="reference">Reference</option>
+                      <option value="classic">Classic</option>
+                    </select>
+                  </div>
+                  <div className="col-6">
+                    <label className="form-label small fw-bold opacity-50">Modern Theme</label>
+                    <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.modern.theme} onChange={e => updateSection('modern', 'theme', e.target.value)}>
+                      <option value="bamboo">Bamboo</option>
+                      <option value="cyberpunk">Cyberpunk</option>
+                      <option value="neon">Neon</option>
+                      <option value="quantum">Quantum</option>
+                    </select>
+                  </div>
+                  <div className="col-6">
+                    <label className="form-label small fw-bold opacity-50">Modern Style</label>
+                    <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.modern.style} onChange={e => updateSection('modern', 'style', e.target.value)}>
+                      <option value="glass">Glass</option>
+                      <option value="solid">Solid</option>
+                    </select>
+                  </div>
+                  <div className="col-6">
+                    <label className="form-label small fw-bold opacity-50">Glass Tint</label>
+                    <select className="form-select border-0 bg-panel-2 shadow-sm" value={settings.modern.glassTint} onChange={e => updateSection('modern', 'glassTint', e.target.value)}>
+                      <option value="dark">Dark</option>
+                      <option value="light">Light</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        <div className="col-12 col-lg-6">
-          <div className="card bg-panel p-4 border-0 shadow-sm h-100">
-            <h3 className="h6 fw-bold mb-3 text-uppercase opacity-75">Footer & Carousel</h3>
-            <div className="row g-3">
-              <div className="col-12">
-                <label className="form-label small fw-bold opacity-50">Footer Event Title</label>
-                <input className="form-control border-0 bg-panel-2 shadow-sm" value={settings.footer.title} onChange={e => updateSection('footer', 'title', e.target.value)} />
-              </div>
-              <div className="col-6">
-                <label className="form-label small fw-bold opacity-50">Carousel Rotate (ms)</label>
-                <input className="form-control border-0 bg-panel-2 shadow-sm" type="number" value={settings.badgeCarousel.rotateMs} onChange={e => updateSection('badgeCarousel', 'rotateMs', clampNumber(e.target.value, 2000, 60000, settings.badgeCarousel.rotateMs))} />
+            <div className="col-12 col-lg-6">
+              <div className="card bg-panel p-4 border-0 shadow-sm h-100">
+                <h3 className="h6 fw-bold mb-3 text-uppercase opacity-75">Footer & Carousel</h3>
+                <div className="row g-3">
+                  <div className="col-12">
+                    <label className="form-label small fw-bold opacity-50">Footer Event Title</label>
+                    <input className="form-control border-0 bg-panel-2 shadow-sm" value={settings.footer.title} onChange={e => updateSection('footer', 'title', e.target.value)} />
+                  </div>
+                  <div className="col-6">
+                    <label className="form-label small fw-bold opacity-50">Carousel Rotate (ms)</label>
+                    <input className="form-control border-0 bg-panel-2 shadow-sm" type="number" value={settings.badgeCarousel.rotateMs} onChange={e => updateSection('badgeCarousel', 'rotateMs', clampNumber(e.target.value, 2000, 60000, settings.badgeCarousel.rotateMs))} />
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          </>
+        )}
 
       </div>
     </div>

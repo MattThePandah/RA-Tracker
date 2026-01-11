@@ -36,6 +36,8 @@ public/covers/
 custom-covers/
 cache/
 public/pannboo.png
+public/tv-assets/
+public/alert-sounds/
 
 # Logs & diagnostics
 logs/

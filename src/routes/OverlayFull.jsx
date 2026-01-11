@@ -428,6 +428,20 @@ export default function OverlayFull() {
   const connectorEvent = useOverlayConnector(connectorPollMs)
   const tvLogoUrl = typeof tvConfig.logoUrl === 'string' ? tvConfig.logoUrl.trim() : ''
   const tvLogoText = (typeof tvConfig.logoText === 'string' ? tvConfig.logoText.trim() : '') || 'PANDA'
+  const tvCenterPlaylist = Array.isArray(tvConfig.centerPlaylist) ? tvConfig.centerPlaylist : []
+  const tvCenterPlaylistKey = (() => {
+    try {
+      const minimized = tvCenterPlaylist.map(item => ({
+        type: item?.type,
+        durationMs: item?.durationMs,
+        url: item?.url
+      }))
+      return JSON.stringify(minimized)
+    } catch {
+      return ''
+    }
+  })()
+  const tvCenterPlaylistStable = React.useMemo(() => tvCenterPlaylist, [tvCenterPlaylistKey])
   const defaultTvDisplays = [
     { label: 'Status', value: 'LIVE' },
     { label: 'Session', value: '00:00:00' }
@@ -476,6 +490,38 @@ export default function OverlayFull() {
     }
   }, [connectorEvent])
 
+  const connectorSoundsEnabled = tvEnabled && (tvConfig.connectorSounds?.enabled === true)
+  const connectorSoundVolume = clampNumber(tvConfig.connectorSounds?.volume, 0, 1, 0.8)
+  const connectorSoundMap = (tvConfig.connectorSounds?.sounds && typeof tvConfig.connectorSounds.sounds === 'object')
+    ? tvConfig.connectorSounds.sounds
+    : {}
+  const lastConnectorSoundIdRef = React.useRef(null)
+
+  React.useEffect(() => {
+    if (!connectorSoundsEnabled) return
+    if (!connectorEvent?.id) return
+    if (connectorEvent.id === lastConnectorSoundIdRef.current) return
+
+    lastConnectorSoundIdRef.current = connectorEvent.id
+
+    const connectorType = normalizeConnectorType(connectorEvent?.type)
+    if (connectorType === 'sticker') return
+
+    const url = safeText(
+      connectorEvent?.soundUrl ||
+      connectorEvent?.sound ||
+      connectorSoundMap[connectorType] ||
+      connectorSoundMap.default
+    )
+    if (!url) return
+
+    try {
+      const audio = new Audio(url)
+      audio.volume = connectorSoundVolume
+      audio.play().catch(() => {})
+    } catch {}
+  }, [connectorSoundsEnabled, connectorEvent, connectorSoundMap, connectorSoundVolume])
+
   const allStickers = React.useMemo(() => {
     const staticStickers = tvEnabled
       ? tvStickerSource.filter(sticker => sticker && typeof sticker.url === 'string' && sticker.url.trim())
@@ -492,23 +538,29 @@ export default function OverlayFull() {
   const [current, setCurrent] = React.useState(null)
   const [startingSoon, setStartingSoon] = React.useState(false)
   const [startingSoonEndTime, setStartingSoonEndTime] = React.useState(null)
+  const [brb, setBrb] = React.useState(false)
+  const [brbEndTime, setBrbEndTime] = React.useState(null)
   const [timeLeft, setTimeLeft] = React.useState(null)
   const [stats, setStats] = React.useState({ total: 0, completed: 0, percent: 0 })
 
+  const breakMode = startingSoon || brb
+  const breakEndTime = startingSoon ? startingSoonEndTime : (brb ? brbEndTime : null)
+  const wheelPinnedEffective = tvConfig.wheelPinned === true && !breakMode
+
   React.useEffect(() => {
-    if (!startingSoon || !startingSoonEndTime) {
+    if (!breakMode || !breakEndTime) {
       setTimeLeft(null)
       return
     }
     const update = () => {
       const now = Date.now()
-      const diff = Math.max(0, Math.floor((startingSoonEndTime - now) / 1000))
+      const diff = Math.max(0, Math.floor((breakEndTime - now) / 1000))
       setTimeLeft(diff)
     }
     update()
     const id = setInterval(update, 1000)
     return () => clearInterval(id)
-  }, [startingSoon, startingSoonEndTime])
+  }, [breakMode, breakEndTime])
 
   const formatSoonTimer = (totalSeconds) => {
     if (totalSeconds === null) return ''
@@ -530,7 +582,7 @@ export default function OverlayFull() {
   const tvScreenRef = React.useRef(null)
 
   // TV Power state: ON if game is live OR event is active OR starting soon OR wheel is pinned
-  const isTvPowered = !!current || !!eventTitle || startingSoon || tvConfig.wheelPinned === true
+  const isTvPowered = !!current || !!eventTitle || breakMode || wheelPinnedEffective
   const tvPowerClass = isTvPowered ? 'power-on' : 'power-off'
 
   const currentEnabled = moduleConfig.current?.enabled ?? false
@@ -540,7 +592,7 @@ export default function OverlayFull() {
   const shouldLoadTimers = timersEnabled || tvNeedsTimers
   const showEventTimer = timersEnabled && globalConfig.showTimer !== false
 
-  const needsCurrent = currentEnabled || achievementsEnabled || tvEnabled || true // Always fetch to get startingSoon status
+  const needsCurrent = currentEnabled || achievementsEnabled || tvEnabled || true // Always fetch to get break status
   const tvNeedsStats = tvEnabled
   const needsStats = statsEnabled || tvNeedsStats
 
@@ -555,6 +607,8 @@ export default function OverlayFull() {
           setCurrent(json?.current || null)
           setStartingSoon(!!json?.startingSoon)
           setStartingSoonEndTime(json?.startingSoonEndTime || null)
+          setBrb(!!json?.brb)
+          setBrbEndTime(json?.brbEndTime || null)
           return
         }
       } catch { }
@@ -569,6 +623,8 @@ export default function OverlayFull() {
         setCurrent(null)
         setStartingSoon(false)
         setStartingSoonEndTime(null)
+        setBrb(false)
+        setBrbEndTime(null)
       }
     }
     loadCurrent()
@@ -884,7 +940,7 @@ export default function OverlayFull() {
       id: 'soon-timer',
       order: 0,
       position: 'left',
-      enabled: startingSoon,
+      enabled: breakMode,
       content: (
         <div className="overlay-card full-overlay-card soon-timer-card">
           <div className="full-card-title">Stream Status</div>
@@ -894,7 +950,9 @@ export default function OverlayFull() {
             ) : (
               <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#5ecf86', marginBottom: '10px' }}>{tvLogoText}</div>
             )}
-            <div style={{ fontSize: '18px', color: '#5ecf86', fontWeight: 'bold', letterSpacing: '1px', marginBottom: '5px' }}>STARTING SOON</div>
+            <div style={{ fontSize: '18px', color: '#5ecf86', fontWeight: 'bold', letterSpacing: '1px', marginBottom: '5px' }}>
+              {startingSoon ? 'STARTING SOON' : 'BE RIGHT BACK'}
+            </div>
             <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#66b7ff', fontFamily: 'monospace' }}>
               {formatSoonTimer(timeLeft)}
             </div>
@@ -912,7 +970,9 @@ export default function OverlayFull() {
           className={`overlay-card full-overlay-card${nowPlayingCover ? ` full-overlay-now-playing${nowPlayingToneClass}` : ''}`}
           style={nowPlayingCover ? { '--now-playing-cover': `url(${nowPlayingCover})` } : undefined}
         >
-          <div className="full-card-title">{startingSoon ? 'Up Next' : 'Now Playing'}</div>
+          <div className="full-card-title">
+            {breakMode ? (startingSoon ? 'Up Next' : 'BRB') : 'Now Playing'}
+          </div>
           {current ? (
             <div className="full-game-card">
               {showNowPlayingThumb && (
@@ -929,8 +989,8 @@ export default function OverlayFull() {
                   {globalConfig.showYear !== false && current.release_year ? ` • ${current.release_year}` : ''}
                   {globalConfig.showPublisher !== false && current.publisher ? ` • ${current.publisher}` : ''}
                 </div>
-                <div className="full-game-status">{startingSoon ? 'WARMING UP...' : (current.status || '')}</div>
-                {showEventTimer && !startingSoon && (
+                <div className="full-game-status">{breakMode ? (startingSoon ? 'WARMING UP...' : 'BRB') : (current.status || '')}</div>
+                {showEventTimer && !breakMode && (
                   <div className="full-game-timer">
                     <span className="full-game-timer-label">Current</span>
                     <span className="full-game-timer-value">{timers.currentGameTime}</span>
@@ -939,7 +999,7 @@ export default function OverlayFull() {
               </div>
             </div>
           ) : (
-            <div className="text-secondary small">{startingSoon ? 'No game scheduled.' : 'No current game selected.'}</div>
+            <div className="text-secondary small">{breakMode ? (startingSoon ? 'No game scheduled.' : 'BRB.') : 'No current game selected.'}</div>
           )}
         </div>
       )
@@ -948,7 +1008,7 @@ export default function OverlayFull() {
       id: eventModuleId,
       order: eventModuleConfig?.order || 1,
       position: eventModuleConfig?.position || 'left',
-      enabled: eventModuleEnabled && !startingSoon,
+      enabled: eventModuleEnabled && !breakMode,
       content: (
         <div className="overlay-card full-overlay-card full-overlay-event">
           <div className="full-card-title">{eventModuleTitle}</div>
@@ -984,7 +1044,7 @@ export default function OverlayFull() {
       id: 'timers',
       order: moduleConfig.timers?.order || 1,
       position: moduleConfig.timers?.position || 'right',
-      enabled: timersEnabled && !startingSoon,
+      enabled: timersEnabled && !breakMode,
       content: (
         <div className="overlay-card full-overlay-card">
           <div className="full-card-title">Timers</div>
@@ -1007,14 +1067,14 @@ export default function OverlayFull() {
       id: 'achievements',
       order: moduleConfig.achievements?.order || 1,
       position: moduleConfig.achievements?.position || 'right',
-      enabled: achievementsEnabled && globalConfig.showAchievements !== false && !startingSoon,
+      enabled: achievementsEnabled && globalConfig.showAchievements !== false && !breakMode,
       content: (
         <div className="overlay-card full-overlay-card">
           <div className="full-card-title">Achievements</div>
           {!isConfigured && (
             <div className="text-secondary small">RetroAchievements not configured.</div>
           )}
-          {isConfigured && (!current || !RA.hasRetroAchievementsSupport(current)) && (
+          {isConfigured && current && !RA.hasRetroAchievementsSupport(current) && (
             <div className="text-secondary small">Current game has no RetroAchievements.</div>
           )}
           {isConfigured && current && RA.hasRetroAchievementsSupport(current) && (
@@ -1241,8 +1301,8 @@ export default function OverlayFull() {
   const wheelWinnerTypeRaw = wheelWinnerRaw?.type || (wheelWinnerRaw?.isConsole ? 'console' : 'game')
   const wheelWinnerTitleRawForInput = wheelWinnerRaw ? safeText(wheelWinnerRaw.title || wheelWinnerRaw.name) : ''
   const preferWheelConsole = Boolean(selectedWheelConsoleAcronym) && (wheelActive || wheelMode === 'console' || !consoleAcronym)
-  const inputText = startingSoon
-    ? 'SOON'
+  const inputText = breakMode
+    ? (startingSoon ? 'SOON' : 'BRB')
     : (((preferWheelConsole ? selectedWheelConsoleAcronym : consoleAcronym) || (!preferWheelConsole ? selectedWheelConsoleAcronym : consoleAcronym))
       ? clampDotText(sanitizeDotText((preferWheelConsole ? selectedWheelConsoleAcronym : consoleAcronym) || (!preferWheelConsole ? selectedWheelConsoleAcronym : consoleAcronym)), DOT_LABEL_MAX)
       : ' ')
@@ -1259,7 +1319,10 @@ export default function OverlayFull() {
     ? clampDotText(sanitizeDotText(gameMetaParts.join(' ')), DOT_META_MAX)
     : ''
   const hasEventStats = tvEnabled && Number.isFinite(stats.total) && stats.total > 0
-  const showEventCenter = tvEnabled && (Boolean(eventTitle) || hasEventStats)
+  const playlistWantsEvent = tvEnabled && Array.isArray(tvCenterPlaylistStable) && tvCenterPlaylistStable.some(item => (
+    String(item?.type || '').trim().toLowerCase() === 'event'
+  ))
+  const showEventCenter = tvEnabled && (Boolean(eventTitle) || hasEventStats || playlistWantsEvent)
   const eventLabelBase = eventTitle || 'Event'
   const eventLabelText = showEventCenter ? clampDotText(sanitizeDotText(eventLabelBase), DOT_LABEL_MAX) : ''
   const eventPercentText = hasEventStats
@@ -1310,7 +1373,7 @@ export default function OverlayFull() {
       const rawValue = applyDisplayTokens(display?.value, timers, current)
       let value = applyDisplayFallback(rawValue, labelText, timers)
 
-      if (startingSoon) {
+      if (breakMode) {
         const lowerLabel = label.toLowerCase()
         const lowerRaw = labelText.toLowerCase()
         if (
@@ -1320,10 +1383,10 @@ export default function OverlayFull() {
           lowerRaw.includes('status') ||
           lowerRaw.includes('session')
         ) {
-          value = 'PRE-SHOW'
+          value = startingSoon ? 'PRE-SHOW' : 'BRB'
         }
         if (lowerLabel.includes('event') || lowerRaw.includes('event')) {
-          value = 'STANDBY'
+          value = startingSoon ? 'STANDBY' : 'PAUSED'
         }
       }
 
@@ -1367,53 +1430,97 @@ export default function OverlayFull() {
 
   const centerItems = React.useMemo(() => {
     if (!tvEnabled) return []
+    const hasCustomPlaylist = tvCenterPlaylistStable.length > 0
     const items = []
-    if (startingSoon) {
+
+    const pushSoon = (durationMs) => {
       items.push({
         type: 'soon',
+        durationMs,
         label: 'STREAM STATUS',
         title: 'THANK YOU FOR WAITING : PLS STAND BY : ',
         meta: 'STAY TUNED'
       })
     }
-    if (tvTitleText) {
+
+    const pushGame = (durationMs) => {
+      if (!tvTitleText) return
       items.push({
         type: 'game',
+        durationMs,
         label: gameLabelText,
         title: tvTitleText,
         meta: gameMetaText
       })
     }
-    if (showEventCenter) {
+
+    const pushEvent = (durationMs) => {
+      if (!showEventCenter) return
       items.push({
         type: 'event',
+        durationMs,
         label: eventLabelText,
         title: eventPercentText,
         meta: eventMetaText
       })
     }
+
+    const pushLogo = (durationMs) => {
+      items.push({ type: 'logo', durationMs })
+    }
+
+    const pushImage = (durationMs, url) => {
+      const trimmed = String(url || '').trim()
+      if (!trimmed) return
+      items.push({ type: 'image', durationMs, url: trimmed })
+    }
+
+    if (hasCustomPlaylist) {
+      for (const entry of tvCenterPlaylistStable) {
+        const type = String(entry?.type || 'logo').trim().toLowerCase()
+        const durationMs = clampNumber(entry?.durationMs, 500, 900000, logoSwapMs)
+        if (type === 'logo') pushLogo(durationMs)
+        else if (type === 'game') pushGame(durationMs)
+        else if (type === 'event') pushEvent(durationMs)
+        else if (type === 'soon') pushSoon(durationMs)
+        else if (type === 'image') pushImage(durationMs, entry?.url)
+      }
+      if (!items.length) {
+        items.push({ type: 'logo', durationMs: logoSwapMs })
+      }
+      return items
+    }
+
+    if (startingSoon || brb) pushSoon(logoSwapMs)
+    pushGame(logoSwapMs)
+    pushEvent(logoSwapMs)
     return items
   }, [
     tvEnabled,
     startingSoon,
+    brb,
     tvTitleText,
     gameLabelText,
     gameMetaText,
     hasEventStats,
     eventLabelText,
     eventPercentText,
-    eventMetaText
+    eventMetaText,
+    showEventCenter,
+    tvCenterPlaylistKey,
+    logoSwapMs
   ])
 
   const centerRotationItems = React.useMemo(() => {
     if (!tvEnabled) return []
-    const items = [{ type: 'logo' }]
+    if (tvCenterPlaylistStable.length > 0) return centerItems
+    const items = [{ type: 'logo', durationMs: logoSwapMs }]
     centerItems.forEach(item => {
       items.push(item)
-      items.push({ type: 'logo' })
+      items.push({ type: 'logo', durationMs: logoSwapMs })
     })
     return items
-  }, [tvEnabled, centerItems])
+  }, [tvEnabled, centerItems, tvCenterPlaylistStable.length, logoSwapMs])
 
   const gameCenterIndex = React.useMemo(() => (
     centerRotationItems.findIndex(item => item.type === 'game')
@@ -1431,22 +1538,32 @@ export default function OverlayFull() {
     }
     if (bezelAchievement || connectorActive || wheelAnnouncement) return
 
-    if (startingSoon && soonCenterIndex >= 0) {
+    if (breakMode && soonCenterIndex >= 0) {
       setCenterIndex(soonCenterIndex)
       return
     }
 
     if (centerRotationItems.length <= 1) return
-    const id = setInterval(() => {
-      if (centerLockRef.current && Date.now() < centerLockRef.current) return
+    const active = centerRotationItems[centerIndex] || centerRotationItems[0]
+    const activeDuration = clampNumber(active?.durationMs, 500, 900000, logoSwapMs)
+    const now = Date.now()
+    const isLocked = centerLockRef.current && now < centerLockRef.current
+    const delay = isLocked ? Math.max(200, Math.min(centerLockRef.current - now, 1000)) : activeDuration
+
+    const id = setTimeout(() => {
+      if (centerLockRef.current && Date.now() < centerLockRef.current) {
+        setCenterCycleSeed(seed => seed + 1)
+        return
+      }
       setCenterIndex(prev => (prev + 1) % centerRotationItems.length)
-    }, logoSwapMs)
-    return () => clearInterval(id)
-  }, [tvEnabled, bezelAchievement, connectorActive, wheelAnnouncement, centerRotationItems.length, logoSwapMs, centerCycleSeed, startingSoon, soonCenterIndex])
+    }, delay)
+
+    return () => clearTimeout(id)
+  }, [tvEnabled, bezelAchievement, connectorActive, wheelAnnouncement, centerRotationItems, centerIndex, logoSwapMs, centerCycleSeed, breakMode, soonCenterIndex])
 
   React.useEffect(() => {
     if (!tvEnabled) return
-    if (startingSoon) return
+    if (breakMode) return
     const gameId = current?.id || null
     if (!gameId) return
     if (!lastGameIdRef.current) {
@@ -1460,7 +1577,7 @@ export default function OverlayFull() {
       setCenterIndex(gameCenterIndex)
       setCenterCycleSeed(seed => seed + 1)
     }
-  }, [tvEnabled, current?.id, gameCenterIndex])
+  }, [tvEnabled, current?.id, gameCenterIndex, breakMode])
 
   React.useEffect(() => {
     if (!tvEnabled) return
@@ -1495,15 +1612,17 @@ export default function OverlayFull() {
   }, [tvEnabled, viewportWidth, viewportHeight])
 
   const activeCenter = centerRotationItems[centerIndex] || centerRotationItems[0] || { type: 'logo' }
+  const showSoonLayer = centerItems.some(item => item.type === 'soon')
   const showGameLayer = centerItems.some(item => item.type === 'game')
   const showEventLayer = centerItems.some(item => item.type === 'event')
-  const showAchievementLayer = startingSoon ? false : Boolean(bezelAchievement)
+  const activeImageUrl = activeCenter?.type === 'image' ? safeText(activeCenter?.url) : ''
+  const showAchievementLayer = breakMode ? false : Boolean(bezelAchievement)
   const centerOverride = connectorActive && connectorFocus === 'game'
     ? (showGameLayer ? 'game' : null)
     : connectorActive && connectorFocus === 'event'
       ? (showEventLayer ? 'event' : null)
       : null
-  const wheelAnnouncementActive = !startingSoon && Boolean(wheelTitleText)
+  const wheelAnnouncementActive = !breakMode && Boolean(wheelTitleText)
   const showWheelLayer = wheelAnnouncementActive && wheelWinnerType === 'console'
   const wheelUsesGameLayer = wheelAnnouncementActive && wheelWinnerType !== 'console'
   const centerModeBase = centerOverride ?? (connectorActive ? 'connector' : bezelAchievement ? 'achievement' : (activeCenter?.type || 'logo'))
@@ -1523,8 +1642,8 @@ export default function OverlayFull() {
         </div>
       )}
       <FullOverlayAchievementPopups
-        enabled={!startingSoon && showAchievementPopups}
-        forceEnable={!startingSoon && raTest && showAchievementPopups}
+        enabled={!breakMode && showAchievementPopups}
+        forceEnable={!breakMode && raTest && showAchievementPopups}
         duration={popupDuration}
         onActiveChange={setAchievementGlow}
       />
@@ -1554,10 +1673,11 @@ export default function OverlayFull() {
           {tvEnabled ? (
             <div className="full-tv-shell" ref={tvShellRef}>
               <div className="full-tv-screen" ref={tvScreenRef}>
-                <div className={`tv-screen-content ${tvPowerClass}${tvConfig.wheelPinned === true ? ' tv-wheel-pinned' : ''}`}>
+                <div className={`tv-screen-content ${tvPowerClass}${wheelPinnedEffective ? ' tv-wheel-pinned' : ''}`}>
+                  {!breakMode && (
                     <TvPicker
                       base={import.meta.env.VITE_IGDB_PROXY_URL}
-                      pinned={tvConfig.wheelPinned === true}
+                      pinned={wheelPinnedEffective}
                       onStateChange={(info) => {
                         if (info?.spinning && !info?.winner) return
                         if (info && typeof info.active === 'boolean') {
@@ -1594,11 +1714,12 @@ export default function OverlayFull() {
                       }
                     }}
                   />
-                  {startingSoon && <StartingSoonModule enabled={startingSoon} />}
-                  {current && !startingSoon && stageFrames}
+                  )}
+                  {breakMode && <StartingSoonModule enabled={breakMode} mode={startingSoon ? 'startingSoon' : 'brb'} />}
+                  {current && !breakMode && stageFrames}
                 </div>
 
-                {!current && !startingSoon && eventTitle && tvConfig.wheelPinned !== true && (
+                {!current && !breakMode && eventTitle && tvConfig.wheelPinned !== true && (
                   <div className="tv-no-signal">
                     <div className="tv-static-snow" />
                     <div className="tv-hum-bar" />
@@ -1628,7 +1749,7 @@ export default function OverlayFull() {
                       const label = display.label?.toLowerCase() || ''
                       const isCurrent = label.includes('current') || label.includes('session')
                       const isEvent = label.includes('event')
-                      const showValue = startingSoon || (isEvent ? !!eventTitle : (current || !isCurrent))
+                      const showValue = breakMode || (isEvent ? !!eventTitle : (current || !isCurrent))
 
                       return (
                         <div className="full-tv-display" key={`tv-display-${index}`}>
@@ -1665,7 +1786,12 @@ export default function OverlayFull() {
                         <span>{tvLogoText}</span>
                       )}
                     </div>
-                    {startingSoon && (
+                    {activeImageUrl ? (
+                      <div className="full-tv-logo-layer full-tv-logo-layer-image">
+                        <img className="full-tv-center-image" src={activeImageUrl} alt="Center" />
+                      </div>
+                    ) : null}
+                    {showSoonLayer && (
                       <div className="full-tv-logo-layer full-tv-logo-layer-soon">
                         <div className="full-tv-logo-stack">
                           <DotMatrixText text="STREAM STATUS" dotSize={2} dotGap={0} charGap={1} />
@@ -1679,7 +1805,7 @@ export default function OverlayFull() {
                             scrollSpeed={20}
                             scrollGap={8}
                           />
-                          <DotMatrixText text="STARTING SOON" dotSize={2} dotGap={0} charGap={1} />
+                          <DotMatrixText text={startingSoon ? "STARTING SOON" : "BE RIGHT BACK"} dotSize={2} dotGap={0} charGap={1} />
                         </div>
                       </div>
                     )}

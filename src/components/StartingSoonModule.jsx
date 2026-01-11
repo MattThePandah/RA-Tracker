@@ -1,13 +1,14 @@
 import React from 'react'
 import { buildOverlayUrl } from '../utils/overlayApi.js'
 
-export default function StartingSoonModule({ enabled }) {
+export default function StartingSoonModule({ enabled, mode = 'startingSoon' }) {
   const [videos, setVideos] = React.useState([])
   const [currentIndex, setCurrentIndex] = React.useState(0)
   const [showLabel, setShowLabel] = React.useState(false)
   const videoRef = React.useRef(null)
   const videosRef = React.useRef([])
   const currentIndexRef = React.useRef(0)
+  const recentRef = React.useRef([]) // last played trailer names
   const currentVideo = videos[currentIndex]
   const trailerLabel = React.useMemo(() => {
     if (!currentVideo?.name) return ''
@@ -26,6 +27,65 @@ export default function StartingSoonModule({ enabled }) {
   React.useEffect(() => {
     currentIndexRef.current = currentIndex
   }, [currentIndex])
+
+  const rememberPlayed = React.useCallback((name) => {
+    const n = String(name || '').trim()
+    if (!n) return
+    const prev = recentRef.current || []
+    const next = [n, ...prev.filter(x => x !== n)].slice(0, 3)
+    recentRef.current = next
+  }, [])
+
+  const buildDeck = React.useCallback((list) => {
+    const items = Array.isArray(list) ? list.filter(v => v && v.name && v.url) : []
+    if (items.length <= 1) return items
+
+    const recentSet = new Set(recentRef.current || [])
+    const recentGuard = Math.min(3, items.length - 1)
+
+    const remaining = [...items]
+    const deck = []
+
+    while (remaining.length) {
+      const avoid = deck.length < recentGuard ? recentSet : null
+      let candidates = remaining
+      if (avoid) {
+        const filtered = remaining.filter(v => !avoid.has(v.name))
+        if (filtered.length) candidates = filtered
+      }
+      const pick = candidates[Math.floor(Math.random() * candidates.length)]
+      deck.push(pick)
+      remaining.splice(remaining.indexOf(pick), 1)
+    }
+
+    // Extra guard: ensure first item isn't the last-played if we can avoid it.
+    if (deck.length > 1) {
+      const last = (recentRef.current || [])[0]
+      if (last && deck[0]?.name === last) {
+        const swapIdx = deck.findIndex(v => v?.name && v.name !== last)
+        if (swapIdx > 0) {
+          const tmp = deck[0]
+          deck[0] = deck[swapIdx]
+          deck[swapIdx] = tmp
+        }
+      }
+    }
+
+    return deck
+  }, [])
+
+  const sameTrailerSet = (a, b) => {
+    const A = Array.isArray(a) ? a : []
+    const B = Array.isArray(b) ? b : []
+    if (A.length !== B.length) return false
+    const an = A.map(x => String(x?.name || '')).filter(Boolean).sort()
+    const bn = B.map(x => String(x?.name || '')).filter(Boolean).sort()
+    if (an.length !== bn.length) return false
+    for (let i = 0; i < an.length; i += 1) {
+      if (an[i] !== bn[i]) return false
+    }
+    return true
+  }
 
   React.useEffect(() => {
     if (!currentVideo) {
@@ -47,22 +107,21 @@ export default function StartingSoonModule({ enabled }) {
         const res = await fetch(url, { cache: 'no-store' })
         const data = await res.json()
         if (!active) return
-        const nextVideos = Array.isArray(data)
-          ? [...data].sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')))
-          : []
+        const nextRaw = Array.isArray(data) ? data : []
         const prevVideos = videosRef.current
-        const isSame = prevVideos.length === nextVideos.length
-          && prevVideos.every((video, index) => video?.name === nextVideos[index]?.name)
-        if (isSame) return
+        const isSameSet = sameTrailerSet(prevVideos, nextRaw)
+        if (isSameSet && prevVideos.length) return
         const prevIndex = currentIndexRef.current
         const prevName = prevVideos[prevIndex]?.name
+
+        const nextDeck = buildDeck(nextRaw)
         let nextIndex = 0
         if (prevName) {
-          const foundIndex = nextVideos.findIndex(video => video?.name === prevName)
+          const foundIndex = nextDeck.findIndex(video => video?.name === prevName)
           if (foundIndex >= 0) nextIndex = foundIndex
         }
-        setVideos(nextVideos)
-        setCurrentIndex(nextVideos.length ? nextIndex : 0)
+        setVideos(nextDeck)
+        setCurrentIndex(nextDeck.length ? nextIndex : 0)
       } catch (err) {
         console.error('Failed to load trailers:', err)
       }
@@ -73,9 +132,10 @@ export default function StartingSoonModule({ enabled }) {
       active = false
       clearInterval(poll)
     }
-  }, [enabled])
+  }, [enabled, buildDeck])
 
   const handleVideoEnd = () => {
+    if (currentVideo?.name) rememberPlayed(currentVideo.name)
     if (videos.length <= 1) {
       if (videoRef.current) {
         videoRef.current.currentTime = 0
@@ -86,11 +146,16 @@ export default function StartingSoonModule({ enabled }) {
     setCurrentIndex(prev => (prev + 1) % videos.length)
   }
   const handleVideoError = () => {
+    if (currentVideo?.name) rememberPlayed(currentVideo.name)
     if (videos.length <= 1) return
     setCurrentIndex(prev => (prev + 1) % videos.length)
   }
 
   if (!enabled) return null
+
+  const isStartingSoon = mode === 'startingSoon'
+  const title = isStartingSoon ? 'STARTING SOON' : 'BE RIGHT BACK'
+  const status = isStartingSoon ? 'STATUS: PRE-BROADCAST' : 'STATUS: BRB'
 
   return (
     <div className="starting-soon-video-player" style={{
@@ -120,7 +185,7 @@ export default function StartingSoonModule({ enabled }) {
       ) : (
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '48px', fontWeight: 'bold', color: 'rgba(255,255,255,0.2)', letterSpacing: '8px' }}>
-            STARTING SOON
+            {title}
           </div>
           <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.1)', marginTop: '10px' }}>
             (No trailers in /trailers folder)
@@ -181,7 +246,7 @@ export default function StartingSoonModule({ enabled }) {
         border: '1px solid #5ecf86',
         zIndex: 10
       }}>
-        STATUS: PRE-BROADCAST
+        {status}
       </div>
       {/* CRT Scanline Overlay */}
       <div style={{

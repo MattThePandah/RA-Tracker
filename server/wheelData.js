@@ -4,6 +4,7 @@ import crypto from 'crypto'
 import { listSuggestions } from './publicData.js'
 import { getActiveEvent } from './eventData.js'
 import { getIndex } from './library.js'
+import { mergeWithGameLibrary } from './userMetadata.js'
 
 console.log('[WheelData] Module loaded v3-snapshot')
 
@@ -24,6 +25,10 @@ const DEFAULT_SETTINGS = {
   eventRestriction: true,
   includeSuggestions: false,
   consoleFilter: 'All', // 'All' or console label
+  poolMode: 'all', // 'all' | 'custom'
+  customGameIds: [],
+  customIncludeSuggestions: false,
+  consoleCustomItems: [],
   // 'pool' = pick winner from full eligible pool (recommended for true randomness)
   // 'sample' = pick winner only from the 16 visible slices
   spinSource: 'pool', // 'pool' | 'sample'
@@ -225,6 +230,10 @@ function snapshotKey({ mode, settings, idxUpdatedAt, eventId, eventConsoles }) {
     eventRestriction: !!s.eventRestriction,
     includeSuggestions: !!s.includeSuggestions,
     consoleFilter: s.consoleFilter || 'All',
+    poolMode: s.poolMode || 'all',
+    customGameIds: Array.isArray(s.customGameIds) ? s.customGameIds.map(id => String(id || '')).filter(Boolean).sort().join('|') : '',
+    customIncludeSuggestions: !!s.customIncludeSuggestions,
+    consoleCustomItems: Array.isArray(s.consoleCustomItems) ? s.consoleCustomItems.map(v => String(v || '')).filter(Boolean).sort().join('|') : '',
     spinSource: s.spinSource === 'sample' ? 'sample' : 'pool',
     bonusMode: s.bonusMode || 'exclude',
     bonusExclusions: bonusExclusions ? Object.keys(BONUS_CATEGORIES).map(k => (bonusExclusions[k] === true ? k : '')).filter(Boolean).sort().join('|') : ''
@@ -259,6 +268,13 @@ async function buildPool({ mode, settings, games, eventList }) {
   let pool = []
 
   if (mode === 'console') {
+    const customItems = Array.isArray(settings.consoleCustomItems) ? settings.consoleCustomItems : []
+    const cleanedCustom = customItems.map(v => String(v || '').trim()).filter(Boolean).slice(0, 64)
+    if (cleanedCustom.length > 0) {
+      pool = cleanedCustom.map(text => ({ id: `console-${text}`, title: text, type: 'console', isConsole: true }))
+      return pool
+    }
+
     let consoles = []
     if (settings.eventRestriction && eventList.cleaned.length > 0 && !eventList.hasAll) {
       consoles = eventList.cleaned
@@ -296,9 +312,17 @@ async function buildPool({ mode, settings, games, eventList }) {
   if (settings.bonusMode === 'exclude') filtered = filtered.filter(g => !shouldExcludeBonus(g.title, settings))
   if (settings.bonusMode === 'only') filtered = filtered.filter(g => isBonus(g.title))
 
+  const poolMode = settings.poolMode === 'custom' ? 'custom' : 'all'
+  if (poolMode === 'custom') {
+    const ids = Array.isArray(settings.customGameIds) ? settings.customGameIds : []
+    const idSet = new Set(ids.map(id => String(id || '')).filter(Boolean))
+    filtered = filtered.filter(g => idSet.has(String(g.id)))
+  }
+
   pool = filtered.map(g => ({ ...g, type: 'game' }))
 
-  if (settings.includeSuggestions) {
+  const includeSuggestions = settings.includeSuggestions || (poolMode === 'custom' && settings.customIncludeSuggestions)
+  if (includeSuggestions) {
     const suggestions = await listSuggestions({ status: 'open' })
     const compatible = suggestions.filter(s => {
       const cf2 = settings.consoleFilter || 'All'
@@ -372,7 +396,7 @@ export async function getWheelSnapshot({ force = false } = {}) {
     }
   }
 
-  const games = normalizeLibraryGames(allGames)
+  const games = normalizeLibraryGames(mergeWithGameLibrary(allGames))
   const eventList = buildEventConsoleList(eventConsoles)
   const pool = await buildPool({ mode, settings, games, eventList })
   const sample = buildSample(pool, SLOT_COUNT)
@@ -406,7 +430,7 @@ export async function executeSpin(overrides = {}) {
     const eventConsoles = activeEvent?.consoles || []
     wheelState.event = activeEvent ? { name: activeEvent.name || '', consoles: eventConsoles } : { name: '', consoles: [] }
 
-    const games = normalizeLibraryGames(allGames)
+    const games = normalizeLibraryGames(mergeWithGameLibrary(allGames))
     const eventList = buildEventConsoleList(eventConsoles)
     const pool = await buildPool({ mode, settings, games, eventList })
     poolSize = pool.length

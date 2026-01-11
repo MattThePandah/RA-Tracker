@@ -115,6 +115,7 @@ export const DEFAULT_OVERLAY_SETTINGS = {
       wheelStyle: 'wheel', // 'wheel' | 'capsule'
       logoText: 'PANDA',
       logoUrl: '',
+      centerPlaylist: [],
       connectorIcons: {
         default: '',
         left: '',
@@ -127,6 +128,21 @@ export const DEFAULT_OVERLAY_SETTINGS = {
         cheer: '',
         member: '',
         tip: ''
+      },
+      connectorSounds: {
+        enabled: false,
+        volume: 0.8,
+        sounds: {
+          default: '',
+          sub: '',
+          resub: '',
+          gift: '',
+          raid: '',
+          follow: '',
+          cheer: '',
+          member: '',
+          tip: ''
+        }
       },
       displays: [
         { label: 'Current', value: '{currentTime}' },
@@ -161,9 +177,18 @@ export function mergeOverlaySettings(incoming) {
     wheelStyle: tvIncoming.wheelStyle ?? tvBase.wheelStyle ?? 'wheel',
     logoText: tvIncoming.logoText ?? tvBase.logoText ?? 'PANDA',
     logoUrl: tvIncoming.logoUrl ?? tvBase.logoUrl ?? '',
+    centerPlaylist: Array.isArray(tvIncoming.centerPlaylist) ? tvIncoming.centerPlaylist : (tvBase.centerPlaylist || []),
     connectorIcons: {
       ...(tvBase.connectorIcons || {}),
       ...(tvIncoming.connectorIcons || {})
+    },
+    connectorSounds: {
+      ...(tvBase.connectorSounds || {}),
+      ...(tvIncoming.connectorSounds || {}),
+      sounds: {
+        ...((tvBase.connectorSounds && tvBase.connectorSounds.sounds) ? tvBase.connectorSounds.sounds : {}),
+        ...((tvIncoming.connectorSounds && tvIncoming.connectorSounds.sounds) ? tvIncoming.connectorSounds.sounds : {})
+      }
     },
     displays: Array.isArray(tvIncoming.displays) ? tvIncoming.displays : (tvBase.displays || []),
     stickers: Array.isArray(tvIncoming.stickers) ? tvIncoming.stickers : (tvBase.stickers || [])

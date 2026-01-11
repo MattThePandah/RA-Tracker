@@ -1311,6 +1311,23 @@ body {
   opacity: 1;
 }
 
+.full-tv-logo.show-image {
+  border-color: rgba(102, 183, 255, 0.6);
+  box-shadow: 0 0 16px rgba(102, 183, 255, 0.25);
+}
+
+.full-tv-logo.show-image .full-tv-logo-layer-image {
+  opacity: 1;
+}
+
+.full-tv-center-image {
+  display: block;
+  max-width: 92%;
+  max-height: 92%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45));
+}
+
 .full-tv-logo-connector {
   position: relative;
   width: 100%;
