@@ -6,10 +6,16 @@ import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 
 function useInterval(cb, ms) {
+  const cbRef = React.useRef(cb)
   React.useEffect(() => {
-    const id = setInterval(cb, ms)
+    cbRef.current = cb
+  }, [cb])
+
+  React.useEffect(() => {
+    if (!ms || ms <= 0) return
+    const id = setInterval(() => cbRef.current?.(), ms)
     return () => clearInterval(id)
-  }, [cb, ms])
+  }, [ms])
 }
 
 const COLORS = [
@@ -24,7 +30,8 @@ function colorFor(i) {
 
 export default function OverlayWheel() {
   const { settings } = useOverlaySettings()
-  const params = new URLSearchParams(location.search)
+  const search = typeof window === 'undefined' ? '' : window.location.search
+  const params = React.useMemo(() => new URLSearchParams(search), [search])
   const globalConfig = settings.global || {}
   const wheelConfig = settings.wheel || {}
   const isClean = getBoolParam(params, 'clean', globalConfig.clean ?? false)
@@ -218,51 +225,37 @@ export default function OverlayWheel() {
   const fetchSpin = React.useCallback(async () => {
     try {
       if (!base) return
-      const res = await fetch(buildOverlayUrl('/overlay/spin', base))
-      if (res.ok) {
-        const json = await res.json()
-        if (json.ts && json.ts !== lastSpinTs.current) {
-          console.log('New spin detected, ts:', json.ts, 'targetIdx:', json.targetIdx, 'sample size:', json.sample?.length)
-          lastSpinTs.current = json.ts
-          startSpin(json)
+      const res = await fetch(buildOverlayUrl('/overlay/wheel-sync', base), { cache: 'no-store' })
+      if (!res.ok) return
+      const json = await res.json()
+
+      const spin = json?.spin || {}
+      if (spin.ts && spin.ts !== lastSpinTs.current) {
+        console.log('New spin detected, ts:', spin.ts, 'targetIdx:', spin.targetIdx, 'sample size:', spin.sample?.length)
+        lastSpinTs.current = spin.ts
+        startSpin(spin)
+      }
+
+      const state = json?.state || {}
+      // Do not update idle sample while showing winner; keep result on screen
+      if (!spinning && !winner && Array.isArray(state.sample)) {
+        const hash = (arr) => arr.map(g => (g ? String(g.id) : '-') ).join('|')
+        const newHash = hash(state.sample)
+        console.log('Hash comparison - current:', lastIdleHash.current, 'new:', newHash, 'spin hash:', spinHashRef.current)
+        // If a spin hash is present (just spun), ignore idle updates until hash changes again
+        if (spinHashRef.current && newHash === spinHashRef.current) {
+          console.log('Ignoring idle update - matches recent spin hash')
+          return
         }
-        // Always check idle wheel-state for updates when not spinning
-        const r2 = await fetch(buildOverlayUrl('/overlay/wheel-state', base))
-        if (r2.ok) {
-          const j2 = await r2.json()
-          console.log('Fetched wheel-state:', { sampleSize: j2.sample?.length, poolSize: j2.poolSize, spinning, winner: !!winner })
-          // Do not update idle sample while showing winner; keep result on screen
-          if (!spinning && !winner && Array.isArray(j2.sample)) {
-            const hash = (arr) => arr.map(g => (g ? String(g.id) : '-') ).join('|')
-            const newHash = hash(j2.sample)
-            console.log('Hash comparison - current:', lastIdleHash.current, 'new:', newHash, 'spin hash:', spinHashRef.current)
-            // If a spin hash is present (just spun), ignore idle updates until hash changes again
-            if (spinHashRef.current && newHash === spinHashRef.current) {
-              console.log('Ignoring idle update - matches recent spin hash')
-              return
-            }
-            if (newHash && newHash !== lastIdleHash.current) {
-              console.log('Updating overlay wheel with new sample:', j2.sample.filter(g => g).length, 'games')
-              lastIdleHash.current = newHash
-              setSample(j2.sample)
-              setPoolSize(j2.poolSize || 0)
-              selectedIdxRef.current = null
-              // Clear winner if we get a new sample (user refreshed games)
-              if (winner) {
-                console.log('Clearing winner due to new sample')
-                setWinner(null)
-                if (winnerTimeoutRef.current) {
-                  clearTimeout(winnerTimeoutRef.current)
-                  winnerTimeoutRef.current = null
-                }
-              }
-              draw()
-            } else if (newHash && newHash === lastIdleHash.current) {
-              console.log('Sample unchanged, hash:', newHash)
-            }
-          }
-        } else {
-          console.log('Failed to fetch wheel-state:', r2.status, r2.statusText)
+        if (newHash && newHash !== lastIdleHash.current) {
+          console.log('Updating overlay wheel with new sample:', state.sample.filter(g => g).length, 'games')
+          lastIdleHash.current = newHash
+          setSample(state.sample)
+          setPoolSize(state.poolSize || 0)
+          selectedIdxRef.current = null
+          draw()
+        } else if (newHash && newHash === lastIdleHash.current) {
+          console.log('Sample unchanged, hash:', newHash)
         }
       }
     } catch {}
