@@ -179,6 +179,8 @@ export default function OverlayAchievements() {
 
   // Poll for achievement updates at regular intervals
   React.useEffect(() => {
+    // If smart polling is enabled in AchievementContext, it will refresh on point deltas and game changes.
+    if (state?.settings?.smartPollingEnabled) return
     if (!currentGameId || !game || !RA.hasRetroAchievementsSupport(game) || !isConfigured) {
       console.log('Achievement overlay: Skipping achievement polling', { currentGameId, hasRA: !!game && RA.hasRetroAchievementsSupport(game), isConfigured, achievementPoll })
       return

@@ -300,6 +300,8 @@ export default function OverlayMain() {
 
   // Simple reliable achievement polling - polls every 60 seconds (or custom rapoll parameter)
   React.useEffect(() => {
+    // If smart polling is enabled in AchievementContext, it will refresh on point deltas and game changes.
+    if (state?.settings?.smartPollingEnabled) return
     if (!game?.id || !RA.hasRetroAchievementsSupport(game) || !isConfigured || !showAchievements) {
       return
     }

@@ -22,7 +22,16 @@ const initialState = {
     enableSounds: true,
     soundVolume: 0.7,
     enableMilestoneSounds: true,
-    enableStreakSounds: true
+    enableStreakSounds: true,
+    // Smart polling / automation
+    smartPollingEnabled: false,
+    smartPollMs: 30000,
+    autoDetectNowPlaying: false,
+    autoNowPlayingPollMs: 30000,
+    // Admin-only: requires Twitch OAuth session + CSRF token present
+    autoTimerFromNowPlaying: false,
+    // Safety: periodic full refresh even if no point delta
+    smartFullRefreshMs: 600000
   },
   loading: {
     gameAchievements: false,
@@ -189,6 +198,12 @@ export function AchievementProvider({ children }) {
   const [state, dispatch] = useReducer(achievementReducer, initialState)
   const recentFetchRef = React.useRef({ lastStart: 0, cooldownUntil: 0, failures: 0 })
   const gameFetchRef = React.useRef(new Map())
+  const smartPollRef = React.useRef({
+    running: false,
+    lastProfile: null,
+    lastFullRefreshAt: 0,
+    lastNowPlayingRaGameId: null
+  })
 
   // Load settings on mount
   useEffect(() => {
@@ -210,6 +225,7 @@ export function AchievementProvider({ children }) {
         }
       }
       let settings = savedRaw ? JSON.parse(savedRaw) : {}
+      settings = { ...initialState.settings, ...settings }
       
       // If no saved achievement settings, try to get RA credentials from env or existing game settings
       if (!settings.raUsername || !settings.raApiKey) {
@@ -228,6 +244,140 @@ export function AchievementProvider({ children }) {
       console.warn('Failed to load achievement settings:', error)
     }
   }, [])
+
+  // Background smart polling:
+  // - (Optional) Poll user profile for point deltas; only then fetch recent achievements and refresh current game progress.
+  // - (Optional) Poll "recently played" to auto-select current game (and optionally start timer if admin).
+  useEffect(() => {
+    const apiKey = state.settings.raApiKey || import.meta.env.VITE_RA_API_KEY
+    const username = state.settings.raUsername || import.meta.env.VITE_RA_USERNAME
+    const smartEnabled = state.settings.smartPollingEnabled === true
+    const nowPlayingEnabled = state.settings.autoDetectNowPlaying === true
+
+    if (!apiKey || !username) return
+    if (!smartEnabled && !nowPlayingEnabled) return
+
+    let stopped = false
+    const clampMs = (value, min, max, fallback) => {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return fallback
+      return Math.min(Math.max(Math.floor(n), min), max)
+    }
+    const pollMs = clampMs(state.settings.smartPollMs, 5000, 300000, 30000)
+    const nowPlayingPollMs = clampMs(state.settings.autoNowPlayingPollMs, 5000, 300000, 30000)
+    const fullRefreshMs = clampMs(state.settings.smartFullRefreshMs, 60000, 3600000, 600000)
+
+    const hasAdminCsrf = () => {
+      try { return !!localStorage.getItem('ra.csrf') } catch { return false }
+    }
+
+    const findInternalGameIdForRa = (raGameId) => {
+      try {
+        const games = Storage.getGames() || []
+        for (const g of games) {
+          const internal = g?.id
+          const extracted = RA.extractGameIdFromInternalId(internal)
+          if (extracted && Number(extracted) === Number(raGameId)) return internal
+        }
+      } catch {}
+      return null
+    }
+
+    const maybeRefreshCurrentGame = async (reason) => {
+      try {
+        const currentId = Storage.getCurrentGameId()
+        if (!currentId) return
+        const raGameId = RA.extractGameIdFromInternalId(currentId)
+        if (!raGameId) return
+        const now = Date.now()
+        if (smartEnabled && now - smartPollRef.current.lastFullRefreshAt >= fullRefreshMs) {
+          smartPollRef.current.lastFullRefreshAt = now
+          await loadGameAchievements(currentId, true)
+          return
+        }
+        if (reason === 'points_changed') {
+          await loadGameAchievements(currentId, true)
+        }
+      } catch {}
+    }
+
+    const tickProfile = async () => {
+      if (!smartEnabled) return
+      if (smartPollRef.current.running) return
+      smartPollRef.current.running = true
+      try {
+        const profile = await RA.getUserProfile({ apiKey, username })
+        const last = smartPollRef.current.lastProfile
+        smartPollRef.current.lastProfile = profile
+
+        if (last && (
+          Number(profile.totalPoints) !== Number(last.totalPoints) ||
+          Number(profile.softcorePoints) !== Number(last.softcorePoints)
+        )) {
+          await loadRecentAchievements(50)
+          await maybeRefreshCurrentGame('points_changed')
+        } else {
+          await maybeRefreshCurrentGame('periodic')
+        }
+      } catch (e) {
+        // Intentionally quiet; existing per-call error state/backoff already handles user feedback.
+        console.warn('Smart polling: profile check failed', e?.message || e)
+      } finally {
+        smartPollRef.current.running = false
+      }
+    }
+
+    const tickNowPlaying = async () => {
+      if (!nowPlayingEnabled) return
+      try {
+        const list = await RA.getRecentlyPlayedGames({ apiKey, username, count: 1 })
+        const raGameId = list?.[0]?.id || null
+        if (!raGameId || !Number.isFinite(Number(raGameId))) return
+        if (smartPollRef.current.lastNowPlayingRaGameId === raGameId) return
+        smartPollRef.current.lastNowPlayingRaGameId = raGameId
+
+        const internalId = findInternalGameIdForRa(raGameId)
+        if (!internalId) return
+
+        const current = Storage.getCurrentGameId()
+        if (current !== internalId) {
+          Storage.setCurrentGameId(internalId)
+          await loadGameAchievements(internalId, true)
+        }
+
+        if (state.settings.autoTimerFromNowPlaying && hasAdminCsrf()) {
+          try {
+            await Storage.startCurrentTimer()
+          } catch {}
+        }
+      } catch (e) {
+        console.warn('Smart polling: now playing check failed', e?.message || e)
+      }
+    }
+
+    // Kick once immediately
+    tickProfile()
+    tickNowPlaying()
+
+    const profileId = smartEnabled ? setInterval(() => { if (!stopped) tickProfile() }, pollMs) : null
+    const nowPlayingId = nowPlayingEnabled ? setInterval(() => { if (!stopped) tickNowPlaying() }, nowPlayingPollMs) : null
+
+    return () => {
+      stopped = true
+      if (profileId) clearInterval(profileId)
+      if (nowPlayingId) clearInterval(nowPlayingId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.settings.raApiKey,
+    state.settings.raUsername,
+    state.settings.smartPollingEnabled,
+    state.settings.smartPollMs,
+    state.settings.smartFullRefreshMs,
+    state.settings.autoDetectNowPlaying,
+    state.settings.autoNowPlayingPollMs,
+    state.settings.autoTimerFromNowPlaying
+  ])
 
   // API functions
   const loadGameAchievements = async (gameId, force = false) => {

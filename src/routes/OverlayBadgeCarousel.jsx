@@ -142,6 +142,8 @@ function OverlayBadgeCarouselInner() {
 
   // Smart polling: frequent when recent activity, normal otherwise
   React.useEffect(() => {
+    // If smart polling is enabled in AchievementContext, it will refresh on point deltas and game changes.
+    if (achievementState?.settings?.smartPollingEnabled) return
     if (!currentGameId || !game?.current || !RA.hasRetroAchievementsSupport(game.current) || !isConfigured) {
       console.log('Badge carousel: Skipping achievement polling', { currentGameId, hasRA: !!game?.current && RA.hasRetroAchievementsSupport(game.current), isConfigured })
       return

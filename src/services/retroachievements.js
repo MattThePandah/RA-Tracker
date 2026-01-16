@@ -296,6 +296,73 @@ export async function getRecentAchievements({ apiKey, username, count = 50, sign
   }
 }
 
+export async function getUserProfile({ apiKey, username, signal }) {
+  if (!apiKey || !username) {
+    throw new Error('apiKey and username are required')
+  }
+
+  const proxyBase = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+  const url = buildOverlayUrl('/api/retroachievements/profile', proxyBase)
+  const params = new URLSearchParams()
+  params.set('username', username)
+  params.set('apiKey', apiKey)
+
+  const requestUrl = new URL(url)
+  for (const [key, value] of params.entries()) {
+    requestUrl.searchParams.set(key, value)
+  }
+
+  const config = {
+    timeout: 15000,
+    withCredentials: true
+  }
+  if (signal) config.signal = signal
+
+  const { data } = await axios.get(requestUrl.toString(), config)
+
+  // Normalize key fields we care about while preserving raw response
+  return {
+    username: data?.User || data?.Username || username,
+    totalPoints: Number(data?.TotalPoints ?? data?.Points ?? 0),
+    softcorePoints: Number(data?.TotalSoftcorePoints ?? data?.SoftcorePoints ?? 0),
+    raw: data || null
+  }
+}
+
+export async function getRecentlyPlayedGames({ apiKey, username, count = 1, signal }) {
+  if (!apiKey || !username) {
+    throw new Error('apiKey and username are required')
+  }
+
+  const proxyBase = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+  const url = buildOverlayUrl('/api/retroachievements/recently-played', proxyBase)
+  const params = new URLSearchParams()
+  params.set('username', username)
+  params.set('apiKey', apiKey)
+  params.set('count', String(count))
+
+  const requestUrl = new URL(url)
+  for (const [key, value] of params.entries()) {
+    requestUrl.searchParams.set(key, value)
+  }
+
+  const config = {
+    timeout: 15000,
+    withCredentials: true
+  }
+  if (signal) config.signal = signal
+
+  const { data } = await axios.get(requestUrl.toString(), config)
+  const list = Array.isArray(data) ? data : (data && typeof data === 'object' ? Object.values(data) : [])
+  return list.map(item => ({
+    id: Number(item?.ID ?? item?.GameID ?? item?.GameId),
+    title: item?.Title ?? item?.GameTitle ?? '',
+    consoleId: Number(item?.ConsoleID ?? item?.ConsoleId),
+    consoleName: item?.ConsoleName ?? '',
+    lastPlayed: item?.LastPlayed ?? item?.DateLastPlayed ?? null
+  })).filter(x => Number.isFinite(x.id) && x.id > 0)
+}
+
 // Helper function to extract game ID from internal game ID format (ra-consoleId-gameId)
 export function extractGameIdFromInternalId(internalId) {
   if (!internalId || typeof internalId !== 'string') return null

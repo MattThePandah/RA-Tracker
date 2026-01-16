@@ -139,7 +139,6 @@ export default function Achievements() {
     state: achievementState, 
     loadGameAchievements, 
     loadRecentAchievements,
-    clearCurrentGameData,
     isConfigured 
   } = useAchievements()
   const location = useLocation()
@@ -152,6 +151,12 @@ export default function Achievements() {
   const [loading, setLoading] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const [gameQuery, setGameQuery] = useState(() => searchParams.get('g') || '')
+  const isLoading = loading || (viewMode === 'current'
+    ? achievementState.loading.gameAchievements
+    : achievementState.loading.recentAchievements)
+  const loadError = viewMode === 'current'
+    ? achievementState.errors?.gameAchievements
+    : achievementState.errors?.recentAchievements
 
   // Get RetroAchievements games
   const raGames = useMemo(() => {
@@ -184,11 +189,13 @@ export default function Achievements() {
         const needsSelection = !selectedGame || selectedGame.id !== forcedGameId
         if (needsSelection && !forcingSelectionRef.current) {
           forcingSelectionRef.current = true
-          clearCurrentGameData()
           setSelectedGame(forcedGame)
-          loadGameAchievements(forcedGame.id, true).finally(() => {
-            forcingSelectionRef.current = false
-          })
+          setLoading(true)
+          loadGameAchievements(forcedGame.id, true)
+            .finally(() => {
+              setLoading(false)
+              forcingSelectionRef.current = false
+            })
         }
         return
       }
@@ -216,7 +223,6 @@ export default function Achievements() {
           
           if (forceCurrentGame) {
             forcingSelectionRef.current = true
-            clearCurrentGameData()
           }
           
           setSelectedGame(currentGame)
@@ -226,11 +232,14 @@ export default function Achievements() {
           
           if (needsApiCall) {
             console.log('Loading achievements for:', currentGame.title, 'with ID:', currentGame.id)
-            loadGameAchievements(currentGame.id, forceCurrentGame).finally(() => {
-              if (forceCurrentGame) {
-                forcingSelectionRef.current = false
-              }
-            })
+            setLoading(true)
+            loadGameAchievements(currentGame.id, forceCurrentGame)
+              .finally(() => {
+                setLoading(false)
+                if (forceCurrentGame) {
+                  forcingSelectionRef.current = false
+                }
+              })
           } else {
             console.log('Using existing achievement data for:', currentGame.title)
             if (forceCurrentGame) {
@@ -465,7 +474,12 @@ export default function Achievements() {
         <div className="col-lg-9">
           {/* Achievement Grid */}
           <div className="achievement-results">
-            {loading ? (
+            {loadError && (
+              <div className="alert alert-warning mb-3">
+                {loadError}
+              </div>
+            )}
+            {isLoading ? (
               <div className="text-center p-5">
                 <div className="spinner-border text-primary" role="status">
                   <span className="visually-hidden">Loading...</span>

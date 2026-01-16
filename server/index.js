@@ -229,6 +229,12 @@ const raProxyInflight = new Map()
 const raRecentCacheMs = Number(process.env.RA_RECENT_CACHE_MS || 60_000)
 const raRecentCache = new Map()
 const raRecentInflight = new Map()
+const raProfileCacheMs = Number(process.env.RA_PROFILE_CACHE_MS || 30_000)
+const raProfileCache = new Map()
+const raProfileInflight = new Map()
+const raRecentlyPlayedCacheMs = Number(process.env.RA_RECENTLY_PLAYED_CACHE_MS || 30_000)
+const raRecentlyPlayedCache = new Map()
+const raRecentlyPlayedInflight = new Map()
 
 function requireOverlayAuth(req, res, next) {
   if (req.session?.admin) return next()
@@ -2549,6 +2555,140 @@ app.get('/api/retroachievements/recent', requireOverlayAuth, async (req, res) =>
     const count = Number.isFinite(countRaw) ? Math.min(Math.max(Math.floor(countRaw), 1), 200) : 50
     const key = `${username}:${count}`
     raRecentInflight.delete(key)
+    if (error.response?.status === 429) {
+      res.status(429).json({ error: 'Rate limited by RetroAchievements API' })
+    } else {
+      res.status(500).json({ error: 'RetroAchievements API request failed' })
+    }
+  }
+})
+
+app.get('/api/retroachievements/profile', requireOverlayAuth, async (req, res) => {
+  try {
+    const username = req.query.username || process.env.RA_USERNAME
+    const apiKey = req.query.apiKey || process.env.RA_API_KEY
+
+    if (!username || !apiKey) {
+      return res.status(400).json({ error: 'username and apiKey required' })
+    }
+
+    const key = String(username)
+    const now = Date.now()
+    const cached = raProfileCache.get(key)
+    if (cached && now - cached.ts < raProfileCacheMs) {
+      return res.json(cached.data)
+    }
+    if (raProfileInflight.has(key)) {
+      const data = await raProfileInflight.get(key)
+      return res.json(data)
+    }
+
+    const params = new URLSearchParams()
+    params.set('y', apiKey)
+    params.set('u', username)
+    const url = `https://retroachievements.org/API/API_GetUserProfile.php?${params.toString()}`
+
+    const fetchPromise = (async () => {
+      let attempt = 0
+      let delay = 800
+      while (true) {
+        try {
+          const response = await raProxyLimiter.schedule(() => axios.get(url, { timeout: 15000 }))
+          return response.data
+        } catch (error) {
+          const status = error?.response?.status
+          if (status === 429 && attempt < LIMITS.RA_MAX_RETRIES) {
+            const retry = Number(error?.response?.headers?.['retry-after'])
+            const wait = retry ? retry * 1000 : delay
+            await new Promise(r => setTimeout(r, wait))
+            attempt++
+            delay = Math.min(delay * 2, 8000)
+            continue
+          }
+          throw error
+        }
+      }
+    })()
+
+    raProfileInflight.set(key, fetchPromise)
+    const data = await fetchPromise
+    raProfileInflight.delete(key)
+    raProfileCache.set(key, { ts: Date.now(), data })
+    res.json(data)
+  } catch (error) {
+    console.error('RetroAchievements profile API error:', error.message)
+    const username = req.query.username || process.env.RA_USERNAME || ''
+    raProfileInflight.delete(String(username))
+    if (error.response?.status === 429) {
+      res.status(429).json({ error: 'Rate limited by RetroAchievements API' })
+    } else {
+      res.status(500).json({ error: 'RetroAchievements API request failed' })
+    }
+  }
+})
+
+app.get('/api/retroachievements/recently-played', requireOverlayAuth, async (req, res) => {
+  try {
+    const username = req.query.username || process.env.RA_USERNAME
+    const apiKey = req.query.apiKey || process.env.RA_API_KEY
+    const countRaw = Number(req.query.count ?? req.query.c)
+    const count = Number.isFinite(countRaw) ? Math.min(Math.max(Math.floor(countRaw), 1), 50) : 1
+
+    if (!username || !apiKey) {
+      return res.status(400).json({ error: 'username and apiKey required' })
+    }
+
+    const key = `${username}:${count}`
+    const now = Date.now()
+    const cached = raRecentlyPlayedCache.get(key)
+    if (cached && now - cached.ts < raRecentlyPlayedCacheMs) {
+      return res.json(cached.data)
+    }
+    if (raRecentlyPlayedInflight.has(key)) {
+      const data = await raRecentlyPlayedInflight.get(key)
+      return res.json(data)
+    }
+
+    const params = new URLSearchParams()
+    params.set('y', apiKey)
+    params.set('u', username)
+    params.set('c', String(count))
+    const url = `https://retroachievements.org/API/API_GetUserRecentlyPlayedGames.php?${params.toString()}`
+
+    const fetchPromise = (async () => {
+      let attempt = 0
+      let delay = 800
+      while (true) {
+        try {
+          const response = await raProxyLimiter.schedule(() => axios.get(url, { timeout: 15000 }))
+          return response.data
+        } catch (error) {
+          const status = error?.response?.status
+          if (status === 429 && attempt < LIMITS.RA_MAX_RETRIES) {
+            const retry = Number(error?.response?.headers?.['retry-after'])
+            const wait = retry ? retry * 1000 : delay
+            await new Promise(r => setTimeout(r, wait))
+            attempt++
+            delay = Math.min(delay * 2, 8000)
+            continue
+          }
+          throw error
+        }
+      }
+    })()
+
+    raRecentlyPlayedInflight.set(key, fetchPromise)
+    const data = await fetchPromise
+    raRecentlyPlayedInflight.delete(key)
+    raRecentlyPlayedCache.set(key, { ts: Date.now(), data })
+    res.json(data)
+  } catch (error) {
+    console.error('RetroAchievements recently played API error:', error.message)
+    const username = req.query.username || process.env.RA_USERNAME || ''
+    const countRaw = Number(req.query.count ?? req.query.c)
+    const count = Number.isFinite(countRaw) ? Math.min(Math.max(Math.floor(countRaw), 1), 50) : 1
+    const key = `${username}:${count}`
+    raRecentlyPlayedInflight.delete(key)
     if (error.response?.status === 429) {
       res.status(429).json({ error: 'Rate limited by RetroAchievements API' })
     } else {

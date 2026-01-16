@@ -165,142 +165,149 @@ export default function TimerDock() {
         <span className="ms-2">{timer.currentFormatted}</span>
       </button>
 
-      {open && createPortal(
-        <>
-          <div className="timer-dock-backdrop" onClick={() => setOpen(false)} />
-          <div
-            className="timer-dock-panel"
-            style={{ top: panelPos.top, left: panelPos.left, right: 'auto' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="timer-dock-header">
-            <div className="timer-dock-title">Event Timers</div>
-            <button className="btn btn-sm btn-outline-secondary" onClick={() => setOpen(false)}>Close</button>
-          </div>
-          {eventInfo?.name && (
-            <div className="timer-dock-event">
-              <span className="timer-dock-event-name">{eventInfo.overlayTitle || eventInfo.name}</span>
-              {(eventInfo.overlaySubtitle || eventInfo.console) && (
-                <span className="timer-dock-event-sub">
-                  {' - '}
-                  {eventInfo.overlaySubtitle || eventInfo.console}
-                </span>
+      {open && (() => {
+        const portalTarget = (typeof document !== 'undefined'
+          ? document.querySelector('.admin-layout')
+            || document.querySelector('.admin-shell')
+            || document.body
+          : null)
+        if (!portalTarget) return null
+        return createPortal(
+          <>
+            <div className="timer-dock-backdrop" onClick={() => setOpen(false)} />
+            <div
+              className="timer-dock-panel"
+              style={{ top: panelPos.top, left: panelPos.left, right: 'auto' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="timer-dock-header">
+                <div className="timer-dock-title">Event Timers</div>
+                <button className="btn btn-sm btn-outline-secondary" onClick={() => setOpen(false)}>Close</button>
+              </div>
+              {eventInfo?.name && (
+                <div className="timer-dock-event">
+                  <span className="timer-dock-event-name">{eventInfo.overlayTitle || eventInfo.name}</span>
+                  {(eventInfo.overlaySubtitle || eventInfo.console) && (
+                    <span className="timer-dock-event-sub">
+                      {' - '}
+                      {eventInfo.overlaySubtitle || eventInfo.console}
+                    </span>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-
-            <div className="timer-dock-times">
-              <div>
-                <div className="timer-dock-label">Current</div>
-                <div className="timer-dock-value">{timer.currentFormatted}</div>
+              <div className="timer-dock-times">
+                <div>
+                  <div className="timer-dock-label">Current</div>
+                  <div className="timer-dock-value">{timer.currentFormatted}</div>
+                </div>
+                <div>
+                  <div className="timer-dock-label">Total</div>
+                  <div className="timer-dock-value">{timer.totalFormatted}</div>
+                </div>
               </div>
-              <div>
-                <div className="timer-dock-label">Total</div>
-                <div className="timer-dock-value">{timer.totalFormatted}</div>
-              </div>
-            </div>
 
-            {!timer.currentGameId && (
-              <div className="timer-dock-note">
-                Select a current game to start or edit the current timer.
-              </div>
-            )}
-
-            <div className="timer-dock-group">
-              <div className="timer-dock-label">Current Game Time</div>
-              <div className="timer-dock-inputs">
-                <input
-                  type="number"
-                  min="0"
-                  className="form-control"
-                  value={currentParts.h}
-                  onChange={e => setCurrentParts(prev => ({ ...prev, h: e.target.value }))}
-                  disabled={!timer.currentGameId}
-                  aria-label="Current hours"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  className="form-control"
-                  value={currentParts.m}
-                  onChange={e => setCurrentParts(prev => ({ ...prev, m: e.target.value }))}
-                  disabled={!timer.currentGameId}
-                  aria-label="Current minutes"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  className="form-control"
-                  value={currentParts.s}
-                  onChange={e => setCurrentParts(prev => ({ ...prev, s: e.target.value }))}
-                  disabled={!timer.currentGameId}
-                  aria-label="Current seconds"
-                />
-              </div>
-            </div>
-
-            <div className="timer-dock-group">
-              <div className="timer-dock-label">Event Total</div>
-              <div className="timer-dock-inputs">
-                <input
-                  type="number"
-                  min="0"
-                  className="form-control"
-                  value={totalParts.h}
-                  onChange={e => setTotalParts(prev => ({ ...prev, h: e.target.value }))}
-                  aria-label="Total hours"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  className="form-control"
-                  value={totalParts.m}
-                  onChange={e => setTotalParts(prev => ({ ...prev, m: e.target.value }))}
-                  aria-label="Total minutes"
-                />
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  className="form-control"
-                  value={totalParts.s}
-                  onChange={e => setTotalParts(prev => ({ ...prev, s: e.target.value }))}
-                  aria-label="Total seconds"
-                />
-              </div>
-            </div>
-
-            <div className="timer-dock-actions">
-              {timer.running ? (
-                <button className="btn btn-sm btn-outline-warning" onClick={pauseCurrentTimer} disabled={!canStart}>
-                  Pause
-                </button>
-              ) : (
-                <button className="btn btn-sm btn-outline-success" onClick={startCurrentTimer} disabled={!canStart}>
-                  Start
-                </button>
+              {!timer.currentGameId && (
+                <div className="timer-dock-note">
+                  Select a current game to start or edit the current timer.
+                </div>
               )}
-              <button className="btn btn-sm btn-outline-light" onClick={resetCurrentTimer} disabled={!canStart}>
-                Reset Current
-              </button>
-              <button className="btn btn-sm btn-outline-danger" onClick={resetTotalTimer}>
-                Reset Total
-              </button>
-            </div>
 
-            <div className="timer-dock-footer">
-              <button className="btn btn-sm btn-primary" onClick={handleApply} disabled={saving}>
-                {saving ? 'Saving...' : 'Apply Changes'}
-              </button>
-              {error && <div className="text-danger small">{error}</div>}
+              <div className="timer-dock-group">
+                <div className="timer-dock-label">Current Game Time</div>
+                <div className="timer-dock-inputs">
+                  <input
+                    type="number"
+                    min="0"
+                    className="form-control"
+                    value={currentParts.h}
+                    onChange={e => setCurrentParts(prev => ({ ...prev, h: e.target.value }))}
+                    disabled={!timer.currentGameId}
+                    aria-label="Current hours"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    className="form-control"
+                    value={currentParts.m}
+                    onChange={e => setCurrentParts(prev => ({ ...prev, m: e.target.value }))}
+                    disabled={!timer.currentGameId}
+                    aria-label="Current minutes"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    className="form-control"
+                    value={currentParts.s}
+                    onChange={e => setCurrentParts(prev => ({ ...prev, s: e.target.value }))}
+                    disabled={!timer.currentGameId}
+                    aria-label="Current seconds"
+                  />
+                </div>
+              </div>
+
+              <div className="timer-dock-group">
+                <div className="timer-dock-label">Event Total</div>
+                <div className="timer-dock-inputs">
+                  <input
+                    type="number"
+                    min="0"
+                    className="form-control"
+                    value={totalParts.h}
+                    onChange={e => setTotalParts(prev => ({ ...prev, h: e.target.value }))}
+                    aria-label="Total hours"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    className="form-control"
+                    value={totalParts.m}
+                    onChange={e => setTotalParts(prev => ({ ...prev, m: e.target.value }))}
+                    aria-label="Total minutes"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    className="form-control"
+                    value={totalParts.s}
+                    onChange={e => setTotalParts(prev => ({ ...prev, s: e.target.value }))}
+                    aria-label="Total seconds"
+                  />
+                </div>
+              </div>
+
+              <div className="timer-dock-actions">
+                {timer.running ? (
+                  <button className="btn btn-sm btn-outline-warning" onClick={pauseCurrentTimer} disabled={!canStart}>
+                    Pause
+                  </button>
+                ) : (
+                  <button className="btn btn-sm btn-outline-success" onClick={startCurrentTimer} disabled={!canStart}>
+                    Start
+                  </button>
+                )}
+                <button className="btn btn-sm btn-outline-light" onClick={resetCurrentTimer} disabled={!canStart}>
+                  Reset Current
+                </button>
+                <button className="btn btn-sm btn-outline-danger" onClick={resetTotalTimer}>
+                  Reset Total
+                </button>
+              </div>
+
+              <div className="timer-dock-footer">
+                <button className="btn btn-sm btn-primary" onClick={handleApply} disabled={saving}>
+                  {saving ? 'Saving...' : 'Apply Changes'}
+                </button>
+                {error && <div className="text-danger small">{error}</div>}
+              </div>
             </div>
-          </div>
-        </>,
-        (typeof document !== 'undefined' && document.querySelector('.admin-shell')) || document.body
-      )}
+          </>,
+          portalTarget
+        )
+      })()}
     </div>
   )
 }

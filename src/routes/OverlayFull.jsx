@@ -741,6 +741,7 @@ export default function OverlayFull() {
   React.useEffect(() => {
     if (!allowBezelAchievements) return
     loadRecentAchievements(20)
+    if (state?.settings?.smartPollingEnabled) return
     const id = setInterval(() => {
       loadRecentAchievements(20)
     }, achievementPoll)
@@ -808,6 +809,7 @@ export default function OverlayFull() {
   }, [allowBezelAchievements, bezelDuration, state.recentAchievements, currentGameId, loadGameAchievements])
 
   React.useEffect(() => {
+    if (state?.settings?.smartPollingEnabled) return
     if (!achievementsEnabled || !currentGameId || !isConfigured) return
     if (!current || !RA.hasRetroAchievementsSupport(current)) return
     const id = setInterval(() => {

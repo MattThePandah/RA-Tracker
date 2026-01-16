@@ -38,6 +38,9 @@ function reducer(state, action) {
       Storage.setCurrentGameId(action.id)
       return { ...state, currentGameId: action.id }
     }
+    case 'SYNC_CURRENT': {
+      return { ...state, currentGameId: action.id }
+    }
     case 'UPDATE_GAME': {
       const prev = state.games.find(g => g.id === action.game.id) || null
       const games = state.games.map(g => g.id === action.game.id ? action.game : g)
@@ -89,6 +92,7 @@ export function GameProvider({ children }) {
   const notifyStatusRef = React.useRef(new Map())
   const historyReadyRef = React.useRef(false)
   const historyStateRef = React.useRef(new Map())
+  const currentGameIdRef = React.useRef(state.currentGameId)
 
   const sendNotification = React.useCallback(async (type, game) => {
     try {
@@ -216,6 +220,25 @@ export function GameProvider({ children }) {
       }
     }
   }, [state.games, sendLegacyHistory])
+
+  useEffect(() => {
+    currentGameIdRef.current = state.currentGameId
+  }, [state.currentGameId])
+
+  useEffect(() => {
+    const handleStorageUpdate = (event) => {
+      const detail = event?.detail || {}
+      if (detail.type === 'currentGame') {
+        const nextId = detail.id || null
+        if (nextId !== currentGameIdRef.current) {
+          currentGameIdRef.current = nextId
+          dispatch({ type: 'SYNC_CURRENT', id: nextId })
+        }
+      }
+    }
+    window.addEventListener('gameDataUpdated', handleStorageUpdate)
+    return () => window.removeEventListener('gameDataUpdated', handleStorageUpdate)
+  }, [])
 
   useEffect(() => {
     (async () => {
