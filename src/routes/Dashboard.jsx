@@ -859,7 +859,7 @@ export default function Dashboard() {
                 <div className="d-flex flex-column gap-3">
                   <div className="d-flex justify-content-between align-items-center p-2 rounded bg-dark border border-secondary border-opacity-10">
                     <span className="text-secondary small">Total Library</span>
-                    <span className="h5 mb-0 fw-bold">{state.games.length}</span>
+                    <span className="h5 mb-0 fw-bold">{state.stats?.total ?? 0}</span>
                   </div>
                   <div className="d-flex justify-content-between align-items-center p-2 rounded bg-dark border border-secondary border-opacity-10">
                     <span className="text-secondary small">Public Completed</span>

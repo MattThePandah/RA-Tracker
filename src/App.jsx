@@ -111,7 +111,7 @@ export default function App() {
           <div className="d-flex gap-4 align-items-center">
             <h1 className="h6 mb-0 text-secondary fw-normal">RA Creator Studio</h1>
             <div className="d-flex align-items-center gap-3 small border-start ps-4 opacity-75">
-              <span className="stat-pill"><i className="bi bi-collection me-1"></i> {state.games.length} Games</span>
+              <span className="stat-pill"><i className="bi bi-collection me-1"></i> {state.stats.total} Games</span>
               <span className="stat-pill"><i className="bi bi-check-circle me-1"></i> {state.stats.completed} Done</span>
               <span className="stat-pill"><i className="bi bi-graph-up me-1"></i> {state.stats.percent}%</span>
             </div>

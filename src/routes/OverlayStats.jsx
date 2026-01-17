@@ -4,6 +4,7 @@ import { buildOverlayUrl } from '../utils/overlayApi.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
+import { computeMainStats } from '../utils/gameStats.js'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -53,9 +54,7 @@ export default function OverlayStats() {
       // Fallback to same-browser storage (dev/testing)
       try {
         const games = Storage.getGames()
-        const total = games.length
-        const completed = games.filter(g => g.status === 'Completed').length
-        const percent = total ? Math.round((completed / total) * 100) : 0
+        const { total, completed, percent } = computeMainStats(games)
         setStats({ total, completed, percent })
       } catch (storageErr) {
         console.log('localStorage fallback failed:', storageErr.message)

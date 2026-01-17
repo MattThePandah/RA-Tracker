@@ -1,4 +1,5 @@
 import mock from '../mock/games.ps.json'
+import { computeMainStats } from '../utils/gameStats.js'
 
 const LS_GAMES = 'tracker.games'
 const LS_SETTINGS = 'tracker.settings'
@@ -133,9 +134,8 @@ export function bootstrap() {
   }
   // Publish lightweight stats for overlays
   try {
-    const total = games.length
+    const { total, completed } = computeMainStats(games)
     if (total > 0) {
-      const completed = games.filter(g => g.status === 'Completed').length
       postOverlayStats({ total, completed })
     }
   } catch {}
@@ -211,9 +211,8 @@ export function saveGames(games) {
   window.dispatchEvent(new CustomEvent('gameDataUpdated', { detail: { type: 'games', games } }))
   // Do NOT post full games to overlay to avoid large payloads
   try {
-    const total = games.length
+    const { total, completed } = computeMainStats(games)
     if (total > 0) {
-      const completed = games.filter(g => g.status === 'Completed').length
       postOverlayStats({ total, completed })
     }
   } catch {}

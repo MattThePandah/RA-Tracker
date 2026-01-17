@@ -11,7 +11,7 @@ export default function Select() {
   const [spinning, setSpinning] = useState(false)
   const [includeSuggestions, setIncludeSuggestions] = useState(false)
   const [consoleFilter, setConsoleFilter] = useState('All')
-  const [bonusExclusions, setBonusExclusions] = useState({ subset: false, demo: false, hack: false, homebrew: false })
+  const [bonusExclusions, setBonusExclusions] = useState({ subset: true, demo: false, hack: false, homebrew: false })
   const [spinSource, setSpinSource] = useState('pool') // 'pool' | 'sample'
   const [poolMode, setPoolMode] = useState('all') // 'all' | 'custom'
   const [customGameIds, setCustomGameIds] = useState([])
@@ -121,13 +121,28 @@ export default function Select() {
     } catch (e) { }
   }
 
+  const buildBonusSettings = React.useCallback((nextExclusions = {}) => {
+    const forced = { ...(nextExclusions || {}) }
+    if (state.settings.hideBonusGames) {
+      forced.subset = true
+    }
+    const anyExcluded = Object.values(forced).some(Boolean)
+    return {
+      bonusMode: anyExcluded ? 'exclude' : 'include',
+      ...(anyExcluded ? { bonusExclusions: forced } : {})
+    }
+  }, [state.settings.hideBonusGames])
+
+  React.useEffect(() => {
+    if (!state.settings.hideBonusGames) return
+    if (bonusExclusions.subset === true) return
+    setBonusExclusions(prev => ({ ...prev, subset: true }))
+  }, [state.settings.hideBonusGames, bonusExclusions.subset])
+
   const handleSpin = async () => {
     try {
       setSpinning(true)
       const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-      const anyBonusExcluded = Object.values(bonusExclusions || {}).some(Boolean)
-      const effectiveBonusMode = state.settings.hideBonusGames ? 'exclude' : (anyBonusExcluded ? 'exclude' : 'include')
-      const effectiveBonusExclusions = state.settings.hideBonusGames ? null : bonusExclusions
       await updateSettings({
         includeSuggestions,
         consoleFilter,
@@ -136,8 +151,7 @@ export default function Select() {
         customIncludeSuggestions,
         consoleCustomItems,
         spinSource,
-        bonusMode: effectiveBonusMode,
-        ...(effectiveBonusExclusions ? { bonusExclusions: effectiveBonusExclusions } : {})
+        ...buildBonusSettings(bonusExclusions)
       })
       // If the overlay picker is the capsule/claw machine, use a longer spin so the animation feels intentional.
       const durationOverrideMs = overlayWheelStyle === 'capsule' ? 9000 : undefined
@@ -439,12 +453,12 @@ export default function Select() {
                           type="checkbox"
                           id="excludeSubset"
                           checked={bonusExclusions.subset === true}
-                          onChange={(e) => {
-                            const next = { ...bonusExclusions, subset: e.target.checked }
-                            setBonusExclusions(next)
-                            updateSettings({ bonusMode: Object.values(next).some(Boolean) ? 'exclude' : 'include', bonusExclusions: next })
-                          }}
-                        />
+                        onChange={(e) => {
+                          const next = { ...bonusExclusions, subset: e.target.checked }
+                          setBonusExclusions(next)
+                          updateSettings(buildBonusSettings(next))
+                        }}
+                      />
                         <label className="form-check-label text-light small" htmlFor="excludeSubset">Subsets</label>
                       </div>
                       <div className="form-check">
@@ -453,12 +467,12 @@ export default function Select() {
                           type="checkbox"
                           id="excludeDemo"
                           checked={bonusExclusions.demo === true}
-                          onChange={(e) => {
-                            const next = { ...bonusExclusions, demo: e.target.checked }
-                            setBonusExclusions(next)
-                            updateSettings({ bonusMode: Object.values(next).some(Boolean) ? 'exclude' : 'include', bonusExclusions: next })
-                          }}
-                        />
+                        onChange={(e) => {
+                          const next = { ...bonusExclusions, demo: e.target.checked }
+                          setBonusExclusions(next)
+                          updateSettings(buildBonusSettings(next))
+                        }}
+                      />
                         <label className="form-check-label text-light small" htmlFor="excludeDemo">Demos</label>
                       </div>
                       <div className="form-check">
@@ -467,12 +481,12 @@ export default function Select() {
                           type="checkbox"
                           id="excludeHack"
                           checked={bonusExclusions.hack === true}
-                          onChange={(e) => {
-                            const next = { ...bonusExclusions, hack: e.target.checked }
-                            setBonusExclusions(next)
-                            updateSettings({ bonusMode: Object.values(next).some(Boolean) ? 'exclude' : 'include', bonusExclusions: next })
-                          }}
-                        />
+                        onChange={(e) => {
+                          const next = { ...bonusExclusions, hack: e.target.checked }
+                          setBonusExclusions(next)
+                          updateSettings(buildBonusSettings(next))
+                        }}
+                      />
                         <label className="form-check-label text-light small" htmlFor="excludeHack">Hacks</label>
                       </div>
                       <div className="form-check">
@@ -481,17 +495,17 @@ export default function Select() {
                           type="checkbox"
                           id="excludeHomebrew"
                           checked={bonusExclusions.homebrew === true}
-                          onChange={(e) => {
-                            const next = { ...bonusExclusions, homebrew: e.target.checked }
-                            setBonusExclusions(next)
-                            updateSettings({ bonusMode: Object.values(next).some(Boolean) ? 'exclude' : 'include', bonusExclusions: next })
-                          }}
-                        />
+                        onChange={(e) => {
+                          const next = { ...bonusExclusions, homebrew: e.target.checked }
+                          setBonusExclusions(next)
+                          updateSettings(buildBonusSettings(next))
+                        }}
+                      />
                         <label className="form-check-label text-light small" htmlFor="excludeHomebrew">Homebrew</label>
                       </div>
                       {state.settings.hideBonusGames && (
                         <div className="small text-warning opacity-75">
-                          Global “Hide Bonus Games” is enabled; wheel will exclude all bonus categories.
+                          Global “Hide Bonus Games” is enabled; wheel will exclude subsets.
                         </div>
                       )}
                     </div>

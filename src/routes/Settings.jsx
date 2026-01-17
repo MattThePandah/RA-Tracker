@@ -4,6 +4,7 @@ import { useGame } from '../context/GameContext.jsx'
 import { useAchievements } from '../context/AchievementContext.jsx'
 import * as IGDB from '../services/igdb.js'
 import * as Storage from '../services/storage.js'
+import { computeMainStats, filterMainGames } from '../utils/gameStats.js'
 
 const getCsrfToken = () => {
   try { return localStorage.getItem('ra.csrf') || '' } catch { return '' }
@@ -83,11 +84,10 @@ export default function Settings() {
       const base = import.meta.env.VITE_IGDB_PROXY_URL
       if (!base) return
       const hide = opts.hideBonusGames ?? hideBonusGames
-      // Filter games based on RA bonus toggle only (leave deeper filters to Select page)
+      // Filter games based on subset toggle only (leave deeper filters to Select page)
       let pool = state.games || []
       if (hide) {
-        const { isBonus } = await import('../utils/bonusDetection.js')
-        pool = pool.filter(g => !isBonus(g.title))
+        pool = filterMainGames(pool)
       }
       // Sample up to 16 without replacement
       const sample = []
@@ -625,8 +625,7 @@ export default function Settings() {
                     <button className="btn btn-outline-warning" onClick={clearAllInProgress}>Clear All In-Progress</button>
                     <button className="btn btn-outline-info" onClick={() => {
                       try {
-                        const total = state.games.length
-                        const completed = state.games.filter(g => g.status === 'Completed').length
+                        const { total, completed } = computeMainStats(state.games)
                         const base = import.meta.env.VITE_IGDB_PROXY_URL
                         if (!base) return alert('Proxy not configured (VITE_IGDB_PROXY_URL).')
                         fetch(`${base}/overlay/stats`, {

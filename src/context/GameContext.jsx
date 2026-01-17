@@ -4,6 +4,7 @@ import * as Bonus from '../utils/bonusDetection.js'
 import useRASync from '../hooks/useRASync.js'
 import { listGames as listServerGames } from '../services/library.js'
 import { adminFetch } from '../utils/adminFetch.js'
+import { computeMainStats } from '../utils/gameStats.js'
 
 const GameContext = createContext(null)
 
@@ -19,10 +20,7 @@ const initialState = () => {
 }
 
 function computeStats(games) {
-  const total = games.length
-  const completed = games.filter(g => g.status === 'Completed').length
-  const percent = total ? Math.round((completed / total) * 100) : 0
-  return { total, completed, percent }
+  return computeMainStats(games)
 }
 
 function reducer(state, action) {

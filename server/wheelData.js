@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS = {
   spinSource: 'pool', // 'pool' | 'sample'
   bonusMode: 'exclude', // 'include', 'exclude', 'only'
   bonusExclusions: {
-    subset: false,
+    subset: true,
     hack: false,
     prototype: false,
     demo: false,

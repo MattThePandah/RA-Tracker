@@ -1,5 +1,6 @@
 import React from 'react'
 import { useGame } from '../context/GameContext.jsx'
+import { filterMainGames } from '../utils/gameStats.js'
 
 const palette = ['#5eead4', '#60a5fa', '#fbbf24', '#f87171', '#c084fc', '#34d399', '#f472b6', '#38bdf8']
 
@@ -94,9 +95,10 @@ export default function Pulse() {
   }, [refreshPulse])
 
   const totals = React.useMemo(() => {
-    const total = state.games.length
-    const completed = state.games.filter(g => g.status === 'Completed').length
-    const inProgress = state.games.filter(g => isInProgress(g)).length
+    const mainGames = filterMainGames(state.games)
+    const total = mainGames.length
+    const completed = mainGames.filter(g => g.status === 'Completed').length
+    const inProgress = mainGames.filter(g => isInProgress(g)).length
     const backlog = Math.max(0, total - completed)
     const completionRate = total ? Math.round((completed / total) * 100) : 0
     const backlogRate = total ? Math.max(0, 100 - completionRate) : 0

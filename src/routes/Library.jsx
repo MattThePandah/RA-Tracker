@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useGame } from '../context/GameContext.jsx'
 import * as Cache from '../services/cache.js'
-import * as Bonus from '../utils/bonusDetection.js'
+import { filterMainGames } from '../utils/gameStats.js'
 import GameDetailModal from '../components/GameDetailModal.jsx'
 import { buildCoverUrl } from '../utils/coverUrl.js'
 import { adminFetch } from '../utils/adminFetch.js'
@@ -250,7 +250,7 @@ export default function Library() {
     if (q) arr = arr.filter(g => g.title.toLowerCase().includes(q.toLowerCase()))
     if (status !== 'All') arr = arr.filter(g => g.status === status)
     if (consoleFilter !== 'All') arr = arr.filter(g => g.console === consoleFilter)
-    if (hideBonus) arr = arr.filter(g => !Bonus.isBonus(g.title))
+    if (hideBonus) arr = filterMainGames(arr)
     return arr
   }, [state.games, q, status, consoleFilter, hideBonus])
 

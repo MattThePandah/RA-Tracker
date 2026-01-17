@@ -12,6 +12,7 @@ import useOverlayEvent from '../hooks/useOverlayEvent.js'
 import useOverlayConnector from '../hooks/useOverlayConnector.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
 import { compareSubsetLast } from '../utils/achievementSorting.js'
+import { computeMainStats } from '../utils/gameStats.js'
 import FullOverlayAchievementPopups from '../components/FullOverlayAchievementPopups.jsx'
 import DotMatrixText from '../components/DotMatrixText.jsx'
 import StartingSoonModule from '../components/StartingSoonModule.jsx'
@@ -648,9 +649,7 @@ export default function OverlayFull() {
       } catch { }
       try {
         const games = Storage.getGames()
-        const total = games.length
-        const completed = games.filter(g => g.status === 'Completed').length
-        const percent = total ? Math.round((completed / total) * 100) : 0
+        const { total, completed, percent } = computeMainStats(games)
         setStats({ total, completed, percent })
       } catch {
         setStats({ total: 0, completed: 0, percent: 0 })
