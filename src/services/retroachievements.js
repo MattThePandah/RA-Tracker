@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { buildOverlayUrl } from '../utils/overlayApi.js'
+import { isSubsetTitle } from '../utils/subsetDetection.js'
 
 const RA_BASE = 'https://retroachievements.org/API'
 
@@ -11,6 +12,182 @@ function raImageUrl(pathStr) {
   const cleaned = s.replace(/^\/+/, '')
   const p = cleaned.toLowerCase().startsWith('images/') ? cleaned : `Images/${cleaned}`
   return `https://media.retroachievements.org/${p}`
+}
+
+function normalizeSubsetId(value) {
+  if (value === null || value === undefined) return null
+  const s = String(value).trim()
+  if (!s || s === '0') return null
+  return s
+}
+
+function normalizeSubsetTitle(value) {
+  const s = String(value ?? '').trim()
+  return s || ''
+}
+
+function extractSubsetEntries(raw) {
+  if (!raw || typeof raw !== 'object') return []
+  const arr = Array.isArray(raw) ? raw : Object.values(raw)
+  const subsets = []
+  for (const entry of arr) {
+    if (!entry || typeof entry !== 'object') continue
+    const id = normalizeSubsetId(
+      entry.ID ?? entry.Id ?? entry.id ??
+      entry.SubsetID ?? entry.SubsetId ?? entry.subsetId ??
+      entry.GameID ?? entry.GameId ?? entry.gameId ??
+      entry.AchievementSetID ?? entry.AchievementSetId ?? entry.achievementSetId ??
+      null
+    )
+    const title = normalizeSubsetTitle(
+      entry.Title ?? entry.title ??
+      entry.Name ?? entry.name ??
+      entry.SubsetTitle ?? entry.subsetTitle ??
+      entry.AchievementSetTitle ?? entry.achievementSetTitle ??
+      ''
+    )
+    if (!id && !title) continue
+    subsets.push({
+      id: id || title,
+      title: title || (id ? `Subset ${id}` : 'Subset'),
+      raw: entry
+    })
+  }
+  return subsets
+}
+
+function extractAchievementSets(data) {
+  if (!data || typeof data !== 'object') return []
+  const raw = data.AchievementSets ?? data.achievementSets ?? data.AchievementSet ?? data.achievementSet
+  if (!raw || typeof raw !== 'object') return []
+  const arr = Array.isArray(raw) ? raw : Object.values(raw)
+  return arr.filter(set => set && typeof set === 'object' && (set.Achievements || set.achievements))
+}
+
+function isCoreAchievementSet(set, gameTitle) {
+  if (!set || typeof set !== 'object') return false
+  if (set.IsCore === true || set.isCore === true) return true
+  const type = String(set.Type ?? set.type ?? '').toLowerCase()
+  if (type === 'core') return true
+  const title = normalizeSubsetTitle(set.Title ?? set.title ?? set.Name ?? set.name ?? '')
+  if (title && gameTitle && title.toLowerCase() === String(gameTitle).toLowerCase()) return true
+  return false
+}
+
+function extractSubsetsFromGameData(data) {
+  const subsets = []
+  const seen = new Set()
+
+  const direct = data?.Subsets ?? data?.subsets ?? data?.AchievementSubsets ?? data?.achievementSubsets
+  for (const entry of extractSubsetEntries(direct)) {
+    const key = String(entry.id)
+    if (seen.has(key)) continue
+    seen.add(key)
+    subsets.push(entry)
+  }
+
+  const sets = extractAchievementSets(data)
+  for (const set of sets) {
+    if (isCoreAchievementSet(set, data?.Title ?? data?.title ?? '')) continue
+    const id = normalizeSubsetId(set.SubsetID ?? set.SubsetId ?? set.subsetId ?? set.ID ?? set.id ?? set.AchievementSetID ?? set.achievementSetId ?? null)
+    const title = normalizeSubsetTitle(set.Title ?? set.title ?? set.Name ?? set.name ?? set.SubsetTitle ?? set.subsetTitle ?? '')
+    if (!id && !title) continue
+    const key = String(id || title)
+    if (seen.has(key)) continue
+    seen.add(key)
+    subsets.push({
+      id: id || title,
+      title: title || (id ? `Subset ${id}` : 'Subset'),
+      raw: set
+    })
+  }
+
+  return subsets
+}
+
+function inferSubsetsFromAchievements(achievements = []) {
+  const map = new Map()
+  for (const ach of achievements) {
+    const subsetId = normalizeSubsetId(ach?.subsetId)
+    if (!subsetId) continue
+    const title = normalizeSubsetTitle(ach?.subsetTitle ?? '')
+    if (!map.has(subsetId)) {
+      map.set(subsetId, {
+        id: subsetId,
+        title: title || `Subset ${subsetId}`
+      })
+    } else if (title && !map.get(subsetId).title) {
+      map.get(subsetId).title = title
+    }
+  }
+  return Array.from(map.values())
+}
+
+function mapAchievement(achievement, { subsetId: subsetIdOverride = null, subsetTitle: subsetTitleOverride = null, subsetTitleById = null } = {}) {
+  const subsetIdFromAch = normalizeSubsetId(
+    achievement.SubsetID ?? achievement.SubsetId ?? achievement.subsetId ??
+    achievement.Subset ?? achievement.subset ??
+    achievement.AchievementSetID ?? achievement.achievementSetId ??
+    null
+  )
+  let subsetId = subsetIdOverride ?? subsetIdFromAch ?? null
+  let subsetTitle = subsetTitleOverride ?? normalizeSubsetTitle(
+    achievement.SubsetTitle ?? achievement.SubsetName ??
+    achievement.subsetTitle ?? achievement.subsetName ??
+    achievement.Subset ?? achievement.subset ??
+    ''
+  )
+  if (!subsetTitle && subsetId && subsetTitleById) {
+    subsetTitle = subsetTitleById.get(String(subsetId)) || ''
+  }
+  if (!subsetId && subsetTitle) {
+    subsetId = subsetTitle
+  }
+
+  return {
+    id: achievement.ID ?? achievement.AchievementID ?? achievement.id,
+    title: achievement.Title ?? achievement.title,
+    description: achievement.Description ?? achievement.description,
+    points: achievement.Points ?? achievement.points,
+    badgeName: achievement.BadgeName ?? achievement.badgeName,
+    displayOrder: achievement.DisplayOrder ?? achievement.displayOrder,
+    dateEarned: achievement.DateEarned ?? achievement.dateEarned,
+    dateEarnedHardcore: achievement.DateEarnedHardcore ?? achievement.dateEarnedHardcore,
+    isEarned: !!(achievement.DateEarned ?? achievement.dateEarned),
+    isEarnedHardcore: !!(achievement.DateEarnedHardcore ?? achievement.dateEarnedHardcore),
+    subsetId: subsetId ? String(subsetId) : null,
+    subsetTitle: subsetTitle || null
+  }
+}
+
+async function fetchGameInfoRaw({ apiKey, username, gameId }) {
+  if (!apiKey || !username || !gameId) {
+    throw new Error('apiKey, username, and gameId are required')
+  }
+
+  const proxyBase = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+  const url = buildOverlayUrl(`/api/retroachievements/game/${gameId}`, proxyBase)
+  const params = new URLSearchParams()
+  params.set('username', username)
+  params.set('apiKey', apiKey)
+
+  const config = {
+    timeout: 15000,
+    headers: {
+      'User-Agent': 'RetroAchievements-Tracker/1.0'
+    },
+    withCredentials: true
+  }
+
+  const requestUrl = new URL(url)
+  for (const [key, value] of params.entries()) {
+    requestUrl.searchParams.set(key, value)
+  }
+  const { data } = await axios.get(requestUrl.toString(), config)
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid response format from RetroAchievements API')
+  }
+  return data
 }
 
 export async function getConsoleIds({ apiKey, activeOnly=true, gameSystemsOnly=true }={}) {
@@ -46,6 +223,7 @@ export async function fetchGamesForConsoles({ username, apiKey, consoleIds = [],
       if (Array.isArray(data)) {
         for (const g of data) {
           const title = g.Title || g.GameTitle || g.title
+          if (isSubsetTitle(title)) continue
           const consoleName = g.ConsoleName || g.consoleName || String(id)
           results.push({
             id: `ra-${id}-${g.ID || g.GameID || g.id}`,
@@ -99,33 +277,52 @@ export async function getGameInfoAndUserProgress({ apiKey, username, gameId, inc
     throw new Error('apiKey, username, and gameId are required')
   }
   
-  // Use local server proxy to avoid CORS issues and manage rate limiting
-  const proxyBase = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
-  const url = buildOverlayUrl(`/api/retroachievements/game/${gameId}`, proxyBase)
-  const params = new URLSearchParams()
-  params.set('username', username)
-  params.set('apiKey', apiKey)
-  
   try {
-    // Add timeout and retry logic
-    const config = {
-      timeout: 15000, // 15 second timeout
-      headers: {
-        'User-Agent': 'RetroAchievements-Tracker/1.0'
-      },
-      withCredentials: true
+    const data = await fetchGameInfoRaw({ apiKey, username, gameId })
+    const subsets = extractSubsetsFromGameData(data)
+    const subsetTitleById = new Map(subsets.map(s => [String(s.id), s.title]))
+    const setEntries = extractAchievementSets(data)
+
+    const achievements = []
+    if (setEntries.length) {
+      for (const set of setEntries) {
+        const setTitle = normalizeSubsetTitle(set.Title ?? set.title ?? set.Name ?? set.name ?? '')
+        const core = isCoreAchievementSet(set, data?.Title ?? data?.title ?? '')
+        const subsetId = core ? null : normalizeSubsetId(
+          set.SubsetID ?? set.SubsetId ?? set.subsetId ??
+          set.ID ?? set.Id ?? set.id ??
+          set.AchievementSetID ?? set.AchievementSetId ?? set.achievementSetId ??
+          null
+        )
+        const subsetTitle = core ? null : (setTitle || (subsetId ? subsetTitleById.get(String(subsetId)) : '') || null)
+        const achList = Object.values(set.Achievements || set.achievements || {})
+        for (const ach of achList) {
+          achievements.push(mapAchievement(ach, { subsetId, subsetTitle, subsetTitleById }))
+        }
+      }
     }
-    
-    const requestUrl = new URL(url)
-    for (const [key, value] of params.entries()) {
-      requestUrl.searchParams.set(key, value)
+
+    if (!achievements.length) {
+      const achList = Object.values(data.Achievements || {})
+      for (const ach of achList) {
+        achievements.push(mapAchievement(ach, { subsetTitleById }))
+      }
     }
-    const { data } = await axios.get(requestUrl.toString(), config)
-    
-    if (!data || typeof data !== 'object') {
-      throw new Error('Invalid response format from RetroAchievements API')
-    }
-    
+
+    const inferredSubsets = inferSubsetsFromAchievements(achievements)
+    const mergedSubsets = (() => {
+      if (!inferredSubsets.length) return subsets
+      const merged = [...subsets]
+      const seen = new Set(subsets.map(s => String(s.id)))
+      for (const entry of inferredSubsets) {
+        const key = String(entry.id)
+        if (seen.has(key)) continue
+        seen.add(key)
+        merged.push(entry)
+      }
+      return merged
+    })()
+
     return {
       gameInfo: {
         id: data.ID,
@@ -140,18 +337,7 @@ export async function getGameInfoAndUserProgress({ apiKey, username, gameId, inc
         genre: data.Genre,
         released: data.Released
       },
-      achievements: Object.values(data.Achievements || {}).map(achievement => ({
-        id: achievement.ID,
-        title: achievement.Title,
-        description: achievement.Description,
-        points: achievement.Points,
-        badgeName: achievement.BadgeName,
-        displayOrder: achievement.DisplayOrder,
-        dateEarned: achievement.DateEarned,
-        dateEarnedHardcore: achievement.DateEarnedHardcore,
-        isEarned: !!achievement.DateEarned,
-        isEarnedHardcore: !!achievement.DateEarnedHardcore
-      })),
+      achievements,
       userProgress: {
         numPossibleAchievements: data.NumPossibleAchievements,
         possibleScore: data.PossibleScore,
@@ -165,12 +351,18 @@ export async function getGameInfoAndUserProgress({ apiKey, username, gameId, inc
         completionPercentageHardcore: data.NumPossibleAchievements > 0 
           ? Math.round((data.NumAchievedHardcore / data.NumPossibleAchievements) * 100) 
           : 0
-      }
+      },
+      subsets: mergedSubsets
     }
   } catch (error) {
     console.error('Failed to fetch game info and user progress:', error)
     throw error
   }
+}
+
+export async function getGameSubsets({ apiKey, username, gameId }) {
+  const result = await getGameInfoAndUserProgress({ apiKey, username, gameId })
+  return result.subsets || []
 }
 
 export async function getUserProgress({ apiKey, username, gameIds }) {

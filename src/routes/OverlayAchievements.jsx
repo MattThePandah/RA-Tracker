@@ -8,6 +8,7 @@ import { buildCoverUrl } from '../utils/coverUrl.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
+import { compareSubsetLast } from '../utils/achievementSorting.js'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -40,11 +41,16 @@ function useStorageListener() {
 
 const AchievementBadge = ({ achievement, compact = false, showHardcore = true }) => {
   const badgeUrl = `https://media.retroachievements.org/Badge/${achievement.badgeName}.png`
+  const subsetLabel = achievement.subsetTitle || (achievement.subsetId ? `Subset ${achievement.subsetId}` : '')
   
   if (compact) {
     return (
       <div className={`achievement-badge compact ${achievement.isEarned ? 'earned' : 'locked'}`}>
-        <img src={badgeUrl} alt={achievement.title} title={`${achievement.title} - ${achievement.description} (${achievement.points} pts)`} />
+        <img
+          src={badgeUrl}
+          alt={achievement.title}
+          title={`${achievement.title} - ${achievement.description} (${achievement.points} pts)${subsetLabel ? ` • ${subsetLabel}` : ''}`}
+        />
         {showHardcore && achievement.isEarnedHardcore && <div className="hardcore-indicator">H</div>}
       </div>
     )
@@ -58,6 +64,7 @@ const AchievementBadge = ({ achievement, compact = false, showHardcore = true })
       </div>
       <div className="badge-info">
         <div className="achievement-title">{achievement.title}</div>
+        {subsetLabel && <div className="subset-badge">{subsetLabel}</div>}
         <div className="achievement-description">{achievement.description}</div>
         <div className="achievement-points">{achievement.points} points</div>
         {achievement.isEarned && (
@@ -323,6 +330,8 @@ export default function OverlayAchievements() {
     
     const displayAchievements = currentGameAchievements
       .sort((a, b) => {
+        const subsetCmp = compareSubsetLast(a, b)
+        if (subsetCmp !== 0) return subsetCmp
         // Sort by earned status, then by display order
         if (a.isEarned !== b.isEarned) return b.isEarned - a.isEarned
         return a.displayOrder - b.displayOrder
@@ -440,13 +449,17 @@ export default function OverlayAchievements() {
                         height="64"
                       />
                     </div>
-                    <div className="achievement-details">
-                      <div className="achievement-name">{lastAchievement.title}</div>
-                      <div className="achievement-description">{lastAchievement.description}</div>
-                      <div className="achievement-earned-date">
-                        Earned on {new Date(lastAchievement.dateEarned).toLocaleDateString('en-GB')} at {new Date(lastAchievement.dateEarned).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-                      </div>
+                  <div className="achievement-details">
+                    <div className="achievement-name">{lastAchievement.title}</div>
+                    {(() => {
+                      const subsetLabel = lastAchievement.subsetTitle || (lastAchievement.subsetId ? `Subset ${lastAchievement.subsetId}` : '')
+                      return subsetLabel ? <div className="subset-badge">{subsetLabel}</div> : null
+                    })()}
+                    <div className="achievement-description">{lastAchievement.description}</div>
+                    <div className="achievement-earned-date">
+                      Earned on {new Date(lastAchievement.dateEarned).toLocaleDateString('en-GB')} at {new Date(lastAchievement.dateEarned).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                     </div>
+                  </div>
                   </div>
                 </div>
               )}
@@ -488,6 +501,10 @@ export default function OverlayAchievements() {
                   />
                   <div className="ticker-info">
                     <span className="ticker-title">{achievement.title}</span>
+                    {(() => {
+                      const subsetLabel = achievement.subsetTitle || (achievement.subsetId ? `Subset ${achievement.subsetId}` : '')
+                      return subsetLabel ? <span className="ticker-subset">{subsetLabel}</span> : null
+                    })()}
                     <span className="ticker-game">{game.title}</span>
                     <span className="ticker-points">{achievement.points}pts</span>
                   </div>

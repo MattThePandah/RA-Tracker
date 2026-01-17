@@ -3,6 +3,7 @@ import mock from '../mock/games.ps.json'
 const LS_GAMES = 'tracker.games'
 const LS_SETTINGS = 'tracker.settings'
 const LS_CURRENT = 'tracker.currentGameId'
+const LS_CURRENT_SOURCE = 'tracker.currentGameSource'
 
 function getCsrfToken() {
   try { return localStorage.getItem('ra.csrf') || '' } catch { return '' }
@@ -188,6 +189,8 @@ export function saveGames(games) {
       publisher: g.publisher || null,
       custom_tags: g.custom_tags ?? [],
       studio: g.studio ?? null,
+      subsetEnabledIds: Array.isArray(g.subsetEnabledIds) ? g.subsetEnabledIds : [],
+      subsetMode: g.subsetMode ?? undefined
     }
   }
 
@@ -251,9 +254,26 @@ export function getCurrentGameId() {
   }
   return null
 }
-export function setCurrentGameId(id) {
+export function getCurrentGameSource() {
+  try {
+    return localStorage.getItem(LS_CURRENT_SOURCE) || null
+  } catch {
+    return null
+  }
+}
+
+export function setCurrentGameId(id, options = {}) {
+  const { source, preserveSource } = options || {}
   if (id) localStorage.setItem(LS_CURRENT, id)
   else localStorage.removeItem(LS_CURRENT)
+
+  try {
+    if (!id) {
+      localStorage.removeItem(LS_CURRENT_SOURCE)
+    } else if (!preserveSource) {
+      localStorage.setItem(LS_CURRENT_SOURCE, source || 'manual')
+    }
+  } catch {}
   
   // Dispatch custom event for same-window updates (overlay)
   window.dispatchEvent(new CustomEvent('gameDataUpdated', { detail: { type: 'currentGame', id } }))

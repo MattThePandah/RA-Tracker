@@ -35,7 +35,7 @@ function reducer(state, action) {
       return { ...state, filtered: action.filtered }
     }
     case 'SET_CURRENT': {
-      Storage.setCurrentGameId(action.id)
+      Storage.setCurrentGameId(action.id, { source: 'manual' })
       return { ...state, currentGameId: action.id }
     }
     case 'SYNC_CURRENT': {
@@ -55,7 +55,7 @@ function reducer(state, action) {
           'status'
         ].some(key => (prev?.[key] ?? null) !== (action.game?.[key] ?? null))
         if (changed) {
-          Storage.setCurrentGameId(state.currentGameId)
+          Storage.setCurrentGameId(state.currentGameId, { preserveSource: true })
         }
       }
       return { ...state, games, filtered: games, stats: computeStats(games) }
@@ -269,6 +269,8 @@ export function GameProvider({ children }) {
                 notes: lg.notes ?? g.notes ?? '',
                 custom_tags: lg.custom_tags ?? g.custom_tags ?? [],
                 studio: lg.studio ?? g.studio ?? null,
+                subsetEnabledIds: Array.isArray(lg.subsetEnabledIds) ? lg.subsetEnabledIds : (g.subsetEnabledIds ?? []),
+                subsetMode: lg.subsetMode ?? g.subsetMode ?? undefined
               } : base
             })
             dispatch({ type: 'SET_GAMES', games: merged })

@@ -261,6 +261,9 @@ const Achievement3DPopup = ({
 
                 <div className="achievement-info">
                   <h3 className="achievement-name">{achievement.title}</h3>
+                  {(achievement.subsetTitle || achievement.subsetId) && (
+                    <div className="subset-badge">{achievement.subsetTitle || `Subset ${achievement.subsetId}`}</div>
+                  )}
                   <p className="achievement-desc">{achievement.description}</p>
                   
                   <div className="achievement-meta">

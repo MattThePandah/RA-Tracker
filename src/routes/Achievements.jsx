@@ -3,9 +3,13 @@ import { useGame } from '../context/GameContext.jsx'
 import { useAchievements } from '../context/AchievementContext.jsx'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import * as RA from '../services/retroachievements.js'
+import { isSubsetTitle } from '../utils/subsetDetection.js'
+import { compareSubsetLast } from '../utils/achievementSorting.js'
+import { adminFetch } from '../utils/adminFetch.js'
 
 const AchievementCard = ({ achievement, gameTitle, gameIcon, consoleName, onClick }) => {
   const badgeUrl = `https://media.retroachievements.org/Badge/${achievement.badgeName}.png`
+  const subsetLabel = achievement.subsetTitle || (achievement.subsetId ? `Subset ${achievement.subsetId}` : '')
   
   return (
     <div 
@@ -26,6 +30,12 @@ const AchievementCard = ({ achievement, gameTitle, gameIcon, consoleName, onClic
           <h4 className="achievement-name">{achievement.title}</h4>
           <div className="achievement-points">{achievement.points}pts</div>
         </div>
+
+        {subsetLabel && (
+          <div className="achievement-subset badge bg-info text-dark mb-1">
+            {subsetLabel}
+          </div>
+        )}
         
         <p className="achievement-description">{achievement.description}</p>
         
@@ -134,11 +144,12 @@ const AchievementModal = ({ achievement, onClose }) => {
 }
 
 export default function Achievements() {
-  const { state } = useGame()
+  const { state, dispatch } = useGame()
   const { 
     state: achievementState, 
     loadGameAchievements, 
     loadRecentAchievements,
+    refreshSubsetFilter,
     isConfigured 
   } = useAchievements()
   const location = useLocation()
@@ -151,6 +162,7 @@ export default function Achievements() {
   const [loading, setLoading] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const [gameQuery, setGameQuery] = useState(() => searchParams.get('g') || '')
+  const subsetToggleRef = useRef(null)
   const isLoading = loading || (viewMode === 'current'
     ? achievementState.loading.gameAchievements
     : achievementState.loading.recentAchievements)
@@ -158,19 +170,90 @@ export default function Achievements() {
     ? achievementState.errors?.gameAchievements
     : achievementState.errors?.recentAchievements
 
+  const subsetList = useMemo(() => {
+    if (!selectedGame) return []
+    if (achievementState.currentGameId && selectedGame.id !== achievementState.currentGameId) return []
+    const fromState = achievementState.gameSubsets?.[selectedGame.id]
+    if (Array.isArray(fromState) && fromState.length) return fromState
+    const raw = Array.isArray(achievementState.currentGameAchievementsRaw)
+      ? achievementState.currentGameAchievementsRaw
+      : []
+    const map = new Map()
+    for (const ach of raw) {
+      const id = ach?.subsetId
+      if (!id) continue
+      const key = String(id)
+      if (map.has(key)) continue
+      map.set(key, {
+        id,
+        title: ach?.subsetTitle || `Subset ${id}`
+      })
+    }
+    return Array.from(map.values()).sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')))
+  }, [selectedGame, achievementState.gameSubsets, achievementState.currentGameAchievementsRaw])
+  const hasSubsets = subsetList.length > 0
+  const subsetEnabledIds = useMemo(() => (
+    Array.isArray(selectedGame?.subsetEnabledIds) ? selectedGame.subsetEnabledIds.map(id => String(id)) : []
+  ), [selectedGame?.subsetEnabledIds])
+  const subsetMode = useMemo(() => {
+    if (selectedGame?.subsetMode) return selectedGame.subsetMode === 'custom' ? 'custom' : 'auto'
+    if (subsetEnabledIds.length > 0) return 'custom'
+    return 'auto'
+  }, [selectedGame?.subsetMode, subsetEnabledIds])
+  const effectiveSubsetEnabledIds = useMemo(() => {
+    if (subsetMode === 'custom') return subsetEnabledIds
+    return subsetList.map(item => String(item.id))
+  }, [subsetMode, subsetEnabledIds, subsetList])
+  const subsetEnabledSet = useMemo(() => new Set(effectiveSubsetEnabledIds), [effectiveSubsetEnabledIds])
+  const subsetEnabledCount = useMemo(() => (
+    subsetList.reduce((count, item) => count + (subsetEnabledSet.has(String(item.id)) ? 1 : 0), 0)
+  ), [subsetList, subsetEnabledSet])
+  const subsetAllEnabled = subsetList.length > 0 && subsetEnabledCount === subsetList.length
+  const subsetNoneEnabled = subsetEnabledCount === 0
+
+  const persistMetadata = async (gameId, payload) => {
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      await adminFetch(`${base}/api/user/metadata/${encodeURIComponent(gameId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+    } catch {}
+  }
+
+  useEffect(() => {
+    if (!subsetToggleRef.current) return
+    subsetToggleRef.current.indeterminate = !subsetAllEnabled && !subsetNoneEnabled
+  }, [subsetAllEnabled, subsetNoneEnabled])
+
   // Get RetroAchievements games
   const raGames = useMemo(() => {
-    return state.games.filter(game => RA.hasRetroAchievementsSupport(game))
+    return state.games.filter(game => (
+      RA.hasRetroAchievementsSupport(game) && !isSubsetTitle(game?.title)
+    ))
   }, [state.games])
+  const raGameIdSet = useMemo(() => new Set(raGames.map(g => g.id)), [raGames])
 
   // Track if we're in the middle of a URL-forced selection to prevent interference
   const forcingSelectionRef = useRef(false)
+  const manualSelectionRef = useRef(false)
+
+  useEffect(() => {
+    if (!selectedGame) {
+      manualSelectionRef.current = false
+    }
+  }, [selectedGame])
 
   // Single effect to handle all game selection logic
   useEffect(() => {
     const urlParams = new URLSearchParams(location.search)
     const forceCurrentGame = urlParams.get('current') === 'true'
     const forcedGameId = urlParams.get('gameId')
+
+    if (manualSelectionRef.current && selectedGame && !raGameIdSet.has(selectedGame.id)) {
+      manualSelectionRef.current = false
+    }
     
     console.log('Achievements Page Init:', {
       viewMode,
@@ -209,6 +292,9 @@ export default function Achievements() {
 
     // Handle current game mode
     if (viewMode === 'current' && state.currentGameId && isConfigured) {
+      if (manualSelectionRef.current && !forceCurrentGame && !forcedGameId) {
+        return
+      }
       const currentGame = raGames.find(g => g.id === state.currentGameId)
       
       if (currentGame) {
@@ -249,7 +335,7 @@ export default function Achievements() {
         }
       }
     }
-  }, [location.search, viewMode, state.currentGameId, selectedGame, raGames.length, isConfigured])
+  }, [location.search, viewMode, state.currentGameId, selectedGame, raGames.length, isConfigured, raGameIdSet])
 
   // Keep URL 'g' param in sync with gameQuery (shallow replace)
   useEffect(() => {
@@ -277,6 +363,7 @@ export default function Achievements() {
       currentSelectedGameId: selectedGame?.id
     })
     
+    manualSelectionRef.current = true
     setSelectedGame(game)
     
     // Log after setState to verify it was called
@@ -290,6 +377,40 @@ export default function Achievements() {
       console.error('Failed to load achievements:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const saveSubsetEnabledIds = async (nextIds, mode = 'custom') => {
+    if (!selectedGame) return
+    const nextList = Array.from(new Set((nextIds || []).map(id => String(id)))).filter(Boolean)
+    const updatedGame = { ...selectedGame, subsetEnabledIds: nextList, subsetMode: mode }
+    setSelectedGame(updatedGame)
+    dispatch({ type: 'UPDATE_GAME', game: updatedGame })
+    await persistMetadata(updatedGame.id, { subsetEnabledIds: nextList, subsetMode: mode })
+    refreshSubsetFilter(updatedGame.id)
+    await loadGameAchievements(updatedGame.id, true, { bypassThrottle: true })
+  }
+
+  const toggleAllSubsets = async (checked) => {
+    if (!subsetList.length) return
+    if (checked) {
+      await saveSubsetEnabledIds([], 'auto')
+    } else {
+      await saveSubsetEnabledIds([], 'custom')
+    }
+  }
+
+  const toggleSubset = async (subsetId, checked) => {
+    if (!subsetList.length) return
+    const next = new Set(effectiveSubsetEnabledIds)
+    const id = String(subsetId)
+    if (checked) next.add(id)
+    else next.delete(id)
+    const nextList = Array.from(next)
+    if (nextList.length === subsetList.length) {
+      await saveSubsetEnabledIds([], 'auto')
+    } else {
+      await saveSubsetEnabledIds(nextList, 'custom')
     }
   }
 
@@ -324,6 +445,8 @@ export default function Achievements() {
 
     // Sort achievements
     achievements = [...achievements].sort((a, b) => {
+      const subsetCmp = compareSubsetLast(a, b)
+      if (subsetCmp !== 0) return subsetCmp
       switch (sortBy) {
         case 'points':
           return b.points - a.points
@@ -425,6 +548,46 @@ export default function Achievements() {
                 <option value="name">Alphabetical</option>
               </select>
             </div>
+
+            {viewMode === 'current' && selectedGame && hasSubsets && (
+              <div className="mb-3">
+                <label className="form-label small">Subsets</label>
+                <div className="form-check form-switch">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id={`includeSubsets-${selectedGame.id}`}
+                    ref={subsetToggleRef}
+                    checked={subsetAllEnabled}
+                    onChange={e => toggleAllSubsets(e.target.checked)}
+                  />
+                  <label className="form-check-label" htmlFor={`includeSubsets-${selectedGame.id}`}>
+                    Enable subsets for this game
+                  </label>
+                </div>
+                <div className="text-secondary small">
+                  {subsetEnabledCount}/{subsetList.length} enabled
+                </div>
+                {subsetList.map(subset => {
+                  const subsetId = String(subset.id)
+                  const checked = subsetEnabledSet.has(subsetId)
+                  return (
+                    <div className="form-check small mt-1" key={subsetId}>
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        id={`subset-${subsetId}`}
+                        checked={checked}
+                        onChange={e => toggleSubset(subsetId, e.target.checked)}
+                      />
+                      <label className="form-check-label" htmlFor={`subset-${subsetId}`}>
+                        {subset.title}
+                      </label>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* Game Selector for Current Mode */}

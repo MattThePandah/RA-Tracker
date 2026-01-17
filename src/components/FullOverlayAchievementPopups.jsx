@@ -118,6 +118,11 @@ export default function FullOverlayAchievementPopups({
             ) : null}
           </div>
           <div className="full-achievement-title">{activePopup.achievement.title}</div>
+          {(activePopup.achievement.subsetTitle || activePopup.achievement.subsetId) && (
+            <div className="subset-badge">
+              {activePopup.achievement.subsetTitle || `Subset ${activePopup.achievement.subsetId}`}
+            </div>
+          )}
           <div className="full-achievement-desc">{activePopup.achievement.description}</div>
           {(activePopup.achievement.gameTitle || activePopup.achievement.consoleName) && (
             <div className="full-achievement-game">

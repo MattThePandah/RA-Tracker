@@ -8,6 +8,7 @@ import { buildOverlayUrl } from '../utils/overlayApi.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
+import { compareSubsetLast } from '../utils/achievementSorting.js'
 
 function usePoll(ms) {
   const [tick, setTick] = React.useState(0)
@@ -202,7 +203,11 @@ function OverlayBadgeCarouselInner() {
   const upcoming = React.useMemo(() => {
     return state.currentGameAchievements
       .filter(a => !a.isEarned)
-      .sort((a, b) => b.points - a.points)
+      .sort((a, b) => {
+        const subsetCmp = compareSubsetLast(a, b)
+        if (subsetCmp !== 0) return subsetCmp
+        return b.points - a.points
+      })
   }, [state.currentGameAchievements])
 
   const [index, setIndex] = React.useState(0)

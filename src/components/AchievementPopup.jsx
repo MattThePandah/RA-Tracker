@@ -92,6 +92,9 @@ const AchievementPopup = ({
         
         <div className="achievement-info">
           <div className="achievement-name">{achievement.title}</div>
+          {(achievement.subsetTitle || achievement.subsetId) && (
+            <div className="subset-badge">{achievement.subsetTitle || `Subset ${achievement.subsetId}`}</div>
+          )}
           <div className="achievement-desc">{achievement.description}</div>
           <div className="achievement-points">{achievement.points} points</div>
           

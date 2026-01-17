@@ -210,6 +210,11 @@ export function mergeWithGameLibrary(games) {
   
   return games.map(game => {
     const userMeta = metadata.games[game.id] || {}
+    const hasSubsetMode = Object.prototype.hasOwnProperty.call(userMeta, 'subsetMode')
+    const hasSubsetIds = Object.prototype.hasOwnProperty.call(userMeta, 'subsetEnabledIds')
+    const derivedSubsetMode = hasSubsetMode
+      ? userMeta.subsetMode
+      : (hasSubsetIds ? 'custom' : (game.subsetMode ?? 'auto'))
     
     return {
       ...game,
@@ -229,6 +234,8 @@ export function mergeWithGameLibrary(games) {
       last_played: userMeta.last_played ?? null,
       custom_tags: userMeta.custom_tags ?? [],
       studio: userMeta.studio ?? game.studio ?? null,
+      subsetEnabledIds: Array.isArray(userMeta.subsetEnabledIds) ? userMeta.subsetEnabledIds : (game.subsetEnabledIds ?? []),
+      subsetMode: derivedSubsetMode,
       // Preserve user metadata timestamp
       userMetaUpdated: userMeta.lastModified
     }

@@ -10,6 +10,7 @@ import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import useOverlayEvent from '../hooks/useOverlayEvent.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
+import { compareSubsetLast } from '../utils/achievementSorting.js'
 
 // Enhanced cover loading that handles custom covers, local hashed covers, and proxies
 const loadCoverUrl = async (imageUrl) => {
@@ -511,6 +512,9 @@ export default function OverlayMain() {
                               </div>
                               <div className="ra-announce-info">
                                 <div className="ra-announce-title" title={a.title}>{a.title}</div>
+                                {(a?.subsetTitle || a?.subsetId) && (
+                                  <div className="subset-badge">{a.subsetTitle || `Subset ${a.subsetId}`}</div>
+                                )}
                                 <div className="ra-announce-desc" title={a.description}>{a.description}</div>
                                 {raDebug && (
                                   <div className="ra-announce-debug">Announce {active ? 'active' : 'idle'} • hides in {Math.max(0, Math.ceil((announceUntil - nowMs)/1000))}s</div>
@@ -541,10 +545,16 @@ export default function OverlayMain() {
                       if (raShow === 'earned' && !raDebug) {
                         list = list.filter(a => a.isEarned)
                         // Sort by most recent earned
-                        list.sort((a,b) => new Date(b.dateEarned) - new Date(a.dateEarned))
+                        list.sort((a,b) => {
+                          const subsetCmp = compareSubsetLast(a, b)
+                          if (subsetCmp !== 0) return subsetCmp
+                          return new Date(b.dateEarned) - new Date(a.dateEarned)
+                        })
                       } else {
                         // Include all, prioritize earned first then display order
                         list.sort((a,b) => {
+                          const subsetCmp = compareSubsetLast(a, b)
+                          if (subsetCmp !== 0) return subsetCmp
                           if (a.isEarned !== b.isEarned) return a.isEarned ? -1 : 1
                           // Prefer recently earned on top within earned
                           const da = a.dateEarned ? new Date(a.dateEarned).getTime() : 0
@@ -558,6 +568,8 @@ export default function OverlayMain() {
                       if (effMode === 'compact' && list.length === 0 && (raAuto || raAutoTest)) {
                         autoFallbackUsed = true
                         list = [...(state.currentGameAchievements || [])].sort((a,b) => {
+                          const subsetCmp = compareSubsetLast(a, b)
+                          if (subsetCmp !== 0) return subsetCmp
                           if (a.isEarned !== b.isEarned) return a.isEarned ? -1 : 1
                           const da = a.dateEarned ? new Date(a.dateEarned).getTime() : 0
                           const db = b.dateEarned ? new Date(b.dateEarned).getTime() : 0
@@ -602,7 +614,7 @@ export default function OverlayMain() {
                               <div 
                                 key={`${a.id}-${idx}`} 
                                 className={`badge-mini ${a.isEarnedHardcore ? 'hardcore' : ''} ${!a.isEarned ? 'locked' : ''}`} 
-                                title={`${a.title} • ${a.points} pts${!a.isEarned ? ' (locked)' : ''}`}
+                                title={`${a.title} • ${a.points} pts${a.subsetTitle || a.subsetId ? ` • ${a.subsetTitle || `Subset ${a.subsetId}`}` : ''}${!a.isEarned ? ' (locked)' : ''}`}
                               >
                                 <img src={`https://media.retroachievements.org/Badge/${a.badgeName}.png`} alt={a.title} />
                                 {a.isEarnedHardcore && <span className="hc-dot" aria-label="Hardcore" />}
@@ -709,7 +721,11 @@ export default function OverlayMain() {
                   {recentEarned.length > 0 && (
                     <div className="badge-strip mt-2">
                       {recentEarned.map(a => (
-                        <div key={a.id} className={`badge-mini ${a.isEarnedHardcore ? 'hardcore' : ''}`} title={`${a.title} • ${a.points} pts`}>
+                        <div
+                          key={a.id}
+                          className={`badge-mini ${a.isEarnedHardcore ? 'hardcore' : ''}`}
+                          title={`${a.title} • ${a.points} pts${a.subsetTitle || a.subsetId ? ` • ${a.subsetTitle || `Subset ${a.subsetId}`}` : ''}`}
+                        >
                           <img src={`https://media.retroachievements.org/Badge/${a.badgeName}.png`} alt={a.title} />
                           {a.isEarnedHardcore && <span className="hc-dot" aria-label="Hardcore" />}
                         </div>

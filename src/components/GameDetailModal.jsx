@@ -8,6 +8,7 @@ import { adminFetch } from '../utils/adminFetch.js'
 import { renderMarkdown } from '../utils/markdown.js'
 import { extractGameIdFromInternalId } from '../services/retroachievements.js'
 import { useAchievements } from '../context/AchievementContext.jsx'
+import { findSubsetsForGame, isSubsetTitle } from '../utils/subsetDetection.js'
 
 const toTimeParts = (hoursValue) => {
   const hoursNum = Number(hoursValue || 0)
@@ -55,11 +56,12 @@ const getCoverExtForFile = (file) => {
 }
 
 export default function GameDetailModal({ game, onClose }) {
-  const { dispatch } = useGame()
-  const { state: achState, loadGameAchievements } = useAchievements()
+  const { state, dispatch } = useGame()
+  const { state: achState, loadGameAchievements, loadGameSubsets, refreshSubsetFilter } = useAchievements()
   const fileInputRef = useRef(null)
   const editorRef = useRef(null)
   const lastEditorMarkdown = useRef('')
+  const subsetToggleRef = useRef(null)
   const [currentCover, setCurrentCover] = useState(null)
   const [isUploadingCover, setIsUploadingCover] = useState(false)
   const [fixedTime, setFixedTime] = useState('-')
@@ -91,6 +93,41 @@ export default function GameDetailModal({ game, onClose }) {
     date_finished: '',
     notes: ''
   })
+
+  const subsetList = useMemo(() => {
+    if (!game || isSubsetTitle(game.title)) return []
+    const subsetsFromApi = achState.gameSubsets?.[game.id]
+    if (Array.isArray(subsetsFromApi) && subsetsFromApi.length) {
+      return [...subsetsFromApi].sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')))
+    }
+    return findSubsetsForGame(game, state.games).sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')))
+  }, [game, state.games, achState.gameSubsets])
+  const subsetEnabledIds = useMemo(() => (
+    Array.isArray(game?.subsetEnabledIds) ? game.subsetEnabledIds.map(id => String(id)) : []
+  ), [game?.subsetEnabledIds])
+  const subsetKnownIds = useMemo(() => (
+    new Set(subsetList.map(item => String(item?.id)).filter(Boolean))
+  ), [subsetList])
+  const subsetMode = useMemo(() => {
+    let mode = 'auto'
+    if (game?.subsetMode) mode = game.subsetMode === 'custom' ? 'custom' : 'auto'
+    else if (subsetEnabledIds.length > 0) mode = 'custom'
+    if (mode === 'custom' && subsetEnabledIds.length > 0 && subsetKnownIds.size > 0) {
+      const hasMatch = subsetEnabledIds.some(id => subsetKnownIds.has(String(id)))
+      if (!hasMatch) mode = 'auto'
+    }
+    return mode
+  }, [game?.subsetMode, subsetEnabledIds, subsetKnownIds])
+  const effectiveSubsetEnabledIds = useMemo(() => {
+    if (subsetMode === 'custom') return subsetEnabledIds
+    return subsetList.map(item => String(item.id))
+  }, [subsetMode, subsetEnabledIds, subsetList])
+  const subsetEnabledSet = useMemo(() => new Set(effectiveSubsetEnabledIds), [effectiveSubsetEnabledIds])
+  const subsetEnabledCount = useMemo(() => (
+    subsetList.reduce((count, item) => count + (subsetEnabledSet.has(String(item.id)) ? 1 : 0), 0)
+  ), [subsetList, subsetEnabledSet])
+  const subsetAllEnabled = subsetList.length > 0 && subsetEnabledCount === subsetList.length
+  const subsetNoneEnabled = subsetEnabledCount === 0
 
   const turndownService = useMemo(() => {
     return new TurndownService({
@@ -212,10 +249,22 @@ export default function GameDetailModal({ game, onClose }) {
   }, [game?.id])
 
   useEffect(() => {
+    if (!subsetToggleRef.current) return
+    subsetToggleRef.current.indeterminate = !subsetAllEnabled && !subsetNoneEnabled
+  }, [subsetAllEnabled, subsetNoneEnabled])
+
+  useEffect(() => {
     if (activeTab === 'public' && game?.id) {
       loadGameAchievements(game.id)
     }
   }, [activeTab, game?.id])
+
+  useEffect(() => {
+    if (!game?.id) return
+    if (!extractGameIdFromInternalId(game.id)) return
+    if (Array.isArray(achState.gameSubsets?.[game.id])) return
+    loadGameSubsets(game.id)
+  }, [game?.id, achState.gameSubsets, loadGameSubsets, game])
 
   useEffect(() => {
     let cancelled = false
@@ -257,6 +306,39 @@ export default function GameDetailModal({ game, onClose }) {
         body: JSON.stringify(payload)
       })
     } catch {}
+  }
+
+  const saveSubsetEnabledIds = async (nextIds, mode = 'custom') => {
+    if (!game) return
+    const nextList = Array.from(new Set((nextIds || []).map(id => String(id)))).filter(Boolean)
+    const updatedGame = { ...game, subsetEnabledIds: nextList, subsetMode: mode }
+    dispatch({ type: 'UPDATE_GAME', game: updatedGame })
+    await persistMetadata({ subsetEnabledIds: nextList, subsetMode: mode })
+    refreshSubsetFilter(game.id)
+    await loadGameAchievements(game.id, true, { bypassThrottle: true })
+  }
+
+  const toggleAllSubsets = async (checked) => {
+    if (!subsetList.length) return
+    if (checked) {
+      await saveSubsetEnabledIds([], 'auto')
+    } else {
+      await saveSubsetEnabledIds([], 'custom')
+    }
+  }
+
+  const toggleSubset = async (subsetId, checked) => {
+    if (!subsetList.length) return
+    const next = new Set(effectiveSubsetEnabledIds)
+    const id = String(subsetId)
+    if (checked) next.add(id)
+    else next.delete(id)
+    const nextList = Array.from(next)
+    if (nextList.length === subsetList.length) {
+      await saveSubsetEnabledIds([], 'auto')
+    } else {
+      await saveSubsetEnabledIds(nextList, 'custom')
+    }
   }
 
   const handlePrivateSave = async () => {
@@ -820,6 +902,50 @@ export default function GameDetailModal({ game, onClose }) {
                           onChange={e => handleFieldChange('notes', e.target.value)}
                         />
                       </div>
+                      {subsetList.length > 0 && (
+                        <div className="col-12">
+                          <div className="detail-section-title mt-3">Subsets</div>
+                          <div className="form-check form-switch">
+                            <input
+                              className="form-check-input"
+                              type="checkbox"
+                              ref={subsetToggleRef}
+                              id={`enableSubsets-${game.id}`}
+                              checked={subsetAllEnabled}
+                              onChange={e => toggleAllSubsets(e.target.checked)}
+                            />
+                            <label className="form-check-label" htmlFor={`enableSubsets-${game.id}`}>
+                              Enable subsets for this game
+                            </label>
+                          </div>
+                          <div className="text-secondary small">{subsetEnabledCount}/{subsetList.length} enabled</div>
+                          <div className="row g-2 mt-1">
+                            {subsetList.map(subset => {
+                              const subsetId = String(subset.id)
+                              const checked = subsetEnabledSet.has(subsetId)
+                              return (
+                                <div className="col-12 col-md-6" key={subsetId}>
+                                  <div className="form-check small">
+                                    <input
+                                      className="form-check-input"
+                                      type="checkbox"
+                                      id={`subset-${subsetId}`}
+                                      checked={checked}
+                                      onChange={e => toggleSubset(subsetId, e.target.checked)}
+                                    />
+                                    <label className="form-check-label" htmlFor={`subset-${subsetId}`}>
+                                      {subset.title}
+                                    </label>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          <div className="text-secondary small mt-1">
+                            Enabled subsets are included in achievement counts and overlays for this game.
+                          </div>
+                        </div>
+                      )}
                       <div className="col-12 d-flex align-items-center justify-content-end gap-2">
                         {privateSaved && <div className="text-success small">Saved.</div>}
                         {privateDirty && !privateSaved && <div className="text-secondary small">Unsaved changes</div>}

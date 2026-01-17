@@ -6483,6 +6483,36 @@ body.overlay-clean .full-overlay-shell.overlay-clean {
   white-space: nowrap;
 }
 
+.subset-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid rgba(139, 211, 255, 0.6);
+  background: rgba(4, 18, 28, 0.75);
+  color: #eaf7ff;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.75);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.ticker-subset {
+  margin-left: 6px;
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(230, 247, 255, 0.95);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.75);
+  white-space: nowrap;
+}
+
 .achievement-points {
   color: var(--accent);
   font-size: 0.8rem;

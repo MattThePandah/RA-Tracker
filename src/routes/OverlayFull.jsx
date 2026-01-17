@@ -11,6 +11,7 @@ import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import useOverlayEvent from '../hooks/useOverlayEvent.js'
 import useOverlayConnector from '../hooks/useOverlayConnector.js'
 import { getBoolParam, getNumberParam, getStringParam } from '../utils/overlaySettings.js'
+import { compareSubsetLast } from '../utils/achievementSorting.js'
 import FullOverlayAchievementPopups from '../components/FullOverlayAchievementPopups.jsx'
 import DotMatrixText from '../components/DotMatrixText.jsx'
 import StartingSoonModule from '../components/StartingSoonModule.jsx'
@@ -839,6 +840,8 @@ export default function OverlayFull() {
     return state.currentGameAchievements
       .slice()
       .sort((a, b) => {
+        const subsetCmp = compareSubsetLast(a, b)
+        if (subsetCmp !== 0) return subsetCmp
         if (a.isEarned !== b.isEarned) return a.isEarned ? -1 : 1
         const orderA = Number.isFinite(Number(a.displayOrder)) ? Number(a.displayOrder) : null
         const orderB = Number.isFinite(Number(b.displayOrder)) ? Number(b.displayOrder) : null
@@ -1122,6 +1125,9 @@ export default function OverlayFull() {
                             {achievement.isEarned ? '🏆' : '🔒'}
                           </span>
                         </div>
+                        {(achievement.subsetTitle || achievement.subsetId) && (
+                          <div className="subset-badge">{achievement.subsetTitle || `Subset ${achievement.subsetId}`}</div>
+                        )}
                         <div className="full-achievement-desc">{achievement.description}</div>
                       </div>
                       <div className="full-achievement-points">
