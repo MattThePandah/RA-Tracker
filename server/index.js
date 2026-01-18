@@ -14,7 +14,7 @@ import { FLAGS, LIMITS, loadPlatformMapping, getRAAuth } from './config.js'
 import * as RA from './adapters/ra.js'
 import { extractRaGameId } from './adapters/ra.js'
 import * as IGDB from './adapters/igdb.js'
-import { COVERS_DIR, coverPathFor, coverPublicPathFor, cacheCoverFromUrl } from './util/covers.js'
+import { COVERS_DIR, coverPathFor, coverPublicPathFor, cacheCoverFromUrl, deleteCoverForGame } from './util/covers.js'
 import { startBuild, startCoverPrefetch, getJob, getIndex } from './library.js'
 import { createUserMetadataEndpoints, mergeWithGameLibrary, getUserSettings, getUserMetadata, appendHistoryEntry, backfillHistoryFromTotals } from './userMetadata.js'
 import { raLimiter } from './util/raLimiter.js'
@@ -65,6 +65,13 @@ import {
   executeSpin,
   refreshPool
 } from './wheelData.js'
+import {
+  listPools as listWheelPools,
+  getPool as getWheelPool,
+  createPool as createWheelPool,
+  updatePool as updateWheelPool,
+  deletePool as deleteWheelPool
+} from './wheelPools.js'
 import { getPool, isPgEnabled } from './db.js'
 
 const TV_ASSETS_DIR = path.join(process.cwd(), 'public', 'tv-assets')
@@ -1177,9 +1184,11 @@ app.post('/api/covers/custom', requireAdmin, requireCsrf, requireOrigin, express
     }
     const ext = customCoverExtFromType(req.headers['content-type']) || normalizeCustomCoverExt(req.query.ext)
     if (!ext) return res.status(400).json({ error: 'unsupported_image_type' })
-    const filePath = customCoverFilePathFromId(gameId, ext)
+    const dummyUrl = `custom-upload${ext}`
+    const filePath = coverPathFor(dummyUrl, gameId)
     fs.writeFileSync(filePath, req.body)
-    res.json({ ok: true, path: `custom-covers/${gameId}${ext}` })
+    const publicPath = coverPublicPathFor(dummyUrl, gameId)
+    res.json({ ok: true, path: publicPath })
   } catch (error) {
     console.error('Custom cover upload failed:', error.message)
     res.status(500).json({ error: 'custom_cover_upload_failed' })
@@ -1444,6 +1453,60 @@ app.post('/wheel/settings', requireAdmin, requireCsrf, requireOrigin, async (req
 app.post('/wheel/refresh', requireAdmin, requireCsrf, requireOrigin, async (req, res) => {
   await refreshPool()
   res.json(await serializeWheelState())
+})
+
+// --- Saved Wheel Pools ---
+app.get('/wheel/pools', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  try {
+    const pools = listWheelPools()
+    res.json({ pools })
+  } catch (error) {
+    console.error('Failed to list wheel pools:', error.message)
+    res.status(500).json({ error: 'list_pools_failed' })
+  }
+})
+
+app.post('/wheel/pools', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  try {
+    const { name, gameIds, includeSuggestions } = req.body || {}
+    if (!name || !Array.isArray(gameIds)) {
+      return res.status(400).json({ error: 'name and gameIds required' })
+    }
+    const pool = createWheelPool({ name, gameIds, includeSuggestions })
+    res.json({ pool })
+  } catch (error) {
+    console.error('Failed to create wheel pool:', error.message)
+    res.status(500).json({ error: 'create_pool_failed' })
+  }
+})
+
+app.put('/wheel/pools/:id', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  try {
+    const { id } = req.params
+    const updates = req.body || {}
+    const pool = updateWheelPool(id, updates)
+    if (!pool) {
+      return res.status(404).json({ error: 'pool_not_found' })
+    }
+    res.json({ pool })
+  } catch (error) {
+    console.error('Failed to update wheel pool:', error.message)
+    res.status(500).json({ error: 'update_pool_failed' })
+  }
+})
+
+app.delete('/wheel/pools/:id', requireAdmin, requireCsrf, requireOrigin, (req, res) => {
+  try {
+    const { id } = req.params
+    const deleted = deleteWheelPool(id)
+    if (!deleted) {
+      return res.status(404).json({ error: 'pool_not_found' })
+    }
+    res.json({ ok: true })
+  } catch (error) {
+    console.error('Failed to delete wheel pool:', error.message)
+    res.status(500).json({ error: 'delete_pool_failed' })
+  }
 })
 
 // Lightweight overlay stats (counts only) to avoid big payloads

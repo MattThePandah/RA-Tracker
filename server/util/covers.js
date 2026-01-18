@@ -45,14 +45,18 @@ function normalizeCoverUrl(src) {
   return s
 }
 
-export function coverPathFor(url) {
+export function coverPathFor(url, gameId = null) {
   const normalized = normalizeCoverUrl(url) || url
   const ext = normalized.includes('.jpg') ? '.jpg' : normalized.includes('.png') ? '.png' : '.jpg'
+  if (gameId) {
+    const safeId = String(gameId).replace(/[^a-zA-Z0-9_\-]/g, '_')
+    return path.join(COVERS_DIR, `${safeId}${ext}`)
+  }
   return path.join(COVERS_DIR, `${hash(normalized)}${ext}`)
 }
 
-export function coverPublicPathFor(url) {
-  const file = coverPathFor(url)
+export function coverPublicPathFor(url, gameId = null) {
+  const file = coverPathFor(url, gameId)
   return `/covers/${path.basename(file)}`
 }
 
@@ -60,29 +64,59 @@ function extFromUrl(url) {
   return url.includes('.jpg') ? '.jpg' : url.includes('.png') ? '.png' : '.jpg'
 }
 
+export function deleteCoverForGame(gameId) {
+  if (!gameId) return
+  const safeId = String(gameId).replace(/[^a-zA-Z0-9_\-]/g, '_')
+  const base = path.join(COVERS_DIR, `${safeId}`)
+  const extensions = ['.jpg', '.png', '.jpeg', '.webp']
+  for (const ext of extensions) {
+    const p = `${base}${ext}`
+    if (fs.existsSync(p)) {
+      try { fs.unlinkSync(p) } catch (e) {
+        console.warn(`[Covers] Failed to delete ${p}:`, e.message)
+      }
+    }
+  }
+}
+
 export async function cacheCoverFromUrl(src, meta = {}) {
   if (!src) return null
   const normalized = normalizeCoverUrl(src)
   if (!normalized) return null
+
+  const expectedLocalPath = coverPublicPathFor(normalized, meta.gameId)
+
   if (isPgEnabled()) {
     const cached = await getCoverMetaByUrl(normalized)
+    // Only return cached path if it matches what we expect (handling rename from hash -> gameId)
+    // OR if we didn't request a specific gameId (generic proxy)
     if (cached?.local_path) {
-      const file = coverPathFor(normalized)
-      if (fs.existsSync(file)) return cached.local_path
+      if (!meta.gameId || cached.local_path === expectedLocalPath) {
+        const file = coverPathFor(normalized, meta.gameId)
+        if (fs.existsSync(file)) return cached.local_path
+      }
     }
   }
-  const file = coverPathFor(normalized)
+
+  const file = coverPathFor(normalized, meta.gameId)
   const ext = extFromUrl(normalized)
   const sha = hash(normalized)
+
   if (!fs.existsSync(file)) {
     const response = await axios.get(normalized, { responseType: 'arraybuffer' })
     fs.writeFileSync(file, Buffer.from(response.data, 'binary'))
   }
-  const localPath = coverPublicPathFor(normalized)
+
+  // Reuse the calculated path
+  const localPath = expectedLocalPath
 
   if (isPgEnabled()) {
     const cached = await getCoverMetaByUrl(normalized)
-    if (!cached || cached.local_path !== localPath || cached.sha1 !== sha) {
+    const dbSha = cached?.sha1
+    const dbPath = cached?.local_path
+
+    // Update DB if: not cached, path changed (hash->gameId), or content changed (sha)
+    if (!cached || dbPath !== localPath || dbSha !== sha) {
       await upsertCoverMeta({
         sourceUrl: normalized,
         sha1: sha,

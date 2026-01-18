@@ -91,7 +91,9 @@ export default function GameDetailModal({ game, onClose }) {
     completion_seconds: '',
     date_started: '',
     date_finished: '',
-    notes: ''
+    notes: '',
+    release_year: '',
+    publisher: ''
   })
 
   const subsetList = useMemo(() => {
@@ -149,14 +151,16 @@ export default function GameDetailModal({ game, onClose }) {
   }, [game?.id])
 
   useEffect(() => {
+    let mounted = true
     const loadCover = async () => {
       if (!game?.image_url) {
-        setCurrentCover(null)
+        if (mounted) setCurrentCover(null)
         return
       }
 
       try {
         const cachedBlob = await Cache.getCover(game.image_url)
+        if (!mounted) return
         if (cachedBlob) {
           setCurrentCover(URL.createObjectURL(cachedBlob))
           return
@@ -165,35 +169,15 @@ export default function GameDetailModal({ game, onClose }) {
         const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
         const safeBase = base ? base.replace(/\/+$/, '') : ''
 
-        if (game.image_url.startsWith('https://')) {
-          const urlBuffer = new TextEncoder().encode(game.image_url)
-          const hashBuffer = await crypto.subtle.digest('SHA-1', urlBuffer)
-          const hashArray = Array.from(new Uint8Array(hashBuffer))
-          const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-
-          const extensions = game.image_url.includes('retroachievements.org')
-            ? ['.png', '.jpg']
-            : ['.jpg', '.png']
-
-          for (const ext of extensions) {
-            const localPath = `/covers/${hashHex}${ext}`
-            const localUrl = safeBase ? `${safeBase}${localPath}` : localPath
-            const response = await fetch(localUrl)
-            if (response.ok) {
-              setCurrentCover(localUrl)
-              return
-            }
-          }
-        }
-
-        setCurrentCover(buildCoverUrl(game.image_url, safeBase))
+        if (mounted) setCurrentCover(buildCoverUrl(game.image_url, safeBase))
       } catch (error) {
         console.warn('Failed to load cover:', error)
-        setCurrentCover(null)
+        if (mounted) setCurrentCover(null)
       }
     }
 
     loadCover()
+    return () => { mounted = false }
   }, [game?.image_url])
 
   useEffect(() => {
@@ -202,12 +186,15 @@ export default function GameDetailModal({ game, onClose }) {
       setFormData({
         status: game.status || 'Not Started',
         rating: game.rating || '',
+
         completion_hours: timeParts.hours,
         completion_minutes: timeParts.minutes,
         completion_seconds: timeParts.seconds,
         date_started: game.date_started ? game.date_started.split('T')[0] : '',
         date_finished: game.date_finished ? game.date_finished.split('T')[0] : '',
-        notes: game.notes || ''
+        notes: game.notes || '',
+        release_year: game.release_year || '',
+        publisher: game.publisher || ''
       })
       setPrivateDirty(false)
     }
@@ -305,7 +292,7 @@ export default function GameDetailModal({ game, onClose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
-    } catch {}
+    } catch { }
   }
 
   const saveSubsetEnabledIds = async (nextIds, mode = 'custom') => {
@@ -371,7 +358,9 @@ export default function GameDetailModal({ game, onClose }) {
       completion_time,
       date_started,
       date_finished,
-      notes: formData.notes || ''
+      notes: formData.notes || '',
+      release_year: formData.release_year || null,
+      publisher: formData.publisher || null
     }
     dispatch({ type: 'UPDATE_GAME', game: updatedGame })
     await persistMetadata({
@@ -380,7 +369,9 @@ export default function GameDetailModal({ game, onClose }) {
       completion_time: updatedGame.completion_time,
       date_started: updatedGame.date_started,
       date_finished: updatedGame.date_finished,
-      notes: updatedGame.notes
+      notes: updatedGame.notes,
+      release_year: updatedGame.release_year,
+      publisher: updatedGame.publisher
     })
     const timeParts = toTimeParts(updatedGame.completion_time)
     setFormData(prev => ({
@@ -408,7 +399,9 @@ export default function GameDetailModal({ game, onClose }) {
       completion_seconds: timeParts.seconds,
       date_started: game.date_started ? game.date_started.split('T')[0] : '',
       date_finished: game.date_finished ? game.date_finished.split('T')[0] : '',
-      notes: game.notes || ''
+      notes: game.notes || '',
+      release_year: game.release_year || '',
+      publisher: game.publisher || ''
     })
     setPrivateDirty(false)
   }
@@ -893,16 +886,39 @@ export default function GameDetailModal({ game, onClose }) {
                           onChange={e => handleFieldChange('date_finished', e.target.value)}
                         />
                       </div>
-                      <div className="col-12">
+                      <div className="mb-3">
                         <label className="form-label">Notes</label>
                         <textarea
                           className="form-control"
-                          rows="5"
+                          rows="4"
                           value={formData.notes}
                           onChange={e => handleFieldChange('notes', e.target.value)}
+                          placeholder="Private notes about your playthrough..."
                         />
                       </div>
-                      {subsetList.length > 0 && (
+
+                      <div className="row g-3">
+                        <div className="col-md-6">
+                          <label className="form-label">Release Year (Override)</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={formData.release_year}
+                            onChange={e => handleFieldChange('release_year', e.target.value)}
+                            placeholder="YYYY"
+                          />
+                        </div>
+                        <div className="col-md-6">
+                          <label className="form-label">Publisher (Override)</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            value={formData.publisher}
+                            onChange={e => handleFieldChange('publisher', e.target.value)}
+                            placeholder="Publisher Name"
+                          />
+                        </div>
+                      </div>    {subsetList.length > 0 && (
                         <div className="col-12">
                           <div className="detail-section-title mt-3">Subsets</div>
                           <div className="form-check form-switch">
@@ -1087,7 +1103,7 @@ export default function GameDetailModal({ game, onClose }) {
                 <div className="row g-3">
                   {(achState.currentGameAchievements || []).map(ach => (
                     <div key={ach.id} className="col-md-6">
-                      <div 
+                      <div
                         className="d-flex align-items-center gap-3 p-3 rounded border border-secondary border-opacity-25 hover-bg-white-05 cursor-pointer"
                         onClick={() => {
                           const tag = `[[ach:${ach.id}]]`

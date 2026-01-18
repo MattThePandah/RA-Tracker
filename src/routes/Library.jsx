@@ -69,56 +69,27 @@ function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, se
         : 'secondary'
   React.useEffect(() => {
     let mounted = true
-    ;(async () => {
-      if (game.cover?.localPath) {
-        const localCover = buildCoverUrl(game.cover.localPath)
-        setUrl(localCover)
-        return
-      }
-      if (game.image_url) {
-        // First try to get from IndexedDB cache
-        const blob = await Cache.getCover(game.image_url)
-        if (mounted && blob) {
-          setUrl(URL.createObjectURL(blob))
+      ; (async () => {
+        if (game.cover?.localPath) {
+          const localCover = buildCoverUrl(game.cover.localPath)
+          setUrl(localCover)
           return
         }
-        
-        // Try to find local file by URL hash (for file system cached covers)
-        if (mounted) {
-          try {
-            // Create a hash from the URL to match file system naming
-            const urlBuffer = new TextEncoder().encode(game.image_url)
-            const hashBuffer = await crypto.subtle.digest('SHA-1', urlBuffer)
-            const hashArray = Array.from(new Uint8Array(hashBuffer))
-            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-            
-            // Try to load from local covers directory (both .jpg and .png)
-            // RetroAchievements URLs are always .png, so try .png first for those
-            const extensions = game.image_url.includes('retroachievements.org') 
-              ? ['.png', '.jpg'] 
-              : ['.jpg', '.png']
-            
-            const base = import.meta.env.VITE_IGDB_PROXY_URL || ''
-            const safeBase = base ? base.replace(/\/+$/, '') : ''
-            for (const ext of extensions) {
-              const localPath = `/covers/${hashHex}${ext}`
-              const localUrl = safeBase ? `${safeBase}${localPath}` : localPath
-              const response = await fetch(localUrl)
-              if (response.ok) {
-                setUrl(localUrl)
-                return
-              }
-            }
-          } catch (error) {
-            console.log('Local cover lookup failed:', error)
+        if (game.image_url) {
+          // First try to get from IndexedDB cache
+          const blob = await Cache.getCover(game.image_url)
+          if (mounted && blob) {
+            setUrl(URL.createObjectURL(blob))
+            return
           }
-          
+
           // Final fallback: use proxy or direct URL
-          setUrl(buildCoverUrl(game.image_url))
+          if (mounted) {
+            setUrl(buildCoverUrl(game.image_url))
+          }
         }
-      }
-    })()
-    return () => { 
+      })()
+    return () => {
       mounted = false
       // Clean up object URL to prevent memory leaks
       if (url && url.startsWith('blob:')) {
@@ -158,8 +129,8 @@ function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, se
       </div>
       <div className="card-footer p-2 bg-dark bg-opacity-25 border-top border-secondary border-opacity-10">
         <div className="d-flex gap-1">
-          <button 
-            className="btn btn-xs btn-brand text-dark fw-bold flex-grow-1" 
+          <button
+            className="btn btn-xs btn-brand text-dark fw-bold flex-grow-1"
             style={{ fontSize: '0.7rem', padding: '4px 2px' }}
             onClick={() => {
               const updatedGame = { ...game, status: 'In Progress', date_started: game.date_started ?? new Date().toISOString() }
@@ -170,8 +141,8 @@ function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, se
             PLAY
           </button>
           <div className="btn-group flex-grow-1">
-            <button 
-              className="btn btn-xs btn-outline-success d-flex align-items-center justify-content-center gap-1" 
+            <button
+              className="btn btn-xs btn-outline-success d-flex align-items-center justify-content-center gap-1"
               style={{ fontSize: '0.65rem', padding: '4px 2px' }}
               onClick={() => onQuick({ ...game, status: 'Completed', date_finished: new Date().toISOString() })}
               title="Mark as Completed"
@@ -179,8 +150,8 @@ function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, se
               <i className="bi bi-check-lg"></i>
               <span>DONE</span>
             </button>
-            <button 
-              className="btn btn-xs btn-outline-danger d-flex align-items-center justify-content-center gap-1" 
+            <button
+              className="btn btn-xs btn-outline-danger d-flex align-items-center justify-content-center gap-1"
               style={{ fontSize: '0.65rem', padding: '4px 2px' }}
               onClick={() => onQuick({ ...game, status: 'DNF', date_finished: game.date_finished ?? new Date().toISOString() })}
               title="Mark as DNF (Did Not Finish)"
@@ -190,9 +161,9 @@ function GameCard({ game, onQuick, onOpenDetail, onFetchCover, fetchingCover, se
             </button>
           </div>
           <div className="dropdown flex-shrink-0">
-            <button 
-              className="btn btn-xs btn-outline-light dropdown-toggle hide-caret" 
-              data-bs-toggle="dropdown" 
+            <button
+              className="btn btn-xs btn-outline-light dropdown-toggle hide-caret"
+              data-bs-toggle="dropdown"
               style={{ fontSize: '0.7rem', padding: '4px 6px' }}
             >
               <i className="bi bi-three-dots-vertical"></i>
@@ -299,7 +270,7 @@ export default function Library() {
         if (!res.ok) return
         const data = await res.json()
         if (active) setCoverConsoles(data.consoles || [])
-      } catch {}
+      } catch { }
     }
     load()
     return () => { active = false }
@@ -315,7 +286,7 @@ export default function Library() {
         if (!res.ok) return
         const data = await res.json()
         if (active) setCoverStatus(data)
-      } catch {}
+      } catch { }
     }
     poll()
     const id = setInterval(poll, 5000)
@@ -504,7 +475,7 @@ export default function Library() {
             publisher: updatedGame.publisher
           })
         })
-      } catch {}
+      } catch { }
       return true
     } catch (error) {
       if (!silent) setCoverFetchMessage('Failed to fetch cover for the selected game.')
@@ -651,26 +622,26 @@ export default function Library() {
               {totalPages > 1 && ` \u2022 Page ${currentPage} of ${totalPages}`}
             </div>
           </div>
-          
+
           <div className="d-flex flex-wrap gap-2 align-items-center">
             <div className="input-group input-group-sm" style={{ width: '240px' }}>
               <span className="input-group-text bg-dark border-secondary border-opacity-20 text-secondary">
                 <i className="bi bi-search"></i>
               </span>
-              <input 
-                className="form-control bg-dark border-secondary border-opacity-20 text-light" 
-                placeholder="Search library..." 
-                value={q} 
-                onChange={e => setQ(e.target.value)} 
+              <input
+                className="form-control bg-dark border-secondary border-opacity-20 text-light"
+                placeholder="Search library..."
+                value={q}
+                onChange={e => setQ(e.target.value)}
               />
             </div>
 
-            <select className="form-select form-select-sm bg-dark border-secondary border-opacity-20 text-light w-auto" value={consoleFilter} onChange={e=>setConsoleFilter(e.target.value)}>
+            <select className="form-select form-select-sm bg-dark border-secondary border-opacity-20 text-light w-auto" value={consoleFilter} onChange={e => setConsoleFilter(e.target.value)}>
               <option value="All">All Consoles</option>
               {consoles.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
 
-            <select className="form-select form-select-sm bg-dark border-secondary border-opacity-20 text-light w-auto" value={status} onChange={e=>setStatus(e.target.value)}>
+            <select className="form-select form-select-sm bg-dark border-secondary border-opacity-20 text-light w-auto" value={status} onChange={e => setStatus(e.target.value)}>
               <option value="All">All Status</option>
               <option>Not Started</option>
               <option>In Progress</option>
@@ -679,16 +650,16 @@ export default function Library() {
             </select>
 
             <div className="btn-group btn-group-sm">
-              <button 
-                className={`btn ${view==='grid'?'btn-brand text-dark':'btn-outline-light'} d-flex align-items-center gap-1`} 
-                onClick={()=>setView('grid')}
+              <button
+                className={`btn ${view === 'grid' ? 'btn-brand text-dark' : 'btn-outline-light'} d-flex align-items-center gap-1`}
+                onClick={() => setView('grid')}
               >
                 <i className="bi bi-grid-3x3-gap"></i>
                 <span>Grid</span>
               </button>
-              <button 
-                className={`btn ${view==='list'?'btn-brand text-dark':'btn-outline-light'} d-flex align-items-center gap-1`} 
-                onClick={()=>setView('list')}
+              <button
+                className={`btn ${view === 'list' ? 'btn-brand text-dark' : 'btn-outline-light'} d-flex align-items-center gap-1`}
+                onClick={() => setView('list')}
               >
                 <i className="bi bi-list-task"></i>
                 <span>List</span>
@@ -704,13 +675,13 @@ export default function Library() {
             </button>
           </div>
         </div>
-        
+
         <div className="d-flex gap-3 mt-3 pt-3 border-top border-secondary border-opacity-10 align-items-center">
           <div className="form-check form-switch mb-0">
-            <input className="form-check-input" type="checkbox" checked={hideBonus} onChange={e=>setHideBonus(e.target.checked)} id="hideBonus" />
+            <input className="form-check-input" type="checkbox" checked={hideBonus} onChange={e => setHideBonus(e.target.checked)} id="hideBonus" />
             <label className="form-check-label small text-secondary" htmlFor="hideBonus">Hide Bonus subsets</label>
           </div>
-          
+
           <div className="ms-auto small text-secondary">
             Displaying {paginatedGames.length} per page
           </div>
@@ -850,7 +821,7 @@ export default function Library() {
         )}
       </div>
 
-      {view==='grid' ? (
+      {view === 'grid' ? (
         <div className="row g-2">
           {paginatedGames.map(g => (
             <div key={g.id} className="col-6 col-sm-4 col-md-3 col-lg-2">
@@ -908,13 +879,13 @@ export default function Library() {
                   <td>{g.date_finished ? new Date(g.date_finished).toLocaleDateString() : '-'}</td>
                   <td className="text-end">
                     <div className="btn-group btn-group-sm">
-                      <button className="btn btn-outline-light" onClick={()=>{
+                      <button className="btn btn-outline-light" onClick={() => {
                         const updatedGame = { ...g, status: 'In Progress', date_started: g.date_started ?? new Date().toISOString() }
                         onQuick(updatedGame)
                       }}>Set Current</button>
-                      <button className="btn btn-outline-success" onClick={()=>onQuick({ ...g, status: 'Completed', date_finished: new Date().toISOString() })}>Complete</button>
-                      <button className="btn btn-outline-danger" onClick={()=>onQuick({ ...g, status: 'DNF', date_finished: g.date_finished ?? new Date().toISOString() })}>DNF</button>
-                      <button className="btn btn-outline-info" onClick={()=>onOpenDetail(g)}>Details</button>
+                      <button className="btn btn-outline-success" onClick={() => onQuick({ ...g, status: 'Completed', date_finished: new Date().toISOString() })}>Complete</button>
+                      <button className="btn btn-outline-danger" onClick={() => onQuick({ ...g, status: 'DNF', date_finished: g.date_finished ?? new Date().toISOString() })}>DNF</button>
+                      <button className="btn btn-outline-info" onClick={() => onOpenDetail(g)}>Details</button>
                       <button
                         className="btn btn-outline-warning"
                         onClick={() => fetchCoverForGame(g)}
@@ -937,8 +908,8 @@ export default function Library() {
           <nav>
             <ul className="pagination pagination-sm">
               <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
-                <button 
-                  className="page-link" 
+                <button
+                  className="page-link"
                   onClick={() => setCurrentPage(1)}
                   disabled={currentPage === 1}
                 >
@@ -946,23 +917,23 @@ export default function Library() {
                 </button>
               </li>
               <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
-                <button 
-                  className="page-link" 
+                <button
+                  className="page-link"
                   onClick={() => setCurrentPage(currentPage - 1)}
                   disabled={currentPage === 1}
                 >
                   Previous
                 </button>
               </li>
-              
+
               {/* Page numbers */}
               {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                 const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
                 if (pageNum <= totalPages) {
                   return (
                     <li key={pageNum} className={`page-item ${currentPage === pageNum ? 'active' : ''}`}>
-                      <button 
-                        className="page-link" 
+                      <button
+                        className="page-link"
                         onClick={() => setCurrentPage(pageNum)}
                       >
                         {pageNum}
@@ -974,8 +945,8 @@ export default function Library() {
               })}
 
               <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
-                <button 
-                  className="page-link" 
+                <button
+                  className="page-link"
                   onClick={() => setCurrentPage(currentPage + 1)}
                   disabled={currentPage === totalPages}
                 >
@@ -983,8 +954,8 @@ export default function Library() {
                 </button>
               </li>
               <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
-                <button 
-                  className="page-link" 
+                <button
+                  className="page-link"
                   onClick={() => setCurrentPage(totalPages)}
                   disabled={currentPage === totalPages}
                 >
@@ -995,11 +966,11 @@ export default function Library() {
           </nav>
         </div>
       )}
-      
+
       {selectedGame && (
-        <GameDetailModal 
-          game={selectedGame} 
-          onClose={() => setSelectedGame(null)} 
+        <GameDetailModal
+          game={selectedGame}
+          onClose={() => setSelectedGame(null)}
         />
       )}
     </div>

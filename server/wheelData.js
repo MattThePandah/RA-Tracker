@@ -5,6 +5,7 @@ import { listSuggestions } from './publicData.js'
 import { getActiveEvent } from './eventData.js'
 import { getIndex } from './library.js'
 import { mergeWithGameLibrary } from './userMetadata.js'
+import { getPool as getSavedPool } from './wheelPools.js'
 
 console.log('[WheelData] Module loaded v3-snapshot')
 
@@ -25,7 +26,8 @@ const DEFAULT_SETTINGS = {
   eventRestriction: true,
   includeSuggestions: false,
   consoleFilter: 'All', // 'All' or console label
-  poolMode: 'all', // 'all' | 'custom'
+  poolMode: 'all', // 'all' | 'custom' | 'saved'
+  savedPoolId: null, // ID of saved pool when poolMode === 'saved'
   customGameIds: [],
   customIncludeSuggestions: false,
   consoleCustomItems: [],
@@ -231,6 +233,7 @@ function snapshotKey({ mode, settings, idxUpdatedAt, eventId, eventConsoles }) {
     includeSuggestions: !!s.includeSuggestions,
     consoleFilter: s.consoleFilter || 'All',
     poolMode: s.poolMode || 'all',
+    savedPoolId: s.savedPoolId || '',
     customGameIds: Array.isArray(s.customGameIds) ? s.customGameIds.map(id => String(id || '')).filter(Boolean).sort().join('|') : '',
     customIncludeSuggestions: !!s.customIncludeSuggestions,
     consoleCustomItems: Array.isArray(s.consoleCustomItems) ? s.consoleCustomItems.map(v => String(v || '')).filter(Boolean).sort().join('|') : '',
@@ -268,10 +271,23 @@ async function buildPool({ mode, settings, games, eventList }) {
   let pool = []
 
   if (mode === 'console') {
+    const publicConsolesDir = path.join(process.cwd(), 'public', 'consoles')
     const customItems = Array.isArray(settings.consoleCustomItems) ? settings.consoleCustomItems : []
     const cleanedCustom = customItems.map(v => String(v || '').trim()).filter(Boolean).slice(0, 64)
+
     if (cleanedCustom.length > 0) {
-      pool = cleanedCustom.map(text => ({ id: `console-${text}`, title: text, type: 'console', isConsole: true }))
+      pool = cleanedCustom.map(text => {
+        const safeName = text.replace(/[^a-zA-Z0-9\-_ ]/g, '')
+        const pngPath = path.join(publicConsolesDir, `${safeName}.png`)
+        const hasImg = fs.existsSync(pngPath)
+        return {
+          id: `console-${text}`,
+          title: text,
+          type: 'console',
+          isConsole: true,
+          image_url: hasImg ? `/consoles/${safeName}.png` : null
+        }
+      })
       return pool
     }
 
@@ -283,7 +299,18 @@ async function buildPool({ mode, settings, games, eventList }) {
       for (const g of games) if (g.console) set.add(g.console)
       consoles = Array.from(set).filter(Boolean).sort()
     }
-    pool = consoles.map(c => ({ id: `console-${c}`, title: c, type: 'console', isConsole: true }))
+    pool = consoles.map(c => {
+      const safeName = c.replace(/[^a-zA-Z0-9\-_ ]/g, '')
+      const pngPath = path.join(publicConsolesDir, `${safeName}.png`)
+      const hasImg = fs.existsSync(pngPath)
+      return {
+        id: `console-${c}`,
+        title: c,
+        type: 'console',
+        isConsole: true,
+        image_url: hasImg ? `/consoles/${safeName}.png` : null
+      }
+    })
     return pool
   }
 
@@ -312,18 +339,33 @@ async function buildPool({ mode, settings, games, eventList }) {
   if (settings.bonusMode === 'exclude') filtered = filtered.filter(g => !shouldExcludeBonus(g.title, settings))
   if (settings.bonusMode === 'only') filtered = filtered.filter(g => isBonus(g.title))
 
-  const poolMode = settings.poolMode === 'custom' ? 'custom' : 'all'
+  const poolMode = settings.poolMode === 'custom' ? 'custom' : (settings.poolMode === 'saved' ? 'saved' : 'all')
   if (poolMode === 'custom') {
     const ids = Array.isArray(settings.customGameIds) ? settings.customGameIds : []
     const idSet = new Set(ids.map(id => String(id || '')).filter(Boolean))
     filtered = filtered.filter(g => idSet.has(String(g.id)))
+  } else if (poolMode === 'saved' && settings.savedPoolId) {
+    const savedPool = getSavedPool(settings.savedPoolId)
+    if (savedPool && Array.isArray(savedPool.gameIds)) {
+      const idSet = new Set(savedPool.gameIds.map(id => String(id || '')).filter(Boolean))
+      filtered = filtered.filter(g => idSet.has(String(g.id)))
+    }
   }
 
   pool = filtered.map(g => ({ ...g, type: 'game' }))
 
-  const includeSuggestions = settings.includeSuggestions || (poolMode === 'custom' && settings.customIncludeSuggestions)
+  // For saved pools, use the includeSuggestions flag from the pool itself
+  let includeSuggestions = settings.includeSuggestions
+  if (poolMode === 'custom') {
+    includeSuggestions = includeSuggestions || settings.customIncludeSuggestions
+  } else if (poolMode === 'saved' && settings.savedPoolId) {
+    const savedPool = getSavedPool(settings.savedPoolId)
+    if (savedPool) {
+      includeSuggestions = includeSuggestions || savedPool.includeSuggestions
+    }
+  }
   if (includeSuggestions) {
-    const suggestions = await listSuggestions({ status: 'open' })
+    const suggestions = await listSuggestions({ status: 'accepted' })
     const compatible = suggestions.filter(s => {
       const cf2 = settings.consoleFilter || 'All'
       if (!cf2 || cf2 === 'All') return true

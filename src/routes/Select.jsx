@@ -13,7 +13,12 @@ export default function Select() {
   const [consoleFilter, setConsoleFilter] = useState('All')
   const [bonusExclusions, setBonusExclusions] = useState({ subset: true, demo: false, hack: false, homebrew: false })
   const [spinSource, setSpinSource] = useState('pool') // 'pool' | 'sample'
-  const [poolMode, setPoolMode] = useState('all') // 'all' | 'custom'
+  const [poolMode, setPoolMode] = useState('all') // 'all' | 'custom' | 'saved'
+  const [savedPools, setSavedPools] = useState([]) // List of saved pools
+  const [savedPoolId, setSavedPoolId] = useState(null) // Currently selected saved pool ID
+  const [editingPoolId, setEditingPoolId] = useState(null) // ID of pool being edited in custom mode
+  const [showPoolModal, setShowPoolModal] = useState(false) // Pool management modal
+  const [poolNameInput, setPoolNameInput] = useState('') // For save/rename
   const [customGameIds, setCustomGameIds] = useState([])
   const [customIncludeSuggestions, setCustomIncludeSuggestions] = useState(false)
   const [customSearch, setCustomSearch] = useState('')
@@ -31,19 +36,20 @@ export default function Select() {
       if (res.ok) {
         const json = await res.json()
         setWheelState(json)
-          if (json.settings) {
-            if (json.settings.includeSuggestions !== undefined) setIncludeSuggestions(json.settings.includeSuggestions)
-            if (json.settings.consoleFilter) setConsoleFilter(json.settings.consoleFilter)
-            if (json.settings.spinSource === 'sample' || json.settings.spinSource === 'pool') setSpinSource(json.settings.spinSource)
-            if (json.settings.poolMode === 'all' || json.settings.poolMode === 'custom') setPoolMode(json.settings.poolMode)
-            if (Array.isArray(json.settings.customGameIds)) setCustomGameIds(json.settings.customGameIds.map(id => String(id || '')).filter(Boolean))
-            if (json.settings.customIncludeSuggestions !== undefined) setCustomIncludeSuggestions(json.settings.customIncludeSuggestions === true)
-            if (Array.isArray(json.settings.consoleCustomItems)) setConsoleCustomItems(json.settings.consoleCustomItems.map(v => String(v || '')).filter(Boolean))
-            if (json.settings.bonusExclusions && typeof json.settings.bonusExclusions === 'object') {
-              setBonusExclusions(prev => ({
-                ...prev,
-                subset: json.settings.bonusExclusions.subset === true,
-                demo: json.settings.bonusExclusions.demo === true,
+        if (json.settings) {
+          if (json.settings.includeSuggestions !== undefined) setIncludeSuggestions(json.settings.includeSuggestions)
+          if (json.settings.consoleFilter) setConsoleFilter(json.settings.consoleFilter)
+          if (json.settings.spinSource === 'sample' || json.settings.spinSource === 'pool') setSpinSource(json.settings.spinSource)
+          if (json.settings.poolMode === 'all' || json.settings.poolMode === 'custom' || json.settings.poolMode === 'saved') setPoolMode(json.settings.poolMode)
+          if (json.settings.savedPoolId !== undefined) setSavedPoolId(json.settings.savedPoolId || null)
+          if (Array.isArray(json.settings.customGameIds)) setCustomGameIds(json.settings.customGameIds.map(id => String(id || '')).filter(Boolean))
+          if (json.settings.customIncludeSuggestions !== undefined) setCustomIncludeSuggestions(json.settings.customIncludeSuggestions === true)
+          if (Array.isArray(json.settings.consoleCustomItems)) setConsoleCustomItems(json.settings.consoleCustomItems.map(v => String(v || '')).filter(Boolean))
+          if (json.settings.bonusExclusions && typeof json.settings.bonusExclusions === 'object') {
+            setBonusExclusions(prev => ({
+              ...prev,
+              subset: json.settings.bonusExclusions.subset === true,
+              demo: json.settings.bonusExclusions.demo === true,
               hack: json.settings.bonusExclusions.hack === true,
               homebrew: json.settings.bonusExclusions.homebrew === true
             }))
@@ -53,11 +59,24 @@ export default function Select() {
     } catch (e) { console.error(e) }
   }, [debugWheel])
 
+  const fetchPools = useCallback(async () => {
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      const res = await adminFetch(`${base}/wheel/pools`)
+      if (res.ok) {
+        const json = await res.json()
+        setSavedPools(Array.isArray(json.pools) ? json.pools : [])
+      }
+    } catch (e) { console.error('Failed to fetch pools:', e) }
+  }, [])
+
   useEffect(() => {
     fetchState()
+    fetchPools()
     const id = setInterval(fetchState, 1000)
     return () => clearInterval(id)
-  }, [fetchState])
+  }, [fetchState, fetchPools])
+
 
   const loadOverlayPinned = useCallback(async () => {
     try {
@@ -246,7 +265,96 @@ export default function Select() {
 
   const clearCustomGames = async () => {
     setCustomGameIds([])
+    setEditingPoolId(null)
+    setPoolNameInput('')
     await updateSettings({ customGameIds: [] })
+  }
+
+  const saveCurrentAsPool = async (name) => {
+    if (!name || customGameIds.length === 0) return
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      const res = await adminFetch(`${base}/wheel/pools`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          gameIds: customGameIds,
+          includeSuggestions: customIncludeSuggestions
+        })
+      })
+      if (res.ok) {
+        const json = await res.json()
+        const newPool = json.pool
+        await fetchPools()
+        // Switch to the new saved pool
+        setPoolMode('saved')
+        setSavedPoolId(newPool.id)
+        setEditingPoolId(null)
+        await updateSettings({ poolMode: 'saved', savedPoolId: newPool.id })
+        setPoolNameInput('')
+      }
+    } catch (e) { console.error('Failed to save pool:', e) }
+  }
+
+  const updateSavedPool = async () => {
+    if (!editingPoolId || customGameIds.length === 0) return
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      const res = await adminFetch(`${base}/wheel/pools/${editingPoolId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: poolNameInput,
+          gameIds: customGameIds,
+          includeSuggestions: customIncludeSuggestions
+        })
+      })
+      if (res.ok) {
+        await fetchPools()
+        setPoolMode('saved')
+        setSavedPoolId(editingPoolId)
+        setEditingPoolId(null)
+        setPoolNameInput('')
+        await updateSettings({ poolMode: 'saved', savedPoolId: editingPoolId })
+      }
+    } catch (e) { console.error('Failed to update pool:', e) }
+  }
+
+  const loadPoolForEditing = (pool) => {
+    if (!pool) return
+    setCustomGameIds(pool.gameIds || [])
+    setCustomIncludeSuggestions(!!pool.includeSuggestions)
+    setPoolNameInput(pool.name)
+    setEditingPoolId(pool.id)
+    setPoolMode('custom')
+    updateSettings({
+      poolMode: 'custom',
+      customGameIds: pool.gameIds || [],
+      customIncludeSuggestions: !!pool.includeSuggestions
+    })
+  }
+
+  const selectSavedPool = async (poolId) => {
+    setSavedPoolId(poolId)
+    setPoolMode('saved')
+    await updateSettings({ poolMode: 'saved', savedPoolId: poolId })
+  }
+
+  const deleteSavedPool = async (poolId) => {
+    try {
+      const base = import.meta.env.VITE_IGDB_PROXY_URL || 'http://localhost:8787'
+      const res = await adminFetch(`${base}/wheel/pools/${poolId}`, { method: 'DELETE' })
+      if (res.ok) {
+        await fetchPools()
+        // If we deleted the currently selected pool, switch back to 'all'
+        if (savedPoolId === poolId) {
+          setPoolMode('all')
+          setSavedPoolId(null)
+          await updateSettings({ poolMode: 'all', savedPoolId: null })
+        }
+      }
+    } catch (e) { console.error('Failed to delete pool:', e) }
   }
 
   const addConsoleItem = async () => {
@@ -326,26 +434,78 @@ export default function Select() {
                     <label className="form-label small text-muted text-uppercase fw-bold">Wheel Pool</label>
                     <select
                       className="form-select form-select-sm bg-dark border-secondary text-light"
-                      value={poolMode}
+                      value={poolMode === 'saved' ? `saved:${savedPoolId || ''}` : poolMode}
                       onChange={(e) => {
-                        const next = e.target.value
-                        setPoolMode(next)
-                        updateSettings({ poolMode: next })
+                        const val = e.target.value
+                        if (val === 'all') {
+                          setPoolMode('all')
+                          setSavedPoolId(null)
+                          updateSettings({ poolMode: 'all', savedPoolId: null })
+                        } else if (val === 'custom') {
+                          setPoolMode('custom')
+                          setSavedPoolId(null)
+                          updateSettings({ poolMode: 'custom', savedPoolId: null })
+                        } else if (val.startsWith('saved:')) {
+                          const poolId = val.replace('saved:', '')
+                          selectSavedPool(poolId)
+                        }
                       }}
                     >
                       <option value="all">All eligible games</option>
-                      <option value="custom">Custom list</option>
+                      <option value="custom">Custom list (unsaved)</option>
+                      {savedPools.length > 0 && (
+                        <optgroup label="Saved Pools">
+                          {savedPools.map(pool => (
+                            <option key={pool.id} value={`saved:${pool.id}`}>
+                              {pool.name} ({pool.gameCount} games)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
 
-                  {poolMode === 'custom' && (
+                  {/* Show selected saved pool info */}
+                  {poolMode === 'saved' && savedPoolId && (
                     <div className="p-2 rounded border border-secondary border-opacity-25 bg-black bg-opacity-25">
-                      <label className="form-label small text-secondary mb-1">Add game</label>
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div className="small text-light">
+                          <i className="bi bi-collection me-2"></i>
+                          Using saved pool: <strong>{savedPools.find(p => p.id === savedPoolId)?.name || 'Unknown'}</strong>
+                        </div>
+                        <div className="btn-group btn-group-sm">
+                          <button
+                            type="button"
+                            className="btn btn-outline-info"
+                            onClick={() => {
+                              const pool = savedPools.find(p => p.id === savedPoolId)
+                              if (pool) loadPoolForEditing(pool)
+                            }}
+                          >
+                            <i className="bi bi-pencil me-1"></i>Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline-danger"
+                            onClick={() => {
+                              if (confirm('Delete this pool?')) deleteSavedPool(savedPoolId)
+                            }}
+                          >
+                            <i className="bi bi-trash"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {poolMode === 'custom' && (
+                    <div className="p-3 rounded border border-secondary bg-dark bg-gradient">
+                      <label className="form-label small text-info fw-bold mb-2">ADD GAME TO POOL</label>
                       <input
-                        className="form-control form-control-sm bg-dark border-secondary text-light"
+                        className="form-control form-control-sm bg-dark border-secondary text-light mb-2"
                         value={customSearch}
                         onChange={e => setCustomSearch(e.target.value)}
-                        placeholder="Search titles..."
+                        placeholder="Search game titles..."
                       />
 
                       {customSearchResults.length > 0 && (
@@ -366,24 +526,24 @@ export default function Select() {
                         </div>
                       )}
 
-                      <div className="d-flex justify-content-between align-items-center mt-2">
-                        <div className="small text-secondary">Selected: {customGames.length}</div>
-                        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={clearCustomGames} disabled={customGameIds.length === 0}>
-                          Clear
+                      <div className="d-flex justify-content-between align-items-center mt-3 mb-2">
+                        <div className="small text-white-50 text-uppercase fw-bold">Selected Games: <span className="text-white">{customGames.length}</span></div>
+                        <button type="button" className="btn btn-sm btn-outline-danger" onClick={clearCustomGames} disabled={customGameIds.length === 0}>
+                          Clear All
                         </button>
                       </div>
 
                       <div className="d-grid gap-2 mt-2">
                         {customGames.map(g => (
-                          <div key={g.id} className="d-flex align-items-center justify-content-between gap-2 p-2 rounded border border-secondary border-opacity-25">
+                          <div key={g.id} className="d-flex align-items-center justify-content-between gap-2 p-2 rounded border border-secondary bg-black bg-opacity-25 mb-2">
                             <div className="d-flex align-items-center gap-2 min-w-0">
-                              <img src={buildCoverUrl(g.image_url)} alt="" style={{ width: 28, height: 38, objectFit: 'cover', borderRadius: 4, opacity: 0.9 }} />
+                              <img src={buildCoverUrl(g.image_url)} alt="" style={{ width: 32, height: 44, objectFit: 'cover', borderRadius: 4 }} />
                               <div className="min-w-0">
-                                <div className="small text-truncate text-light">{g.title}</div>
-                                <div className="small text-secondary text-truncate">{typeof g.console === 'object' ? g.console?.name : g.console}</div>
+                                <div className="fw-bold text-truncate text-light">{g.title}</div>
+                                <div className="small text-white-50 text-truncate">{typeof g.console === 'object' ? g.console?.name : g.console}</div>
                               </div>
                             </div>
-                            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => removeCustomGame(g.id)}>
+                            <button type="button" className="btn btn-sm btn-outline-warning" onClick={() => removeCustomGame(g.id)}>
                               Remove
                             </button>
                           </div>
@@ -405,10 +565,76 @@ export default function Select() {
                             updateSettings({ customIncludeSuggestions: next })
                           }}
                         />
-                        <label className="form-check-label text-light small" htmlFor="customIncludeSuggestions">
+                        <label className="form-check-label text-white-50 small" htmlFor="customIncludeSuggestions">
                           Include Suggestions
                         </label>
                       </div>
+
+                      {/* Save or Update Pool */}
+                      {customGameIds.length > 0 && (
+                        <div className="mt-3 pt-3 border-top border-secondary border-opacity-25">
+                          <label className="form-label small text-info text-uppercase fw-bold mb-2">
+                            {editingPoolId ? 'Update Pool' : 'Save as Pool'}
+                          </label>
+                          <div className="input-group input-group-sm">
+                            <input
+                              className="form-control bg-dark border-secondary text-light"
+                              value={poolNameInput}
+                              onChange={e => setPoolNameInput(e.target.value)}
+                              placeholder="Pool name..."
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && poolNameInput.trim()) {
+                                  e.preventDefault()
+                                  if (editingPoolId) updateSavedPool()
+                                  else saveCurrentAsPool(poolNameInput.trim())
+                                }
+                              }}
+                            />
+                            {editingPoolId ? (
+                              <>
+                                <button
+                                  className="btn btn-outline-info"
+                                  type="button"
+                                  disabled={!poolNameInput.trim()}
+                                  onClick={updateSavedPool}
+                                >
+                                  <i className="bi bi-save me-1"></i>Update
+                                </button>
+                                <button
+                                  className="btn btn-outline-success"
+                                  type="button"
+                                  disabled={!poolNameInput.trim()}
+                                  onClick={() => saveCurrentAsPool(poolNameInput.trim())}
+                                >
+                                  <i className="bi bi-plus-lg me-1"></i>New
+                                </button>
+                                <button
+                                  className="btn btn-outline-secondary"
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingPoolId(null)
+                                    setPoolNameInput('')
+                                  }}
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                className="btn btn-outline-success"
+                                type="button"
+                                disabled={!poolNameInput.trim()}
+                                onClick={() => saveCurrentAsPool(poolNameInput.trim())}
+                              >
+                                <i className="bi bi-save me-1"></i>Save
+                              </button>
+                            )}
+                          </div>
+                          <div className="small text-white-50 mt-1">
+                            {editingPoolId ? 'Update the existing pool or save as a new one.' : 'Save this custom list for quick reuse'}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -453,12 +679,12 @@ export default function Select() {
                           type="checkbox"
                           id="excludeSubset"
                           checked={bonusExclusions.subset === true}
-                        onChange={(e) => {
-                          const next = { ...bonusExclusions, subset: e.target.checked }
-                          setBonusExclusions(next)
-                          updateSettings(buildBonusSettings(next))
-                        }}
-                      />
+                          onChange={(e) => {
+                            const next = { ...bonusExclusions, subset: e.target.checked }
+                            setBonusExclusions(next)
+                            updateSettings(buildBonusSettings(next))
+                          }}
+                        />
                         <label className="form-check-label text-light small" htmlFor="excludeSubset">Subsets</label>
                       </div>
                       <div className="form-check">
@@ -467,12 +693,12 @@ export default function Select() {
                           type="checkbox"
                           id="excludeDemo"
                           checked={bonusExclusions.demo === true}
-                        onChange={(e) => {
-                          const next = { ...bonusExclusions, demo: e.target.checked }
-                          setBonusExclusions(next)
-                          updateSettings(buildBonusSettings(next))
-                        }}
-                      />
+                          onChange={(e) => {
+                            const next = { ...bonusExclusions, demo: e.target.checked }
+                            setBonusExclusions(next)
+                            updateSettings(buildBonusSettings(next))
+                          }}
+                        />
                         <label className="form-check-label text-light small" htmlFor="excludeDemo">Demos</label>
                       </div>
                       <div className="form-check">
@@ -481,12 +707,12 @@ export default function Select() {
                           type="checkbox"
                           id="excludeHack"
                           checked={bonusExclusions.hack === true}
-                        onChange={(e) => {
-                          const next = { ...bonusExclusions, hack: e.target.checked }
-                          setBonusExclusions(next)
-                          updateSettings(buildBonusSettings(next))
-                        }}
-                      />
+                          onChange={(e) => {
+                            const next = { ...bonusExclusions, hack: e.target.checked }
+                            setBonusExclusions(next)
+                            updateSettings(buildBonusSettings(next))
+                          }}
+                        />
                         <label className="form-check-label text-light small" htmlFor="excludeHack">Hacks</label>
                       </div>
                       <div className="form-check">
@@ -495,12 +721,12 @@ export default function Select() {
                           type="checkbox"
                           id="excludeHomebrew"
                           checked={bonusExclusions.homebrew === true}
-                        onChange={(e) => {
-                          const next = { ...bonusExclusions, homebrew: e.target.checked }
-                          setBonusExclusions(next)
-                          updateSettings(buildBonusSettings(next))
-                        }}
-                      />
+                          onChange={(e) => {
+                            const next = { ...bonusExclusions, homebrew: e.target.checked }
+                            setBonusExclusions(next)
+                            updateSettings(buildBonusSettings(next))
+                          }}
+                        />
                         <label className="form-check-label text-light small" htmlFor="excludeHomebrew">Homebrew</label>
                       </div>
                       {state.settings.hideBonusGames && (

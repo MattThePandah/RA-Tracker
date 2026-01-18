@@ -31,13 +31,34 @@ export function loadPlatformMapping() {
       const json = JSON.parse(raw)
       if (json && typeof json === 'object') return json
     }
-  } catch {}
+  } catch { }
   // Sensible partial defaults (can be expanded via platform-mapping.json)
   return {
     // RA console id → IGDB platform ids
-    'ra:27': [7],     // PlayStation → IGDB 7
-    'ra:107': [8],    // PlayStation 2 → IGDB 8
-    'ra:46': [38],    // PSP → IGDB 38
+    // See https://retroachievements.org/gameList.php for RA IDs
+    'ra:1': [29],     // Genesis/Mega Drive
+    'ra:2': [35],     // Game Gear
+    'ra:3': [19],     // SNES
+    'ra:4': [4],      // N64
+    'ra:5': [24],     // GBA
+    'ra:6': [33],     // Game Boy
+    'ra:7': [18],     // NES
+    'ra:8': [64],     // Master System
+    'ra:10': [67],    // PC Engine
+    'ra:11': [78],    // Sega CD
+    'ra:12': [32],    // Saturn
+    'ra:16': [23],    // Dreamcast
+    'ra:21': [8],     // PS2
+    'ra:27': [7],     // PlayStation
+    'ra:107': [8],    // PlayStation 2 (Legacy/Alt?)
+    'ra:38': [38],    // PSP
+    'ra:40': [5],     // Wii
+    'ra:41': [22],    // GBC
+    'ra:46': [38],    // PSP
+    'ra:63': [20],    // DS
+    'ra:68': [41],    // Wii U
+    'ra:69': [37],    // 3DS
+    'ra:78': [130],   // Switch
   }
 }
 

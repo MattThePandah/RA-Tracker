@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import { deleteCoverForGame } from './util/covers.js'
 
 const DATA_DIR = path.join(process.cwd(), 'server', 'data')
 fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -55,15 +56,23 @@ export function updateGameMetadata(gameId, updates) {
 
   const metadata = loadUserMetadata()
   const currentGame = metadata.games[gameId] || {}
-  
+
   const updatedGame = {
     ...currentGame,
     ...updates,
     lastModified: Date.now()
   }
 
+  if (updates.image_url === null) {
+    try {
+      deleteCoverForGame(gameId)
+    } catch (e) {
+      console.warn(`[UserMeta] Failed to delete cover for ${gameId}:`, e.message)
+    }
+  }
+
   metadata.games[gameId] = updatedGame
-  
+
   const success = saveUserMetadata(metadata)
   if (!success) {
     throw new Error('Failed to save user metadata')
@@ -74,7 +83,7 @@ export function updateGameMetadata(gameId, updates) {
 
 export function bulkUpdateMetadata(updates) {
   const metadata = loadUserMetadata()
-  
+
   for (const [gameId, gameUpdates] of Object.entries(updates)) {
     const currentGame = metadata.games[gameId] || {}
     metadata.games[gameId] = {
@@ -83,7 +92,7 @@ export function bulkUpdateMetadata(updates) {
       lastModified: Date.now()
     }
   }
-  
+
   const success = saveUserMetadata(metadata)
   if (!success) {
     throw new Error('Failed to bulk save user metadata')
@@ -99,7 +108,7 @@ export function deleteGameMetadata(gameId) {
 
   const metadata = loadUserMetadata()
   delete metadata.games[gameId]
-  
+
   const success = saveUserMetadata(metadata)
   if (!success) {
     throw new Error('Failed to save user metadata')
@@ -120,7 +129,7 @@ export function updateUserSettings(settingsUpdates) {
     ...settingsUpdates,
     lastModified: Date.now()
   }
-  
+
   const success = saveUserMetadata(metadata)
   if (!success) {
     throw new Error('Failed to save user settings')
@@ -207,7 +216,7 @@ export function backfillHistoryFromTotals(perGameTotals, timestamp = Date.now(),
 
 export function mergeWithGameLibrary(games) {
   const metadata = loadUserMetadata()
-  
+
   return games.map(game => {
     const userMeta = metadata.games[game.id] || {}
     const hasSubsetMode = Object.prototype.hasOwnProperty.call(userMeta, 'subsetMode')
@@ -215,7 +224,7 @@ export function mergeWithGameLibrary(games) {
     const derivedSubsetMode = hasSubsetMode
       ? userMeta.subsetMode
       : (hasSubsetIds ? 'custom' : (game.subsetMode ?? 'auto'))
-    
+
     return {
       ...game,
       // Override server data with user preferences

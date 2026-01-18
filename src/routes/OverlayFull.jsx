@@ -6,6 +6,7 @@ import { buildOverlayUrl } from '../utils/overlayApi.js'
 import CrtWheel from '../components/CrtWheel'
 import CrtCapsuleMachine from '../components/CrtCapsuleMachine.jsx'
 import { buildCoverUrl } from '../utils/coverUrl.js'
+import { getConsoleAcronym } from '../utils/consoleUtils.js'
 import { useOverlaySettings } from '../hooks/useOverlaySettings.js'
 import { useOverlayTheme } from '../hooks/useOverlayTheme.js'
 import useOverlayEvent from '../hooks/useOverlayEvent.js'
@@ -78,80 +79,8 @@ const GAME_TOKENS = [
   '{title}',
   '{game}',
   '{gameTitle}',
-  '{console}',
-  '{platform}',
-  '{year}',
-  '{publisher}',
-  '{status}'
+  '{console}'
 ]
-
-const CONSOLE_ACRONYMS = new Map([
-  ['PLAYSTATION', 'PS1'],
-  ['PLAYSTATION 2', 'PS2'],
-  ['PLAYSTATION 3', 'PS3'],
-  ['PLAYSTATION 4', 'PS4'],
-  ['PLAYSTATION 5', 'PS5'],
-  ['PSX', 'PS1'],
-  ['PS1', 'PS1'],
-  ['PS2', 'PS2'],
-  ['PS3', 'PS3'],
-  ['PS4', 'PS4'],
-  ['PS5', 'PS5'],
-  ['PSP', 'PSP'],
-  ['PLAYSTATION PORTABLE', 'PSP'],
-  ['PS VITA', 'VITA'],
-  ['PLAYSTATION VITA', 'VITA'],
-  ['SUPER NINTENDO', 'SNES'],
-  ['SUPER NINTENDO ENTERTAINMENT SYSTEM', 'SNES'],
-  ['SNES', 'SNES'],
-  ['NINTENDO ENTERTAINMENT SYSTEM', 'NES'],
-  ['NES', 'NES'],
-  ['NINTENDO 64', 'N64'],
-  ['N64', 'N64'],
-  ['GAMECUBE', 'GC'],
-  ['GC', 'GC'],
-  ['WII', 'WII'],
-  ['WII U', 'WIIU'],
-  ['SWITCH', 'SWITCH'],
-  ['NINTENDO SWITCH', 'SWITCH'],
-  ['DREAMCAST', 'DC'],
-  ['DC', 'DC'],
-  ['SEGA GENESIS', 'GEN'],
-  ['GENESIS', 'GEN'],
-  ['MEGA DRIVE', 'MD'],
-  ['SATURN', 'SAT'],
-  ['MASTER SYSTEM', 'SMS'],
-  ['GAME GEAR', 'GG'],
-  ['NEO GEO', 'NG'],
-  ['PC ENGINE', 'PCE'],
-  ['TURBOGRAFX-16', 'TG16'],
-  ['TURBO GRAFX 16', 'TG16'],
-  ['GAME BOY', 'GB'],
-  ['GAME BOY COLOR', 'GBC'],
-  ['GBC', 'GBC'],
-  ['GAME BOY ADVANCE', 'GBA'],
-  ['GBA', 'GBA'],
-  ['NINTENDO DS', 'DS'],
-  ['DS', 'DS'],
-  ['NINTENDO 3DS', '3DS'],
-  ['3DS', '3DS']
-])
-
-function getConsoleAcronym(consoleName) {
-  if (!consoleName) return ''
-  const normalized = String(consoleName).trim().toUpperCase()
-  if (!normalized) return ''
-  if (CONSOLE_ACRONYMS.has(normalized)) return CONSOLE_ACRONYMS.get(normalized)
-  const compact = normalized.replace(/[^A-Z0-9]/g, '')
-  if (CONSOLE_ACRONYMS.has(compact)) return CONSOLE_ACRONYMS.get(compact)
-  const words = normalized.split(/\s+/).filter(Boolean)
-  if (words.length > 1) {
-    const initials = words.map(word => word[0]).join('')
-    if (initials.length >= 2 && initials.length <= 4) return initials
-  }
-  if (normalized.length <= 6) return normalized
-  return ''
-}
 
 function hasToken(value, tokens) {
   const text = String(value || '')
@@ -520,8 +449,8 @@ export default function OverlayFull() {
     try {
       const audio = new Audio(url)
       audio.volume = connectorSoundVolume
-      audio.play().catch(() => {})
-    } catch {}
+      audio.play().catch(() => { })
+    } catch { }
   }, [connectorSoundsEnabled, connectorEvent, connectorSoundMap, connectorSoundVolume])
 
   const allStickers = React.useMemo(() => {
@@ -1714,13 +1643,13 @@ export default function OverlayFull() {
                             }, WHEEL_ANNOUNCE_HOLD_MS)
                           }
                         }
-                      // Don't update selected console from idle wheel-state; only after a console winner is shown.
-                      if (winner && winner.type === 'console' && winner.title) {
-                        const next = winner.title
-                        setWheelSelectedConsole(prev => (prev === next ? prev : next))
-                      }
-                    }}
-                  />
+                        // Don't update selected console from idle wheel-state; only after a console winner is shown.
+                        if (winner && winner.type === 'console' && winner.title) {
+                          const next = winner.title
+                          setWheelSelectedConsole(prev => (prev === next ? prev : next))
+                        }
+                      }}
+                    />
                   )}
                   {breakMode && <StartingSoonModule enabled={breakMode} mode={startingSoon ? 'startingSoon' : 'brb'} />}
                   {current && !breakMode && stageFrames}

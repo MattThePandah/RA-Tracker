@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { buildOverlayUrl } from '../utils/overlayApi.js'
 import { buildCoverUrl } from '../utils/coverUrl.js'
 
+import { getConsoleAcronym } from '../utils/consoleUtils.js'
+
 function useInterval(cb, ms) {
   useEffect(() => {
     const id = setInterval(cb, ms)
@@ -44,6 +46,9 @@ function getItemTitle(item) {
   if (!item) return ''
   if (typeof item === 'string') return item
   if (typeof item !== 'object') return String(item)
+  if (item.type === 'console' || item.isConsole) {
+    return getConsoleAcronym(item.title || item.name || item.id) || item.title || item.name || ''
+  }
   return String(item.title || item.name || '')
 }
 
@@ -629,21 +634,21 @@ export default function CrtCapsuleMachine({
         if (spinReportedRef.current) {
           // keep drawing; don't early-return from the frame
         } else {
-        spinReportedRef.current = true
-        holdUntilRef.current = Date.now() + 5000 + 450
-        spinInProgressRef.current = false
-        const winner = seed.winner || null
-        const spinTs = Number(seed.ts) || lastSpinTs.current || 0
-        report({
-          active: true,
-          spinning: false,
-          spin: seed,
-          winner,
-          mode: wheelState.mode,
-          selectedConsole: wheelState.selectedConsole,
-          event: wheelState.event,
-          spinTs
-        })
+          spinReportedRef.current = true
+          holdUntilRef.current = Date.now() + 5000 + 450
+          spinInProgressRef.current = false
+          const winner = seed.winner || null
+          const spinTs = Number(seed.ts) || lastSpinTs.current || 0
+          report({
+            active: true,
+            spinning: false,
+            spin: seed,
+            winner,
+            mode: wheelState.mode,
+            selectedConsole: wheelState.selectedConsole,
+            event: wheelState.event,
+            spinTs
+          })
         }
       }
     }
@@ -838,8 +843,8 @@ export default function CrtCapsuleMachine({
         mode: wheelState.mode,
         selectedConsole: wheelState.selectedConsole,
         event: wheelState.event,
-          spinTs
-        })
+        spinTs
+      })
     }, remainingToEnd + 25)
   }, [ensureCapsules, report, wheelState.sample])
 
